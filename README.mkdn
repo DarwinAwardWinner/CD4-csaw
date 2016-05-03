@@ -1,4 +1,4 @@
-# Sliding-window-based re-analysis of GEO dataset GSE73214
+# Re-analysis of a combined ChIP-Seq & RNA-Seq data set
 
 This is the code for a re-analysis of [this GEO dataset][1] using
 statistical methods that were not yet available at the time I
@@ -10,11 +10,9 @@ now) only analyzed binding within pre-defined promoter regions. In
 addition, some improvements have also been made to the RNA-seq
 analysis using newer features of [limma][3] such as quality weights.
 
-[1] http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE73214
-
-[2] https://bioconductor.org/packages/release/bioc/html/csaw.html
-
-[3] https://bioconductor.org/packages/release/bioc/html/limma.html
+[1]: http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE73214
+[2]: https://bioconductor.org/packages/release/bioc/html/csaw.html
+[3]: https://bioconductor.org/packages/release/bioc/html/limma.html
 
 ## ChIP-Seq analysis pipeline
 
