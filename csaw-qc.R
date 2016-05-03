@@ -284,7 +284,6 @@ for (chip in chips) { in.forked.process({
     tsmsg("Counting number of non-zero bins")
     colData(window.counts)$NonZeroBins <- withGC(colSums(assay(window.counts) > 0))
 
-
     ## Compute background normalization from big bins
     tsmsg("Computing composition normalization from background")
     colData(window.counts)$CompNormFactors <- normOffsets(bigbin.counts, type="scaling")
