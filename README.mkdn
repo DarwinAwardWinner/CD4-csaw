@@ -1,0 +1,41 @@
+# Sliding-window-based re-analysis of GEO dataset GSE73214
+
+This is the code for a re-analysis of [this GEO dataset][1] using
+statistical methods that were not yet available at the time I
+originally analyzed the data, including the
+[csaw Bioconductor package][2], which provides a principled way to
+normalize windowed counts of ChIP-Seq reads and test them for
+differential binding. The original paper (due to be published any day
+now) only analyzed binding within pre-defined promoter regions. In
+addition, some improvements have also been made to the RNA-seq
+analysis using newer features of [limma][3] such as quality weights.
+
+[1] http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE73214
+
+[2] https://bioconductor.org/packages/release/bioc/html/csaw.html
+
+[3] https://bioconductor.org/packages/release/bioc/html/limma.html
+
+## ChIP-Seq analysis pipeline
+
+1. `csaw-pre-count-qc.R`: Perform some QC steps that do not require
+   window counts, including determining the fragment length and
+   binding footprint profiles.
+2. `csaw-count.R`: Generate window counts for all samples.
+3. `csaw-split.R`: Split the enormous monolithic window count data set
+   into separate sets for each ChIP type.
+4. `csaw-qc.R`: Perform QC steps that require window counts, mostly
+   regarding normalization issues.
+5. `csaw-analysis.R`: Analyze window counts for differential binding
+   (Not finished yet)
+
+## RNA-Seq analysis
+
+This data set also contains RNA-seq information for each sample, which
+are analyzed for differential expression. I have also improved on this
+analysis, using some custom code to make voom, glm offsets, and
+quality weights work together to produce a workable solution for
+mitigating the batch effects in the data.
+
+1. `rnaseq-count.R`: Generate gene counts for each sample
+2. `rnaseq-analysis.R`: Perform differential expression analysis using limma
