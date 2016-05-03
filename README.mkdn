@@ -1,8 +1,8 @@
 # Re-analysis of a combined ChIP-Seq & RNA-Seq data set
 
-This is the code for a re-analysis of [this GEO dataset][1] using
-statistical methods that were not yet available at the time I
-originally analyzed the data, including the
+This is the code for a re-analysis of this (not yet released)
+[GEO dataset][1] using statistical methods that were not yet available
+at the time I originally analyzed the data, including the
 [csaw Bioconductor package][2], which provides a principled way to
 normalize windowed counts of ChIP-Seq reads and test them for
 differential binding. The original paper (due to be published any day
