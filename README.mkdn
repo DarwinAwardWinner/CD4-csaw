@@ -27,6 +27,14 @@ analysis using newer features of [limma][3] such as quality weights.
 5. `csaw-analysis.R`: Analyze window counts for differential binding
    (Not finished yet)
 
+### TODO
+
+* ChIPQC: http://bioconductor.org/packages/release/bioc/html/ChIPQC.html
+* ChIP-Seq blacklists: http://www.broadinstitute.org/~anshul/projects/encode/rawdata/blacklists/hg19-blacklist-README.pdf
+* Greylists: http://bioconductor.org/packages/release/bioc/html/GreyListChIP.html
+* Differential binding (using csaw and edgeR)
+* Motif enrichment
+
 ## RNA-Seq analysis
 
 This data set also contains RNA-seq information for each sample, which
