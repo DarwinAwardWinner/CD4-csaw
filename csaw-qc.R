@@ -271,7 +271,7 @@ chips <- c("H3K4me3", "H3K4me2", "H3K27me3")
 
 for (chip in chips) { in.forked.process({
     tsmsg("Reading data for ", chip)
-    bigbin.counts <- readRDS(sprintf("saved_data/bigbin-counts-%s.RDS", chip))
+    bigbin.counts <- readRDS(sprintf("saved_data/bigbin-counts-%s-10kb.RDS", chip))
     window.counts <- readRDS(sprintf("saved_data/window-counts-%s-147bp.RDS", chip))
     chip.peaks <- import.narrowPeak(
         sprintf(fmt="data_files/ChIP-Seq/%s_peaks_IDR_filtered.bed", chip))

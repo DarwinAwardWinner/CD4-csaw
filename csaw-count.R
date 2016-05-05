@@ -77,11 +77,9 @@ param <- readParam(restrict=std.chr)
     tsmsg("Counting in 10 kb bins")
     binned <- windowCountsParallel(sample.table$bampath, bin=TRUE, width=10000, param=param)
     colData(binned) %<>% {cbind(sample.table, .[c("totals", "ext")])}
-    saveRDS(binned, "saved_data/bigbin-counts.RDS")
+    saveRDS(binned, "saved_data/bigbin-counts-10kb.RDS")
     rm(binned)
     tsmsg("Counting in 147-bp windows")
-    ## Use a spacing of about 50% nucleosome length, to guarantee that
-    ## every nucleosome is hit by at least one bin.
     wcounts <- windowCounts(sample.table$bampath, ext=147, spacing=147, param=param)
     colData(wcounts) %<>% {cbind(sample.table, .[c("totals", "ext")])}
     saveRDS(wcounts, "saved_data/window-counts-147bp.RDS")
