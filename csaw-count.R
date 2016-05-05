@@ -15,8 +15,8 @@ registerDoParallel(cores=parallel::detectCores())
 library(BiocParallel)
 register(MulticoreParam(parallel::detectCores()))
 library(GenomicRanges)
+library(rtracklayer)
 library(SummarizedExperiment)
-library(plyr)
 library(dplyr)
 library(purrr)
 library(csaw)
@@ -69,9 +69,12 @@ sample.table <- read.xlsx("data_files/ChIP-Seq/sample-tables.xlsx", "Samples") %
 
 stopifnot(all(file.exists(sample.table$bampath)))
 
+tsmsg("Loading blacklist regions")
+blacklist <- import("saved_data/wgEncodeDacMapabilityConsensusExcludable.bed.gz", format="bed")
+
 ## Standard nuclear chromosomes
 std.chr <- extractSeqlevels("Homo sapiens", "UCSC") %>% setdiff("chrM")
-param <- readParam(restrict=std.chr)
+param <- readParam(restrict=std.chr, discard=blacklist)
 
 {
     tsmsg("Counting in 10 kb bins")

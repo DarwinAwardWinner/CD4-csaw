@@ -15,14 +15,13 @@ registerDoParallel(cores=parallel::detectCores())
 library(BiocParallel)
 register(MulticoreParam(parallel::detectCores()))
 library(GenomicRanges)
+library(rtracklayer)
 library(SummarizedExperiment)
-library(plyr)
 library(dplyr)
 library(reshape2)
 library(purrr)
 library(csaw)
 library(Matrix)
-library(numDeriv)
 setwd("~/Projects/CD4-csaw")
 
 tsmsg <- function(...) {
@@ -71,9 +70,12 @@ sample.table <- read.xlsx("data_files/ChIP-Seq/sample-tables.xlsx", "Samples") %
 
 stopifnot(all(file.exists(sample.table$bampath)))
 
+tsmsg("Loading blacklist regions")
+blacklist <- import("saved_data/wgEncodeDacMapabilityConsensusExcludable.bed.gz", format="bed")
+
 ## Standard nuclear chromosomes
 std.chr <- extractSeqlevels("Homo sapiens", "UCSC") %>% setdiff("chrM")
-param <- readParam(restrict=std.chr)
+param <- readParam(restrict=std.chr, discard=blacklist)
 param.dedup.on <- reform(param, dedup=TRUE)
 
 ## Determining fragment length using cross-correlation function, see
