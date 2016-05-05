@@ -18,7 +18,10 @@ Once the relevant GEO dataset is made public, these scripts will be
 updated to pull the data from the public release. At that point, it
 should be possible for anyone to reproduce the analysis with these
 scripts. (Although this analysis does not repeat the peak calling and
-some other preliminary steps of the original analysis.)
+some other preliminary steps of the [original analysis][4], which was
+done before I learned the value of reproducible research.)
+
+[4]: https://github.com/DarwinAwardWinner/cd4-histone-paper-code
 
 ## ChIP-Seq analysis pipeline
 
