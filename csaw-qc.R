@@ -20,8 +20,6 @@ library(parallel)
 library(ks)
 library(dplyr)
 
-setwd("~/Projects/CD4-csaw")
-
 ## Ensure output directory exists
 dir.create("results/csaw", FALSE, TRUE)
 

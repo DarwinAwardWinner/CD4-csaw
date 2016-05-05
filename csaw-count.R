@@ -21,7 +21,6 @@ library(dplyr)
 library(purrr)
 library(csaw)
 library(Matrix)
-setwd("~/Projects/CD4-csaw")
 
 tsmsg <- function(...) {
     message(date(), ": ", ...)

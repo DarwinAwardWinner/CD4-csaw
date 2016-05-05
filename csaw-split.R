@@ -2,16 +2,9 @@
 
 library(stringr)
 library(magrittr)
-library(openxlsx)
-library(doParallel)
-options(mc.cores=parallel::detectCores())
-registerDoParallel(cores=parallel::detectCores())
 library(SummarizedExperiment)
 library(dplyr)
-library(edgeR)
-library(limma)
 library(csaw)
-setwd("~/Projects/CD4-csaw")
 
 tsmsg <- function(...) {
     message(date(), ": ", ...)

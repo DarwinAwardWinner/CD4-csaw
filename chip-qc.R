@@ -16,10 +16,8 @@ library(BiocParallel)
 register(SerialParam())
 library(GenomicRanges)
 library(SummarizedExperiment)
-library(plyr)
 library(dplyr)
 library(ChIPQC)
-setwd("~/Projects/CD4-csaw")
 
 tsmsg <- function(...) {
     message(date(), ": ", ...)

@@ -17,8 +17,6 @@ library(SummarizedExperiment)
 library(plyr)
 library(dplyr)
 
-setwd("~/Projects/CD4-csaw")
-
 tsmsg <- function(...) {
     message(date(), ": ", ...)
 }

@@ -18,8 +18,6 @@ library(RColorBrewer)
 library(reshape2)
 library(parallel)
 
-setwd("~/Projects/CD4-csaw")
-
 ## Ensure output directory exists
 dir.create("results/csaw", FALSE, TRUE)
 

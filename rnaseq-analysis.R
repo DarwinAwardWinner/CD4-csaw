@@ -191,8 +191,6 @@ estimateDispByGroup <- function(dge, group=as.factor(dge$samples$group), batch, 
     })
 }
 
-setwd("~/Projects/CD4-csaw")
-
 dir.create("results/RNA-seq/", FALSE, TRUE)
 
 sexp <- readRDS("saved_data/RNASeq-SummarizedExperiment.RDS")
