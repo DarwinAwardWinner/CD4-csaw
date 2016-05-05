@@ -115,7 +115,7 @@ ccftable <- sample.ccf %>%
     dev.off()
 }
 
-max.ccf <- ccftable %>% filter(Delay >= 100) %>% group_by(Sample) %>% filter(CCF==max(CCF))
+max.ccf <- ccftable %>% filter(Delay >= 100) %>% group_by(Sample) %>% summarize(CCF=max(CCF))
 summary(max.ccf$Delay)
 
 ## Determining window size using findMaxima & profileSites, see csaw
