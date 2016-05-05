@@ -14,6 +14,12 @@ analysis using newer features of [limma][3] such as quality weights.
 [2]: https://bioconductor.org/packages/release/bioc/html/csaw.html
 [3]: https://bioconductor.org/packages/release/bioc/html/limma.html
 
+Once the relevant GEO dataset is made public, these scripts will be
+updated to pull the data from the public release. At that point, it
+should be possible for anyone to reproduce the analysis with these
+scripts. (Although this analysis does not repeat the peak calling and
+some other preliminary steps of the original analysis.)
+
 ## ChIP-Seq analysis pipeline
 
 1. `csaw-pre-count-qc.R`: Perform some QC steps that do not require
