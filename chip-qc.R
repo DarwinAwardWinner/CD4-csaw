@@ -9,15 +9,17 @@ library(annotate)
 library(BSgenome.Hsapiens.UCSC.hg19)
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 library(org.Hs.eg.db)
+library(GenomicRanges)
+library(SummarizedExperiment)
+library(dplyr)
+library(ChIPQC)
+
+## Don't run in parallel because of memory issues
 library(doParallel)
 options(mc.cores=1)
 registerDoSEQ()
 library(BiocParallel)
 register(SerialParam())
-library(GenomicRanges)
-library(SummarizedExperiment)
-library(dplyr)
-library(ChIPQC)
 
 tsmsg <- function(...) {
     message(date(), ": ", ...)
