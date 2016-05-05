@@ -89,30 +89,44 @@ ccftable <- sample.ccf %>%
     melt(measure.vars = "CCF") %>%
     rename(Sample=L1) %>%
     dcast(Sample + Delay ~ variable) %>%
+    group_by(Sample) %>%
+    mutate(RelCCF=CCF/max(CCF)) %>%
+    ungroup %>%
     inner_join(sample.table, by="Sample")
+
+refline.table <- data.frame(
+    Reference=c("Read Length (100bp)", "Nucleosome Footprint (147bp)"),
+    Xintercept=c(100, 147))
 
 {
     baseplot <- ggplot(ccftable) +
         facet_wrap(~ChIP, scales="free") +
-        aes(x=Delay, y=CCF, group=Sample, color=TreatmentGroup) +
+        aes(x=Delay, y=CCF, group=Sample, color=TreatmentGroup, linetype=NA) +
         ylim(0,NA) +
-        geom_vline(xintercept=100, linetype="dashed", color="black", alpha=0.5) +
-        geom_vline(xintercept=147, linetype="solid", color="black", alpha=0.5)
+        geom_vline(data=refline.table,
+                   aes(xintercept=Xintercept, linetype=Reference, color=NA),
+                   color="black", alpha=0.5) +
+        scale_color_hue(name="Group") +
+        scale_linetype(name="Reference") +
+        theme(legend.position="bottom")
     p <- list(
         Raw=baseplot +
-            geom_line(size=0.25) +
+            geom_line(size=0.25, linetype="solid") +
             ggtitle("Cross-Correlation Function, Raw"),
         loess_span0.05=baseplot +
-            geom_smooth(fill=NA, method="loess", span=0.05, n=500, size=0.25) +
+            geom_smooth(fill=NA, method="loess", span=0.05, n=500, size=0.25, linetype="solid") +
             ggtitle("Cross-Correlation Function, Loess-Smoothed (span = 0.05)"),
         loess_span0.075=baseplot +
-            geom_smooth(fill=NA, method="loess", span=0.075, n=500, size=0.25) +
+            geom_smooth(fill=NA, method="loess", span=0.075, n=500, size=0.25, linetype="solid") +
             ggtitle("Cross-Correlation Function, Loess-Smoothed (span = 0.075)"),
         loess_span0.1=baseplot +
-            geom_smooth(fill=NA, method="loess", span=0.1, n=500, size=0.25) +
+            geom_smooth(fill=NA, method="loess", span=0.1, n=500, size=0.25, linetype="solid") +
             ggtitle("Cross-Correlation Function, Loess-Smoothed (span = 0.1)"))
     pdf("results/csaw/CCF-plots.pdf", width=16, height=16)
     print(p)
+    dev.off()
+    pdf("results/csaw/CCF-plots-relative.pdf", width=16, height=16)
+    print(lapply(p, . %>% add(aes(y=RelCCF))))
     dev.off()
 }
 
