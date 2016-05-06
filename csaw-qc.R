@@ -346,6 +346,7 @@ for (chip in chips) { in.forked.process({
     dge$genes <- rowRanges(window.counts) %>% as.data.frame %>% lapply(Rle) %>% DataFrame
     dge$samples %<>% cbind(colData(window.counts)) %>% as.data.frame
     dge$samples$nf.logratio <- dge$samples %$% log2(PeakNormFactors / CompNormFactors)
+    saveRDS(dge, sprintf("saved_data/csaw-DGEList-%s.rda", chip))
 
     {
         tsmsg("Testing norm factors for association with experimental factors")
