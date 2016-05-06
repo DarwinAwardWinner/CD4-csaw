@@ -122,10 +122,10 @@ refline.table <- data.frame(
         loess_span0.1=baseplot +
             geom_smooth(fill=NA, method="loess", span=0.1, n=500, size=0.25, linetype="solid") +
             ggtitle("Cross-Correlation Function, Loess-Smoothed (span = 0.1)"))
-    pdf("results/csaw/CCF-plots.pdf", width=16, height=16)
+    pdf("results/csaw/CCF-plots.pdf", width=12, height=8)
     print(p)
     dev.off()
-    pdf("results/csaw/CCF-plots-relative.pdf", width=16, height=16)
+    pdf("results/csaw/CCF-plots-relative.pdf", width=12, height=8)
     print(lapply(p, . %>% add(aes(y=RelCCF))))
     dev.off()
 }
