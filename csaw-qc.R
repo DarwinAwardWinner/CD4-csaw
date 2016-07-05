@@ -274,6 +274,19 @@ for (chip in chips) { in.forked.process({
     chip.peaks <- import.narrowPeak(
         sprintf(fmt="data_files/ChIP-Seq/%s_peaks_IDR_filtered.bed", chip))
 
+    ## (Frag length - 1) / (bin width) + 1, assuming non-overlapping,
+    ## non-gapped bins
+    count.duplication.factor <- (colData(window.counts)$ext - 1) / median(width(rowRanges(window.counts))) + 1
+    colData(window.counts)$approx.reads.in.peaks <- {
+        window.counts %>%
+            subsetByOverlaps(chip.peaks) %>%
+            assay("counts") %>% colSums %>%
+            divide_by(count.duplication.factor)
+    }
+    colData(window.counts)$approx.fraction.in.peaks <- {
+        colData(window.counts)$approx.reads.in.peaks / colData(window.counts)$totals
+    }
+
     ## Filter to windows with at least 10 counts total
     keep <- rowSums(assay(window.counts)) >= 10
     window.counts %<>% .[keep,]
