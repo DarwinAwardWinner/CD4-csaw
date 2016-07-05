@@ -277,14 +277,14 @@ for (chip in chips) { in.forked.process({
     ## (Frag length - 1) / (bin width) + 1, assuming non-overlapping,
     ## non-gapped bins
     count.duplication.factor <- (colData(window.counts)$ext - 1) / median(width(rowRanges(window.counts))) + 1
-    colData(window.counts)$approx.reads.in.peaks <- {
+    colData(window.counts)$RiP.approx <- {
         window.counts %>%
             subsetByOverlaps(chip.peaks) %>%
             assay("counts") %>% colSums %>%
             divide_by(count.duplication.factor)
     }
-    colData(window.counts)$approx.fraction.in.peaks <- {
-        colData(window.counts)$approx.reads.in.peaks / colData(window.counts)$totals
+    colData(window.counts)$FRiP.approx <- {
+        colData(window.counts)$RiP.approx / colData(window.counts)$totals
     }
 
     ## Filter to windows with at least 10 counts total
@@ -363,14 +363,16 @@ for (chip in chips) { in.forked.process({
 
     {
         tsmsg("Testing norm factors for association with experimental factors")
-        xvars <- c("Celltype", "Day", "Donor", "TreatmentGroup")
-        yvars <- c("lib.size", "CompNormFactors", "HANormFactors", "PeakNormFactors", "nf.logratio")
+        xvars <- c("Celltype", "Day", "Donor", "TreatmentGroup", "FRiP.approx")
+        yvars <- c("lib.size", "CompNormFactors", "HANormFactors", "PeakNormFactors", "nf.logratio", "FRiP.approx")
 
         formulas <- list()
         for (xv in xvars) {
             for (yv in yvars) {
-                modname <- sprintf("%s.vs.%s", yv, xv)
-                formulas[[modname]] <- as.formula(sprintf("%s ~ %s", yv, xv))
+                if (xv != yv) {
+                    modname <- sprintf("%s.vs.%s", yv, xv)
+                    formulas[[modname]] <- as.formula(sprintf("%s ~ %s", yv, xv))
+                }
             }
         }
 
@@ -383,7 +385,9 @@ for (chip in chips) { in.forked.process({
     {
         tsmsg("Plotting norm factors vs experimental factors")
         ## Plot norm factors vs lib sizes
-        nf.vs.ls <- dge$samples %>% select(LibSize=lib.size, HiAb=HANormFactors, Peak=PeakNormFactors, Comp=CompNormFactors) %>%
+        nf.vs.ls <- dge$samples %>%
+            select(LibSize=lib.size, HiAbNorm=HANormFactors,
+                   PeakNorm=PeakNormFactors, CompNorm=CompNormFactors) %>%
             melt(id.vars="LibSize", variable.name = "NormType", value.name="NormFactor")
         p <- list(ggplot(nf.vs.ls) +
                   aes(x=LibSize, y=NormFactor, group=NormType, color=NormType, fill=NormType) +
@@ -391,6 +395,22 @@ for (chip in chips) { in.forked.process({
                   scale_x_continuous(trans=log_trans(2)) +
                   scale_y_continuous(trans=log_trans(2)) +
                   ggtitle("Norm Factors vs Library Sizes"))
+        ## Plot norm factors & lib sizes vs FRiP
+        nf.ls.vs.frip <- dge$samples %>%
+            select(LibSize=lib.size, HiAbNorm=HANormFactors,
+                   PeakNorm=PeakNormFactors, CompNorm=CompNormFactors,
+                   FRiP=FRiP.approx, Group=Group, Donor=Donor) %>%
+            melt(id.vars=c("FRiP", "Group", "Donor"), variable.name = "Var", value.name="Value")
+        p <- c(p, list(ggplot(nf.ls.vs.frip) +
+                       aes(x=FRiP, y=Value, shape=Donor, color=Group,
+                           group=1) +
+                       geom_smooth(method="lm", alpha=0.15, color="gray65", size=0.5) +
+                       geom_point(size=2) +
+                       scale_shape_manual(values=c(15:18)) +
+                       xlab("Fraction of Reads In Peaks") +
+                       theme(legend.position="bottom",
+                             legend.direction="horizontal") +
+                       facet_wrap(~Var, ncol=2, scales="free_y")))
         ## Plot lib sizes & norm factors vs experimental factors
         ls.nf.vs.exp <- dge$samples %>%
             select(
@@ -398,20 +418,23 @@ for (chip in chips) { in.forked.process({
                 Group=TreatmentGroup, LibSize=lib.size,
                 HighAbundanceNormFactor=HANormFactors,
                 PeakNormFactor=PeakNormFactors,
-                CompositionNormFactor=CompNormFactors) %>%
+                CompositionNormFactor=CompNormFactors,
+                FRiP=FRiP.approx) %>%
             melt(id.vars=c("Sample", "Celltype", "Day", "Donor",
                            "Group"),
                  variable.name="Factor", value.name="Value")
         p0 <- ggplot(ls.nf.vs.exp) +
-            aes(x=Value) + scale_x_continuous(trans=log_trans(2)) +
-            geom_point(position=position_jitter(height=0.25)) +
-            facet_wrap(~Factor, scales="free_x")
+            aes(y=Value) + scale_y_continuous(trans=log_trans(2)) +
+            geom_boxplot(color="gray65", outlier.colour = NA, alpha=0.5) +
+            geom_point(position=position_jitter(width=0.25)) +
+            facet_wrap(~Factor, scales="free_y", nrow=3) +
+            theme(axis.text.x=element_text(angle = 30, hjust = 1))
         vars.to.plot <- c("Celltype", "Day", "Donor", "Group")
         for (i in vars.to.plot) {
-            p <- c(p, list(p0 + aes_string(y=i) +
+            p <- c(p, list(p0 + aes_string(x=i) +
                            ggtitle(sprintf("Library Sizes and Norm Factors vs %s", i))))
         }
-        pdf(sprintf("results/csaw/%s-normfactors.pdf", chip))
+        pdf(sprintf("results/csaw/%s-normfactors.pdf", chip), width=8, height=8)
         print(p)
         dev.off()
     }
@@ -470,6 +493,7 @@ for (chip in chips) { in.forked.process({
             scale_y_continuous(name="log2(FC)", expand=c(0,0)) +
             coord_fixed(0.5)
     }
+
     p <- seq_len(floor(length(cn.higher.samples) / 2)) %>%
         lapply(function(i) {
             s1 <- cn.higher.samples[i]
@@ -490,6 +514,7 @@ for (chip in chips) { in.forked.process({
             withGC(doMAPlot(bigbin.logcpm, s1, s2) +
                    ggtitle(title))
         })
+
     {
         tsmsg("Printing MA plots")
         pdf(sprintf("results/csaw/%s Selected Sample MA Plots.pdf", chip), width=10, height=10)
@@ -499,6 +524,7 @@ for (chip in chips) { in.forked.process({
         withGC(print(p2))
         dev.off()
     }
+
     tsmsg("Saving image")
     save.image(sprintf("saved_data/csaw-%s.rda", chip))
     NULL
