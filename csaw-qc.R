@@ -357,6 +357,8 @@ for (chip in chips) { in.forked.process({
     rownames(dge$counts) <- NULL
     gc()
     dge$genes <- rowRanges(window.counts) %>% as.data.frame %>% lapply(Rle) %>% DataFrame
+    ## aveLogCPM takes forever to run, so let's save the result here
+    dge$genes$Abundance <- abundances
     dge$samples %<>% cbind(colData(window.counts)) %>% as.data.frame
     dge$samples$nf.logratio <- dge$samples %$% log2(PeakNormFactors / CompNormFactors)
     saveRDS(dge, sprintf("saved_data/csaw-DGEList-%s.RDS", chip))
