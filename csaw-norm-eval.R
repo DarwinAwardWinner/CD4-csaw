@@ -253,9 +253,7 @@ in.forked.process <- function(expr) {
 
 chips <- c("H3K4me3", "H3K4me2", "H3K27me3")
 
-chip.logCPM.thresholds <- c(H3K4me3=1,
-                            H3K4me2=1,
-                            H3K27me3=-0.75)
+ave.count.threshold <- 5
 
 for (chip in chips) { in.forked.process({
     tsmsg("Reading data for ", chip)
@@ -268,7 +266,8 @@ for (chip in chips) { in.forked.process({
 
     tsmsg("Filtering")
     ab <- dge$genes$Abundance
-    present <- ab >= chip.logCPM.thresholds[chip]
+    thresh <- aveLogCPM(5, lib.size=mean(dge$samples$totals))
+    present <- ab >= thresh
     dge <- dge[present,]
 
     ## Try both normalizations
