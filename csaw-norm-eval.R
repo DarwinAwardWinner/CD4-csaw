@@ -319,10 +319,10 @@ for (chip in chips) { in.forked.process({
     {
         pdf(sprintf("results/csaw/%s-norm-eval.pdf", chip), width=8, height=8)
         plotBCV(dge.eff, ylim=c(0, 1.5), main="BCV Plot, Efficiency Normalized")
-        plotQLDisp(fit.eff, main="QL Dispersion Plot, Efficiency Normalized")
-        print(mdsplot.eff)
         plotBCV(dge.comp, ylim=c(0, 1.5), main="BCV Plot, Composition Normalized")
+        plotQLDisp(fit.eff, main="QL Dispersion Plot, Efficiency Normalized")
         plotQLDisp(fit.comp, main="QL Dispersion Plot, Composition Normalized")
+        print(mdsplot.eff)
         print(mdsplot.comp)
         dev.off()
     }
