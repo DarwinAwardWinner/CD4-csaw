@@ -256,64 +256,70 @@ chips <- c("H3K4me3", "H3K4me2", "H3K27me3")
 ave.count.threshold <- 5
 
 for (chip in chips) { in.forked.process({
-    tsmsg("Reading data for ", chip)
-    ## Let's avoid re-doing all the normalization and filtering by
-    ## loading the saved data from csaw-qc.R
-    dge <- readRDS(sprintf("saved_data/csaw-DGEList-%s.RDS", chip))
-    dge <- dge[,dge$samples %$% order(ChIP, Celltype, Day, Donor, Sample)]
-    chip.peaks <- import.narrowPeak(
-        sprintf(fmt="data_files/ChIP-Seq/%s_peaks_IDR_filtered.bed", chip))
+    datafile <- sprintf("saved_data/csaw-norm-eval-%s.rda", chip)
+    if (file.exists(datafile)) {
+        tsmsg("Loading saved data for ", chip)
+        load(datafile)
+    } else {
+        tsmsg("Reading data for ", chip)
+        ## Let's avoid re-doing all the normalization and filtering by
+        ## loading the saved data from csaw-qc.R
+        dge <- readRDS(sprintf("saved_data/csaw-DGEList-%s.RDS", chip))
+        dge <- dge[,dge$samples %$% order(ChIP, Celltype, Day, Donor, Sample)]
+        chip.peaks <- import.narrowPeak(
+            sprintf(fmt="data_files/ChIP-Seq/%s_peaks_IDR_filtered.bed", chip))
 
-    tsmsg("Filtering")
-    ab <- dge$genes$Abundance
-    thresh <- aveLogCPM(5, lib.size=mean(dge$samples$totals))
-    present <- ab >= thresh
-    dge <- dge[present,]
+        tsmsg("Filtering")
+        ab <- dge$genes$Abundance
+        thresh <- aveLogCPM(5, lib.size=mean(dge$samples$totals))
+        present <- ab >= thresh
+        dge <- dge[present,]
 
-    ## Try both normalizations
-    dge.comp <- dge
-    dge.eff <- dge
+        ## Try both normalizations
+        dge.comp <- dge
+        dge.eff <- dge
 
-    dge.comp$samples %<>% mutate(norm.factors=CompNormFactors)
-    dge.eff$samples %<>% mutate(norm.factors=PeakNormFactors)
+        dge.comp$samples %<>% mutate(norm.factors=CompNormFactors)
+        dge.eff$samples %<>% mutate(norm.factors=PeakNormFactors)
 
-    tsmsg("Creating MDS plots")
-    mdsdist.comp <- suppressPlot(plotMDS(dge.comp, top=15000)) %$% distance.matrix %>% as.dist
-    mdsdims.comp <- suppressWarnings(cmdscale(mdsdist.comp, k=ncol(dge.comp)-1)) %>%
-        set_colnames(str_c("PC", seq_len(ncol(.)))) %>%
-        data.frame %>%
-        cbind(., dge.comp$samples)
-    mdsplot.comp <- ggplot(mdsdims.comp) +
-        aes(x=PC1, y=PC2, shape=Celltype, color=Day, group=Donor:Celltype, linetype=Donor) +
-        geom_point(size=5) +
-        geom_path(aes(color=NA)) +
-        coord_fixed() +
-        ggtitle("MDS Plot, Composition Normalized")
+        tsmsg("Creating MDS plots")
+        mdsdist.comp <- suppressPlot(plotMDS(dge.comp, top=15000)) %$% distance.matrix %>% as.dist
+        mdsdims.comp <- suppressWarnings(cmdscale(mdsdist.comp, k=ncol(dge.comp)-1)) %>%
+            set_colnames(str_c("PC", seq_len(ncol(.)))) %>%
+            data.frame %>%
+            cbind(., dge.comp$samples)
+        mdsplot.comp <- ggplot(mdsdims.comp) +
+            aes(x=PC1, y=PC2, shape=Celltype, color=Day, group=Donor:Celltype, linetype=Donor) +
+            geom_point(size=5) +
+            geom_path(aes(color=NA)) +
+            coord_fixed() +
+            ggtitle("MDS Plot, Composition Normalized")
 
-    mdsdist.eff <- suppressPlot(plotMDS(dge.eff, top=15000)) %$% distance.matrix %>% as.dist
-    mdsdims.eff <- suppressWarnings(cmdscale(mdsdist.eff, k=ncol(dge.eff)-1)) %>%
-        set_colnames(str_c("PC", seq_len(ncol(.)))) %>%
-        data.frame %>%
-        cbind(., dge.eff$samples)
-    mdsplot.eff <- ggplot(mdsdims.eff) +
-        aes(x=PC1, y=PC2, shape=Celltype, color=Day, group=Donor:Celltype, linetype=Donor) +
-        geom_point(size=5) +
-        geom_path(aes(color=NA)) +
-        coord_fixed() +
-        ggtitle("MDS Plot, Efficiency Normalized")
+        mdsdist.eff <- suppressPlot(plotMDS(dge.eff, top=15000)) %$% distance.matrix %>% as.dist
+        mdsdims.eff <- suppressWarnings(cmdscale(mdsdist.eff, k=ncol(dge.eff)-1)) %>%
+            set_colnames(str_c("PC", seq_len(ncol(.)))) %>%
+            data.frame %>%
+            cbind(., dge.eff$samples)
+        mdsplot.eff <- ggplot(mdsdims.eff) +
+            aes(x=PC1, y=PC2, shape=Celltype, color=Day, group=Donor:Celltype, linetype=Donor) +
+            geom_point(size=5) +
+            geom_path(aes(color=NA)) +
+            coord_fixed() +
+            ggtitle("MDS Plot, Efficiency Normalized")
 
 
-    design <- model.matrix(~0 + TreatmentGroup + Donor, dge$samples)
-    colnames(design) %<>%
-        str_replace("^TreatmentGroup", "") %>%
-        str_replace("^DonorDn", "Donor")
+        design <- model.matrix(~0 + TreatmentGroup + Donor, dge$samples)
+        colnames(design) %<>%
+            str_replace("^TreatmentGroup", "") %>%
+            str_replace("^DonorDn", "Donor")
 
-    tsmsg("Estimating dispersions")
-    dge.comp %<>% estimateDisp(design, robust=TRUE)
-    fit.comp <- glmQLFit(dge.comp, design, robust=TRUE)
+        tsmsg("Estimating dispersions")
+        dge.comp %<>% estimateDisp(design, robust=TRUE)
+        fit.comp <- glmQLFit(dge.comp, design, robust=TRUE)
 
-    dge.eff %<>% estimateDisp(design, robust=TRUE)
-    fit.eff <- glmQLFit(dge.eff, design, robust=TRUE)
+        dge.eff %<>% estimateDisp(design, robust=TRUE)
+        fit.eff <- glmQLFit(dge.eff, design, robust=TRUE)
+    }
 
     tsmsg("Making plots")
     {
@@ -327,7 +333,9 @@ for (chip in chips) { in.forked.process({
         dev.off()
     }
 
-    tsmsg("Saving image")
-    save.image(sprintf("saved_data/csaw-norm-eval-%s.rda", chip))
+    if (!file.exists(datafile)) {
+        tsmsg("Saving image")
+        save.image(sprintf("saved_data/csaw-norm-eval-%s.rda", chip))
+    }
     NULL
 })}
