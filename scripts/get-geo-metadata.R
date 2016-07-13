@@ -86,6 +86,7 @@ first.accessible <- function(paths, mode=0) {
     return(NA_character_)
 }
 
+## Only performs mutations if all of given names are present in .data
 mutate_if_present <- function(.data, names, ...) {
     if (all(names %in% base::names(.data))) {
         mutate_(.data, .dots = lazyeval::lazy_dots(...))
@@ -120,9 +121,11 @@ samplemeta <- lapply(esets, function(eset) {
                donor_id=sprintf("D%s", donor_id),
                submission_date=mdy(submission_date),
                last_update_date=mdy(last_update_date)) %>%
+        ## Only in RNA-seq
         mutate_if_present(
             "technical_batch",
             technical_batch=sprintf("B%s", technical_batch)) %>%
+        ## Only in ChIP-seq
         mutate_if_present(
             "chip_antibody",
             chip_antibody=factor(chip_antibody,
