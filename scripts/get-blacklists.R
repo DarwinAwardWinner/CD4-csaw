@@ -1,5 +1,11 @@
 #!/usr/bin/env Rscript
 
+getScriptPath <- function() {
+    argv <-commandArgs()
+    na.omit(stringr::str_match(argv, "^--file=(.*)$")[,2])[1]
+}
+setwd(file.path(dirname(getScriptPath()), ".."))
+
 options(download.file.method="wget", download.file.extra="--continue --tries=2")
 
 ## Remember to cite: https://sites.google.com/site/anshulkundaje/projects/blacklists

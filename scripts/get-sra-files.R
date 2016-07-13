@@ -1,5 +1,11 @@
 #!/usr/bin/env Rscript
 
+getScriptPath <- function() {
+    argv <-commandArgs()
+    na.omit(stringr::str_match(argv, "^--file=(.*)$")[,2])[1]
+}
+setwd(file.path(dirname(getScriptPath()), ".."))
+
 library(GEOquery)
 library(SRAdb)
 library(stringr)
