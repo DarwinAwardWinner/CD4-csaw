@@ -2,7 +2,9 @@
 
 getScriptPath <- function() {
     argv <-commandArgs()
-    na.omit(stringr::str_match(argv, "^--file=(.*)$")[,2])[1]
+    dir <- na.omit(stringr::str_match(argv, "^--file=(.*)$")[,2])[1]
+    if (!is.na(dir) && !is.null(dir))
+        return(dir)
 }
 setwd(file.path(dirname(getScriptPath()), ".."))
 
