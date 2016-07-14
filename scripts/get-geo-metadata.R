@@ -100,10 +100,8 @@ samplemeta <- lapply(esets, function(eset) {
                SRA=str_replace(SRA, "^\\Qhttp://www.ncbi.nlm.nih.gov/sra?term=", "")) %>%
         ## Get all relevant SRA IDs
         cbind(sraConvert(.$SRA, out_type=as.list(args(sraConvert))$out_type, sra_con) %>% setNames(str_c("SRA_", names(.)))) %>%
-        ## Get the basename of the download URL
-        mutate(SRA=NULL,
-               SRA_file=listSRAfile (in_acc = SRA_run, sra_con = sra_con, fileType ="sra", srcType="fasp") %$%
-                   fasp[match(SRA_run, run)] %>% basename) %>%
+        ## Clear the no-longer needed SRA
+        mutate(SRA=NULL) %>%
         ## Fix column types and ensure that non-numeric variables
         ## never start with numbers
         mutate(cell_type=factor(cell_type, levels=c("Naive", "Memory")),

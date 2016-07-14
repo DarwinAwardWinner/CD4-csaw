@@ -29,40 +29,14 @@ tsmsg <- function(...) {
     message(date(), ": ", ...)
 }
 
-tsmsg("Loading sample data")
+samplemeta.file <- "saved_data/samplemeta-RNASeq.RDS"
+sumexp.outfile <- "saved_data/SummarizedExperiment-RNASeq.RDS"
 
-sample.table <- read.xlsx("data_files/RNA-Seq/sample-tables.xlsx", "Samples") %>%
-    rename(
-        Celltype=`characteristics:.celltype`,
-        Activated=`characteristics:.activated`,
-        Day=`characteristics:.days.after.activation`,
-        Donor=`characteristics:.donor.ID`,
-        Batch=`characteristics:.technical.batch`,
-        file.name=raw.file) %>%
-    set_colnames(make.names(colnames(.))) %>%
-    ## Drop some columns we don't care about
-    dplyr::select(
-        -Sample.name,
-        -source.name,
-        -organism,
-        -molecule,
-        -description,
-        -processed.data.file
-    ) %>%
-    ## Make sure no factorial variables can be accidentally
-    ## numericized
-    mutate(
-        Batch=sprintf("B%i", Batch),
-        Donor=sprintf("Dn%s", Donor),
-        Day=sprintf("D%i", Day)
-    ) %>%
-    ## Compute full path to bam file
-    mutate(
-        bampath=file.path("data_files/RNA-Seq", file.name)
-    )
+tsmsg("Loading sample metadata")
+samplemeta <- readRDS(samplemeta.file) %>%
+    mutate(bam_file=file.path("bam_files", str_c(SRA_run, ".bam")))
 
 tsmsg("Reading annotation data")
-
 ## This merges exons into genes (GRanges to GRangesList)
 gr.to.grl <- function(gr, featureType="exon", attrType="gene_id") {
     gr <- gr[gr$type %in% featureType]
@@ -77,7 +51,7 @@ grl.to.saf <- function(grl) {
                Start=start(gr),
                End=end(gr),
                Strand=as.vector(strand(gr)),
-               GeneID=rep(names(grl), elementLengths(grl)))
+               GeneID=rep(names(grl), lengths(grl)))
 }
 
 gene.exons <- exonsBy(TxDb.Hsapiens.UCSC.hg19.knownGene, "gene")
@@ -95,25 +69,29 @@ gene.annot <-
 mcols(gene.exons) <- gene.annot
 saf <- grl.to.saf(gene.exons)
 
+tsmsg("Computing sense counts")
 sense.fc <- featureCounts(
-    sample.table$bampath, annot.ext=saf,
+    samplemeta$bam_file, annot.ext=saf,
     strandSpecific=1,
     nthreads=getOption("mc.cores", 2))
+tsmsg("Computing antisense counts")
 antisense.fc <- featureCounts(
-    sample.table$bampath, annot.ext=saf,
+    samplemeta$bam_file, annot.ext=saf,
     strandSpecific=2,
     nthreads=getOption("mc.cores", 2))
+tsmsg("Computing unstranded counts")
 unstranded.fc <- featureCounts(
-    sample.table$bampath, annot.ext=saf,
+    samplemeta$bam_file, annot.ext=saf,
     strandSpecific=0,
     nthreads=getOption("mc.cores", 2))
 
+tsmsg("Saving SummarizedExperiment")
 sexp <- SummarizedExperiment(
     assays=List(
         counts=unstranded.fc$counts,
         sense.counts=sense.fc$counts,
         antisense.counts=antisense.fc$counts),
-    colData=as(sample.table, "DataFrame"),
+    colData=as(samplemeta, "DataFrame"),
     rowRanges=gene.exons,
     metadata=List(
         stat=List(
@@ -124,6 +102,4 @@ sexp <- SummarizedExperiment(
 colnames(sexp) <- colData(sexp)$title
 rownames(sexp) <- mcols(sexp)$ENTREZ
 
-saveRDS(sexp, "saved_data/RNASeq-SummarizedExperiment.RDS")
-
-save.image("saved_data/rnaseq-count.rda")
+saveRDS(sexp, sumexp.outfile)
