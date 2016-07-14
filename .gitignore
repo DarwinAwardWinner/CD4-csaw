@@ -10,3 +10,4 @@
 # analysis pipeline are saved
 /saved_data
 /sra_files
+/.snakemake/
