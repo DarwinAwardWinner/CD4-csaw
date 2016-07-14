@@ -19,6 +19,15 @@ tsmsg <- function(...) {
     message(date(), ": ", ...)
 }
 
+first.accessible <- function(paths, mode=0) {
+    for (path in paths) {
+        if (file.access(path, mode) == 0) {
+            return(path)
+        }
+    }
+    return(NA_character_)
+}
+
 sra_con <- {
     sqlfile <- file.path("saved_data", "SRAmetadb.sqlite")
     if(!file.exists(sqlfile)) {
@@ -59,4 +68,4 @@ samplemeta <- lapply(samplemeta.files, readRDS) %>% do.call(what=rbind.fill)
 
 getSRAfile(samplemeta$SRA_run,
            sra_con, destDir=sra_dir, makeDirectory = TRUE)
-assert_that(all(file.exists(samplemeta$download_path)))
+assert_that(all(file.exists(file.path(sra_dir, samplemeta$SRA_file))))

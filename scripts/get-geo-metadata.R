@@ -77,15 +77,6 @@ get_samplemeta_from_geo_pdata <- function(eset) {
     cbind(front_data, samplemeta, relations, back_data) %>% fac2char
 }
 
-first.accessible <- function(paths, mode=0) {
-    for (path in paths) {
-        if (file.access(path, mode) == 0) {
-            return(path)
-        }
-    }
-    return(NA_character_)
-}
-
 ## Only performs mutations if all of given names are present in .data
 mutate_if_present <- function(.data, names, ...) {
     if (all(names %in% base::names(.data))) {
@@ -111,8 +102,8 @@ samplemeta <- lapply(esets, function(eset) {
         cbind(sraConvert(.$SRA, out_type=as.list(args(sraConvert))$out_type, sra_con) %>% setNames(str_c("SRA_", names(.)))) %>%
         ## Get the basename of the download URL
         mutate(SRA=NULL,
-               download_path=listSRAfile (in_acc = SRA_run, sra_con = sra_con, fileType ="sra", srcType="fasp") %$%
-                   fasp[match(SRA_run, run)] %>% basename %>% file.path(sra_dir, .)) %>%
+               SRA_file=listSRAfile (in_acc = SRA_run, sra_con = sra_con, fileType ="sra", srcType="fasp") %$%
+                   fasp[match(SRA_run, run)] %>% basename) %>%
         ## Fix column types and ensure that non-numeric variables
         ## never start with numbers
         mutate(cell_type=factor(cell_type, levels=c("Naive", "Memory")),
