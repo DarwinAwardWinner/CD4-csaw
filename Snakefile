@@ -1,4 +1,5 @@
 import os.path
+from subprocess import check_call
 
 from rpy2 import robjects
 from rpy2.robjects import pandas2ri
@@ -53,3 +54,13 @@ chipseq_bam_files = [ "bam_files/{}.bam".format(basename) for basename in chipse
 rule count_rnaseq_reads:
     input: samplemeta="saved_data/samplemeta-RNASeq.RDS", bam_files=rnaseq_bam_files
     output: "saved_data/SummarizedExperiment-RNASeq.RDS"
+    threads: 8
+    run:
+        cmd = [
+            "scripts/rnaseq-count.R",
+            "SAMPLEMETA_FILE={}".format(input.samplemeta),
+            "BAM_FILES={}".format(",".join(input.bam_files)),
+            "SUMEXP_OUTPUT_FILE={}".format(output[0]),
+            "THREADS={}".format(threads)
+        ]
+        check_call(cmd)
