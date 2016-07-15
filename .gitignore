@@ -12,3 +12,5 @@
 /sra_files
 /.snakemake/
 /bam_files
+.Rsubread_UserProvidedAnnotation_pid*
+temp-core-*
