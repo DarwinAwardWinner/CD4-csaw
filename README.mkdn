@@ -1,28 +1,21 @@
 # Re-analysis of a combined ChIP-Seq & RNA-Seq data set
 
 This is the code for a re-analysis of a [GEO dataset][1] that I
-originally analyzed for [this paper][5] using statistical methods that
+originally analyzed for [this paper][2] using statistical methods that
 were not yet available at the time, such as the
-[csaw Bioconductor package][2], which provides a principled way to
+[csaw Bioconductor package][3], which provides a principled way to
 normalize windowed counts of ChIP-Seq reads and test them for
 differential binding. The original paper only analyzed binding within
 pre-defined promoter regions. In addition, some improvements have also
-been made to the RNA-seq analysis using newer features of [limma][3]
+been made to the RNA-seq analysis using newer features of [limma][4]
 such as quality weights.
-
-[1]: http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE73214
-[5]: http://www.ncbi.nlm.nih.gov/pubmed/27170561
-[2]: https://bioconductor.org/packages/release/bioc/html/csaw.html
-[3]: https://bioconductor.org/packages/release/bioc/html/limma.html
 
 In time, these scripts will be updated to pull the data from the
 public release. At that point, it should be possible for anyone to
 reproduce the analysis with these scripts. (Although this analysis
 does not yet repeat the peak calling and some other preliminary steps
-of the [original analysis][4], which was done before I learned the
+of the [original analysis][5], which was done before I learned the
 value of reproducible research.)
-
-[4]: https://github.com/DarwinAwardWinner/cd4-histone-paper-code
 
 ## ChIP-Seq analysis pipeline
 
@@ -56,3 +49,9 @@ mitigating the batch effects in the data.
 
 1. `rnaseq-count.R`: Generate gene counts for each sample
 2. `rnaseq-analysis.R`: Perform differential expression analysis using limma
+
+[1]: http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE73214
+[2]: http://www.ncbi.nlm.nih.gov/pubmed/27170561
+[3]: https://bioconductor.org/packages/release/bioc/html/csaw.html
+[4]: https://bioconductor.org/packages/release/bioc/html/limma.html
+[5]: https://github.com/DarwinAwardWinner/cd4-histone-paper-code
