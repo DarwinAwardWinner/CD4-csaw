@@ -64,6 +64,9 @@ def read_R_dataframe(rdsfile):
     df = readRDS((robjects.StrVector([rdsfile])))
     return(pandas2ri.ri2py(df))
 
+subworkflow hg38_ref:
+    workdir: os.path.expanduser("~/references/hg38")
+
 rule all:
     output: "temp"
     shell: 'false'
@@ -114,6 +117,46 @@ rule extract_fastq:
             for retcode, cmd in zip(retcodes, cmds):
                 if retcode != 0:
                     raise CalledProcessError(rercode, cmd)
+
+rule align_rnaseq_with_star_single_end:
+    '''Align fastq file with star'''
+    input: fastq='fastq_files/{samplename}.fq.gz',
+           index_sa=hg38_ref('STAR_index_hg38.analysisSet_knownGene/SA'),
+           transcriptome_gff=hg38_ref('knownGene.gff'),
+    output: bam='aligned/rnaseq_star_hg38.analysisSet_knownGene/{samplename}/Aligned.out.bam',
+            sj='aligned/rnaseq_star_hg38.analysisSet_knownGene/{samplename}/SJ.out.tab',
+    params: sam='aligned/rnaseq_star_hg38.analysisSet_knownGene/{samplename}/Aligned.out.sam'
+    threads: 8
+    run:
+        index_genomedir = os.path.dirname(input.index_sa)
+        outdir = os.path.dirname(output.bam)
+        ensure_dir(outdir)
+        read_cmd = list2cmdline(fastq_compression_cmds['fq.gz']['decompress'])
+        star_cmd = [
+            'STAR',
+            '--runThreadN', threads,
+            '--runMode', 'alignReads',
+            '--genomeDir', index_genomedir,
+            '--sjdbGTFfile', input.transcriptome_gff,
+            '--sjdbGTFfeatureExon', 'CDS',
+            '--sjdbGTFtagExonParentTranscript', 'Parent',
+            '--sjdbOverhang', '100',
+            '--readFilesIn', input.fastq,
+            '--readFilesCommand', readcmd,
+            '--outSAMattributes', 'Standard',
+            '--outSAMunmapped', 'Within',
+            '--outFileNamePrefix', outdir,
+        ]
+        # Run STAR
+        shell(list2cmdline(star_cmd))
+        # Convert SAM to sorted BAM
+        shell('''
+        picard-tools SortSam \
+          I={params.sam:q} O={output.bam:q} \
+          SORT_ORDER=coordinate VALIDATION_STRINGENCY=LENIENT
+        ''')
+        # Delete the SAM file
+        os.remove(params.sam)
 
 rule extract_bam:
     '''Extract SRA file to BAM.'''
