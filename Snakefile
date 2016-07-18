@@ -64,6 +64,10 @@ def read_R_dataframe(rdsfile):
     df = readRDS((robjects.StrVector([rdsfile])))
     return(pandas2ri.ri2py(df))
 
+rule all:
+    output: "temp"
+    shell: 'false'
+
 rule fetch_sra_run:
     '''Script to fetch the .sra file for an SRA run
 
