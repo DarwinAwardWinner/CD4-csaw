@@ -79,13 +79,9 @@ rule fetch_sra_run:
     '''
     output: 'sra_files/{sra_run}.sra'
     shell: 'scripts/get-sra-run-files.R {wildcards.sra_run:q}'
+    resources: concurrent_downloads=1
 
 fastq_compression_cmds = {
-    # i.e. no compression
-    'fq': {
-        'compress': ['cat'],
-        'decompress': ['cat'],
-    },
     'fq.gz': {
         'compress': ['gzip', '-c'],
         'decompress': ['gzip', '-d', '-c'],
@@ -98,6 +94,11 @@ fastq_compression_cmds = {
         'compress': ['quip', '-i', 'fastq', '-o', 'quip', '-c' ],
         'decompress': ['quip', '-i', 'quip', '-o', 'fastq', '-c' ],
     },
+    # i.e. no compression
+    'fq': {
+        'compress': ['cat'],
+        'decompress': ['cat'],
+    },
 }
 
 rule extract_fastq:
@@ -105,7 +106,6 @@ rule extract_fastq:
     input: 'sra_files/{sra_run}.sra'
     output: 'fastq_files/{sra_run,SRR\\d+}.{fqext,fq(|\\.gz|\\.bz2|\\.qp)}'
     run:
-        shell('mkdir -p fastq_files')
         cmds = [
             ['fastq-dump', '--stdout', input[0]],
             ['scripts/fill-in-empty-fastq-qual.py'],
