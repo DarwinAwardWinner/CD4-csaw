@@ -118,18 +118,18 @@ rule extract_fastq:
                 if retcode != 0:
                     raise CalledProcessError(rercode, cmd)
 
+# TODO: Transcriptome-space BAM and gene counts
 rule align_rnaseq_with_star_single_end:
     '''Align fastq file with star'''
     input: fastq='fastq_files/{samplename}.fq.gz',
            index_sa=hg38_ref('STAR_index_hg38.analysisSet_knownGene/SA'),
            transcriptome_gff=hg38_ref('knownGene.gff'),
-    output: bam='aligned/rnaseq_star_hg38.analysisSet_knownGene/{samplename}/Aligned.out.bam',
+    output: bam='aligned/rnaseq_star_hg38.analysisSet_knownGene/{samplename}/Aligned.sortedByCoord.out.bam',
             sj='aligned/rnaseq_star_hg38.analysisSet_knownGene/{samplename}/SJ.out.tab',
-    params: sam='aligned/rnaseq_star_hg38.analysisSet_knownGene/{samplename}/Aligned.out.sam'
     threads: 8
     run:
         index_genomedir = os.path.dirname(input.index_sa)
-        outdir = os.path.dirname(output.bam)
+        outdir = os.path.dirname(output.bam) + os.path.sep
         ensure_dir(outdir)
         read_cmd = list2cmdline(fastq_compression_cmds['fq.gz']['decompress'])
         star_cmd = [
@@ -142,21 +142,14 @@ rule align_rnaseq_with_star_single_end:
             '--sjdbGTFtagExonParentTranscript', 'Parent',
             '--sjdbOverhang', '100',
             '--readFilesIn', input.fastq,
-            '--readFilesCommand', readcmd,
+            '--readFilesCommand', read_cmd,
             '--outSAMattributes', 'Standard',
             '--outSAMunmapped', 'Within',
             '--outFileNamePrefix', outdir,
+            '--outSAMtype', 'BAM', 'SortedByCoordinate',
         ]
         # Run STAR
-        shell(list2cmdline(star_cmd))
-        # Convert SAM to sorted BAM
-        shell('''
-        picard-tools SortSam \
-          I={params.sam:q} O={output.bam:q} \
-          SORT_ORDER=coordinate VALIDATION_STRINGENCY=LENIENT
-        ''')
-        # Delete the SAM file
-        os.remove(params.sam)
+        shell(list2cmdline(map(str, star_cmd)))
 
 rule extract_bam:
     '''Extract SRA file to BAM.'''
