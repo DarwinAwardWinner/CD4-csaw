@@ -18,6 +18,26 @@ from snakemake import snakemake
 snakemake = processify(snakemake)
 snakemake('pre.Snakefile', targets=expand(os.path.join('saved_data', 'samplemeta-{dataset}.RDS'), dataset=('RNASeq', 'ChIPSeq')))
 
+fastq_compression_cmds = {
+    'fq.gz': {
+        'compress': ['gzip', '-c'],
+        'decompress': ['gzip', '-d', '-c'],
+    },
+    'fq.bz2': {
+        'compress': ['bzip2', '-z', '-c'],
+        'decompress': ['bzip2', '-d', '-c'],
+    },
+    'fq.qp': {
+        'compress': ['quip', '-i', 'fastq', '-o', 'quip', '-c' ],
+        'decompress': ['quip', '-i', 'quip', '-o', 'fastq', '-c' ],
+    },
+    # i.e. no compression
+    'fq': {
+        'compress': ['cat'],
+        'decompress': ['cat'],
+    },
+}
+
 def ensure_dir(path):
     os.makedirs(path, exist_ok=True)
 def ensure_empty_dir(path):
@@ -80,26 +100,6 @@ rule fetch_sra_run:
     output: 'sra_files/{sra_run}.sra'
     shell: 'scripts/get-sra-run-files.R {wildcards.sra_run:q}'
     resources: concurrent_downloads=1
-
-fastq_compression_cmds = {
-    'fq.gz': {
-        'compress': ['gzip', '-c'],
-        'decompress': ['gzip', '-d', '-c'],
-    },
-    'fq.bz2': {
-        'compress': ['bzip2', '-z', '-c'],
-        'decompress': ['bzip2', '-d', '-c'],
-    },
-    'fq.qp': {
-        'compress': ['quip', '-i', 'fastq', '-o', 'quip', '-c' ],
-        'decompress': ['quip', '-i', 'quip', '-o', 'fastq', '-c' ],
-    },
-    # i.e. no compression
-    'fq': {
-        'compress': ['cat'],
-        'decompress': ['cat'],
-    },
-}
 
 rule extract_fastq:
     '''Extract FASTQ from SRA files.'''
