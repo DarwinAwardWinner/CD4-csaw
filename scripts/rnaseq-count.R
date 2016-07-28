@@ -57,7 +57,7 @@ print.var.vector <- function(v) {
     v
 }
 
-## NULL = required arg, anything else is a default, and will be
+## NULL = required arg; anything else is a default, and will be
 ## coerced to character
 argspec <- list(
     SAMPLEMETA_FILE=NULL,
@@ -104,6 +104,8 @@ parse.args <- function(argspec, args=commandArgs(TRUE)) {
     } else {
         bam.files <- str_split(args$BAM_FILES, ",")[[1]]
     }
+    saveRDS(NULL, args$SUMEXP_OUTPUT_FILE)
+    file.remove(args$SUMEXP_OUTPUT_FILE)
 
     tsmsg("Loading sample metadata")
     samplemeta <- readRDS(args$SAMPLEMETA_FILE) %>%
@@ -163,6 +165,6 @@ parse.args <- function(argspec, args=commandArgs(TRUE)) {
     colnames(sexp) <- colData(sexp)$title
     rownames(sexp) <- mcols(sexp)$ENTREZ
 
-    saveRDS(sexp, args$SUMMARIZEDEXPERIMENT)
+    saveRDS(sexp, args$SUMEXP_OUTPUT_FILE)
     invisible(NULL)
 }
