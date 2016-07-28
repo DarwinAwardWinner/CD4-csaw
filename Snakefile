@@ -126,6 +126,8 @@ rule align_rnaseq_with_star_single_end:
            transcriptome_gff=hg38_ref('knownGene.gff'),
     output: bam='aligned/rnaseq_star_hg38.analysisSet_knownGene/{samplename}/Aligned.sortedByCoord.out.bam',
             sj='aligned/rnaseq_star_hg38.analysisSet_knownGene/{samplename}/SJ.out.tab',
+            tx_bam='aligned/rnaseq_star_hg38.analysisSet_knownGene/{samplename}/Aligned.toTranscriptome.out.bam',
+            gene_counts='aligned/rnaseq_star_hg38.analysisSet_knownGene/{samplename}/ReadsPerGene.out.tab',
     threads: 8
     run:
         index_genomedir = os.path.dirname(input.index_sa)
@@ -147,6 +149,7 @@ rule align_rnaseq_with_star_single_end:
             '--outSAMunmapped', 'Within',
             '--outFileNamePrefix', outdir,
             '--outSAMtype', 'BAM', 'SortedByCoordinate',
+            '--quantMode', 'TranscriptomeSAM', 'GeneCounts',
         ]
         # Run STAR
         shell(list2cmdline(map(str, star_cmd)))
