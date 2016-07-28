@@ -1,3 +1,6 @@
+# TODO: Revamp this file after switching over to a reproducible
+# pipeline
+
 # This is a symlink to all the submitted files from
 # http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE73214
 /data_files
@@ -14,3 +17,5 @@
 /bam_files
 .Rsubread_UserProvidedAnnotation_pid*
 temp-core-*
+/fastq_files/
+/aligned/
