@@ -157,26 +157,27 @@ rule align_rnaseq_with_hisat2_single_end:
     output: bam='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/Aligned.bam', log='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/hisat2.log'
     threads: 8
     run:
-        index_basename = re.sub('\\.1\\.ht2', "", input.index_sa)
+        index_basename = re.sub('\\.1\\.ht2', "", input.index_f1)
         outdir = os.path.dirname(output.bam)
         ensure_dir(outdir)
         hisat2_cmd = [
             'hisat2',
-            '--threads', threads,
+            '--threads', str(threads),
             '-q', '--phred33',
             '--very-sensitive',
             '--dta-cufflinks',
             '-x', index_basename,
             '-U', input.fastq,
             '-k', '20',
+            '--time',
         ]
         bam_sort_cmd = [
-            'picard-tools' 'SortSam', 'I=/dev/stdin', 'O=/dev/stdin',
+            'picard-tools', 'SortSam', 'I=/dev/stdin', 'O=/dev/stdout',
             'SORT_ORDER=coordinate', 'VALIDATION_STRINGENCY=LENIENT',
         ]
         with atomic_write(output.bam, mode="wb", overwrite=True) as outfile, \
-             atomic_write(output.log, mode="wb", overwrite=True) as logfile:
-            p = Popen_pipeline([hisat2_cmd, bam_sort_cmd], stdout=outfile, stderr=logfile)
+             open(output.log, mode="wb") as logfile:
+            pipeline = Popen_pipeline([hisat2_cmd, bam_sort_cmd], stdout=outfile, stderr=logfile)
             retcodes = [ p.wait() for p in pipeline ]
             for retcode, cmd in zip(retcodes, cmds):
                 if retcode != 0:
