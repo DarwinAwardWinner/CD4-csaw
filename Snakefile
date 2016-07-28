@@ -151,6 +151,37 @@ rule align_rnaseq_with_star_single_end:
         # Run STAR
         shell(list2cmdline(map(str, star_cmd)))
 
+rule align_rnaseq_with_hisat2_single_end:
+    '''Align fastq file with HISAT2'''
+    input: fastq='fastq_files/{samplename}.fq.gz', index_f1=hg38_ref('HISAT2_index_grch38_snp_tran/index.1.ht2'), transcriptome_gff=hg38_ref('knownGene.gff'),
+    output: bam='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/Aligned.bam', log='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/hisat2.log'
+    threads: 8
+    run:
+        index_basename = re.sub('\\.1\\.ht2', "", input.index_sa)
+        outdir = os.path.dirname(output.bam)
+        ensure_dir(outdir)
+        hisat2_cmd = [
+            'hisat2',
+            '--threads', threads,
+            '-q', '--phred33',
+            '--very-sensitive',
+            '--dta-cufflinks',
+            '-x', index_basename,
+            '-U', input.fastq,
+            '-k', '20',
+        ]
+        bam_sort_cmd = [
+            'picard-tools' 'SortSam', 'I=/dev/stdin', 'O=/dev/stdin',
+            'SORT_ORDER=coordinate', 'VALIDATION_STRINGENCY=LENIENT',
+        ]
+        with atomic_write(output.bam, mode="wb", overwrite=True) as outfile, \
+             atomic_write(output.log, mode="wb", overwrite=True) as logfile:
+            p = Popen_pipeline([hisat2_cmd, bam_sort_cmd], stdout=outfile, stderr=logfile)
+            retcodes = [ p.wait() for p in pipeline ]
+            for retcode, cmd in zip(retcodes, cmds):
+                if retcode != 0:
+                    raise CalledProcessError(rercode, cmd)
+
 rule extract_bam:
     '''Extract SRA file to BAM.'''
     input: 'sra_files/{sra_run}.sra'
