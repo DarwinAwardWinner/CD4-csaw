@@ -156,8 +156,11 @@ rule align_rnaseq_with_star_single_end:
 
 rule align_rnaseq_with_hisat2_single_end:
     '''Align fastq file with HISAT2'''
-    input: fastq='fastq_files/{samplename}.fq.gz', index_f1=hg38_ref('HISAT2_index_grch38_snp_tran/index.1.ht2'), transcriptome_gff=hg38_ref('knownGene.gff'),
-    output: bam='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/Aligned.bam', log='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/hisat2.log'
+    input: fastq='fastq_files/{samplename}.fq.gz',
+           index_f1=hg38_ref('HISAT2_index_grch38_snp_tran/index.1.ht2'),
+           transcriptome_gff=hg38_ref('knownGene.gff'),
+    output: bam='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/Aligned.bam',
+            log='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/hisat2.log'
     threads: 8
     run:
         index_basename = re.sub('\\.1\\.ht2', "", input.index_f1)
