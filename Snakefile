@@ -16,7 +16,10 @@ pandas2ri.activate()
 from processify import processify
 from snakemake import snakemake
 snakemake = processify(snakemake)
-snakemake('pre.Snakefile', targets=expand(os.path.join('saved_data', 'samplemeta-{dataset}.RDS'), dataset=('RNASeq', 'ChIPSeq')))
+snakemake('pre.Snakefile',
+          targets=expand(os.path.join('saved_data', 'samplemeta-{dataset}.RDS'),
+                         dataset=('RNASeq', 'ChIPSeq')),
+          quiet=True)
 
 fastq_compression_cmds = {
     'fq.gz': {
