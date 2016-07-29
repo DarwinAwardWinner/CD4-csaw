@@ -145,6 +145,7 @@ rule align_rnaseq_with_star_single_end:
             '--sjdbGTFfile', input.transcriptome_gff,
             '--sjdbGTFfeatureExon', 'CDS',
             '--sjdbGTFtagExonParentTranscript', 'Parent',
+            '--sjdbGTFtagExonParentGene', 'gene_id',
             '--sjdbOverhang', '100',
             '--readFilesIn', input.fastq,
             '--readFilesCommand', read_cmd,
