@@ -145,12 +145,12 @@ rule extract_fastq:
 rule align_rnaseq_with_star_single_end:
     '''Align fastq file with star'''
     input: fastq='fastq_files/{samplename}.fq.gz',
-           index_sa=hg38_ref('STAR_index_hg38.analysisSet_knownGene/SA'),
-           transcriptome_gff=hg38_ref('knownGene.gff'),
-    output: bam='aligned/rnaseq_star_hg38.analysisSet_knownGene/{samplename}/Aligned.sortedByCoord.out.bam',
-            sj='aligned/rnaseq_star_hg38.analysisSet_knownGene/{samplename}/SJ.out.tab',
-            tx_bam='aligned/rnaseq_star_hg38.analysisSet_knownGene/{samplename}/Aligned.toTranscriptome.out.bam',
-            gene_counts='aligned/rnaseq_star_hg38.analysisSet_knownGene/{samplename}/ReadsPerGene.out.tab',
+           index_sa=hg38_ref('STAR_index_{genome_build}_{transcriptome}/SA'),
+           transcriptome_gff=hg38_ref('{transcriptome}.gff3'),
+    output: bam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.sortedByCoord.out.bam',
+            sj='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/SJ.out.tab',
+            tx_bam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.toTranscriptome.out.bam',
+            gene_counts='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/ReadsPerGene.out.tab',
     threads: 8
     run:
         index_genomedir = os.path.dirname(input.index_sa)
@@ -182,7 +182,7 @@ rule align_rnaseq_with_hisat2_single_end:
     '''Align fastq file with HISAT2'''
     input: fastq='fastq_files/{samplename}.fq.gz',
            index_f1=hg38_ref('HISAT2_index_grch38_snp_tran/index.1.ht2'),
-           transcriptome_gff=hg38_ref('knownGene.gff'),
+           transcriptome_gff=hg38_ref('knownGene.gff3'),
     output: bam='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/Aligned.bam',
             log='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/hisat2.log'
     threads: 8
