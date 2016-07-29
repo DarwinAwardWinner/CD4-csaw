@@ -77,6 +77,29 @@ def Popen_pipeline(cmds, stdin=None, stdout=None, *args, **kwargs):
         proclist.append(Popen(last_cmd, stdin=prev_cmd_stdout, stdout=stdout, *args, **kwargs))
         return proclist
 
+def wait_for_subprocs(proclist, expected_exitcodes=0, wait_for_all=True):
+    '''Wait for a list of subprocesses to exit.
+
+    If any subprocess returns an exit code that is not in
+    expected_exitcodes (default: only 0), a CalledProcessError is
+    raised (as if subprocess.check_call was run). Even if an exception
+    is raised, this function will still wait for all remaining
+    processes to finish unless wait_for_all is False.
+
+    '''
+    # Allow supplying a single number or a list of numbers
+    try:
+        0 in expected_exitcodes
+    except TypeError:
+        expected_exitcodes = [ expected_exitcodes ]
+    if wait_for_all:
+        for proc in proclist:
+            proc.wait()
+    for proc in proclist:
+        exitcode = proc.wait()
+        if exitcode not in expected_exitcodes:
+            raise CalledProcessError(exitcode, proc.args)
+
 def read_R_dataframe(rdsfile):
     '''Read an R data frame stored in an RDS file.
 
@@ -116,10 +139,7 @@ rule extract_fastq:
         ]
         with atomic_write(output[0], mode="wb", overwrite=True) as outfile:
             pipeline = Popen_pipeline(cmds, stdout=outfile)
-            retcodes = [ p.wait() for p in pipeline ]
-            for retcode, cmd in zip(retcodes, cmds):
-                if retcode != 0:
-                    raise CalledProcessError(rercode, cmd)
+            wait_for_subprocs(pipeline)
 
 # TODO: Transcriptome-space BAM and gene counts
 rule align_rnaseq_with_star_single_end:
@@ -190,10 +210,7 @@ rule align_rnaseq_with_hisat2_single_end:
         with atomic_write(output.bam, mode="wb", overwrite=True) as outfile, \
              open(output.log, mode="wb") as logfile:
             pipeline = Popen_pipeline(cmds, stdout=outfile, stderr=logfile)
-            retcodes = [ p.wait() for p in pipeline ]
-            for retcode, cmd in zip(retcodes, cmds):
-                if retcode != 0:
-                    raise CalledProcessError(rercode, cmd)
+            wait_for_subprocs(pipeline)
 
 rule extract_bam:
     '''Extract SRA file to BAM.'''
