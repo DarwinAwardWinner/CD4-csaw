@@ -1,5 +1,59 @@
 #!/usr/bin/env Rscript
 
+library(getopt)
+library(optparse)
+
+## Do argument parsing early so the script exits quickly if arguments are invalid
+optlist <- list(
+    make_option(c("-s", "--samplemeta-file"), metavar="FILENAME.RDS", type="character",
+                help="(REQUIRED) RDS file containing a data frame of sample metadata."),
+    make_option(c("-c", "--sample-id-column"), type="character", default="Sample",
+                help="Sample metadata column name that holds the sample IDs. These will be substituted into '--bam-file-pattern' to determine the BAM file names."),
+    make_option(c("-p", "--bam-file-pattern"), metavar="PATTERN", type="character",
+                help="(REQUIRED) Format string to convert sample IDs into BAM file paths. This should contain a '%s' wherever the sample ID should be substituted ('%s' can occur multiple times),. Example: 'bam_files/Sample_%s/Aligned.bam"),
+    make_option(c("-o", "--output-file"), metavar="FILENAME.RDS", type="character",
+                help="(REQUIRED) Output file name. The SummarizedExperiment object containing the counts will be saved here using saveRDS, so it should end in '.RDS'."),
+    make_option(c("-b", "--expected-bam-files"), metavar="BAMFILE1,BAMFILE2,...", type="character",
+                help="Comma-separated list of bam file names expected to be used as input. This argument is optional, but if it is provided, it will be checked against the list of files determined from '--samplemeta-file' and '--bam-file-pattern', and an error will be raised if they don't match exactly."),
+    make_option(c("-j", "--threads"), metavar="N", type="integer", default=1,
+                help="Number of threads to use while counting reads"),
+    ## TODO: Allow different annotations, via txdb, or gff file
+    make_option(c("-t", "--annotation-txdb"), metavar="PACKAGENAME", type="character",
+                help="Name of TxDb package to use for gene annotation"),
+    make_option(c("-g", "--annotation-gff"), metavar="FILENAME", type="character",
+                help="File Name of GFF3 file to use for gene annotation."),
+    make_option(c("-f", "--gff-featuretype"), metavar="FEATURETYPE", type="character", default="exon",
+                help="GFF feature type to use"),
+    make_option(c("-i", "--gff-geneid-attr"), metavar="ATTRNAME", type="character", default="gene_id",
+                help="GFF feature attribute to use as a feature's Gene ID."),
+    make_option(c("-r", "--annotation-rds"), metavar="FILENAME", type="character",
+                help="File Name of RDS or RData file to use for gene annotation. It should contain a single GRanges or GRangesList object, with each element representing a gene/feature to be counted. Metadata columns will be carried through to the output SummarizedExperiment."),
+    make_option(c("-a", "--additional-gene-info"), metavar="FILENAME", type="character",
+                help="RDS/RData/xlsx/csv file containing a table of gene metadata. Row names should be gene IDs."))
+progname <- na.omit(c(get_Rscript_filename(), "rnaseq-count.R"))[1]
+parser <- OptionParser(
+    usage="Usage: %prog [options] -s SAMPLEMETA.RDS -p PATTERN -o SUMEXP.RDS [ -t TXDB.PACKAGE.NAME | -g ANNOTATION.GFF3 | -r ANNOTATION.RDS ]",
+    description="Count reads in genes using Rsubread::featureCounts.
+
+Counts are performed for stranded, non-stranded, and reverse-stranded modes, and are stored along with the sample and gene metadata in a SummarizedExperiment object. Note that the '-s', '-p', and '-o' arguments are all required, since they specify the input and output files. Also, exactly one of '-t', '-g', or '-r' is required to specify the annotation.",
+    option_list = optlist,
+    add_help_option = TRUE,
+    prog = progname,
+    epilogue = "")
+cmdopts <- parse_args(parser, commandArgs(TRUE))
+required.args <- c("samplemeta-file", "bam-file-pattern", "output-file")
+
+## myargs <- c("-s", "samplemeta.RDS", "-p", "bam_files/Sample_%s/Aligned.bam", "-o", "sexp.rds", "-j", "2")
+## parse_args(parser, "-h")
+## cmdargs <- parse_args(parser, myargs)
+
+missing.required.args <- setdiff(required.args, names(cmdargs))
+if (length(missing.required.args) > 0) {
+    stop(str_c("Missing required arguments: ", repr(missing.required.args)))
+}
+
+stop("Unimplemented")
+
 library(stringr)
 library(magrittr)
 library(dplyr)
@@ -57,10 +111,18 @@ print.var.vector <- function(v) {
     v
 }
 
+## Like sprintf, but inserts the same value into every placeholder
+sprintf.single.value <- function(fmt, value) {
+    ## Max function arguments is 100
+    arglist = c(list(fmt=fmt), rep(list(value), 99))
+    do.call(sprintf, arglist)
+}
+
 ## NULL = required arg; anything else is a default, and will be
 ## coerced to character
 argspec <- list(
     SAMPLEMETA_FILE=NULL,
+    BAM_FILE_PATTERN=NULL,
     SUMEXP_OUTPUT_FILE=NULL,
     BAM_FILES="",
     THREADS=getOption("mc.cores", 2))
