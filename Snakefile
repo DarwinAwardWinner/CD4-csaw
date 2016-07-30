@@ -151,6 +151,7 @@ rule align_rnaseq_with_star_single_end:
             sj='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/SJ.out.tab',
             tx_bam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.toTranscriptome.out.bam',
             gene_counts='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/ReadsPerGene.out.tab',
+    params: temp_sam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.out.sam',
     threads: 8
     run:
         index_genomedir = os.path.dirname(input.index_sa)
@@ -172,11 +173,16 @@ rule align_rnaseq_with_star_single_end:
             '--outSAMattributes', 'Standard',
             '--outSAMunmapped', 'Within',
             '--outFileNamePrefix', outdir,
-            '--outSAMtype', 'BAM', 'SortedByCoordinate',
+            '--outSAMtype', 'SAM',
             '--quantMode', 'TranscriptomeSAM', 'GeneCounts',
         ]
         # Run STAR
         shell(list2cmdline(map(str, star_cmd)))
+        # Sort BAM
+        picard_cmd = 'picard-tools SortSam I={params.temp_sam:q} O={output.bam:q} SORT_ORDER=coordinate VALIDATION_STRINGENCY=LENIENT'
+        shell(picard_cmd)
+        # Delete sam file
+        os.remove(params.temp_sam)
 
 rule align_rnaseq_with_hisat2_single_end:
     '''Align fastq file with HISAT2'''
