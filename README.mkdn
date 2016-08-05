@@ -11,11 +11,12 @@ been made to the RNA-seq analysis using newer features of [limma][4]
 such as quality weights.
 
 In time, these scripts will be updated to pull the data from the
-public release. At that point, it should be possible for anyone to
-reproduce the analysis with these scripts. (Although this analysis
-does not yet repeat the peak calling and some other preliminary steps
-of the [original analysis][5], which was done before I learned the
-value of reproducible research.)
+public release. *(Update: This is currently in progress, and this
+README is somewhat out of date as a result.)* At that point, it should
+be possible for anyone to reproduce the analysis with these scripts.
+(Although this analysis does not yet repeat the peak calling and some
+other preliminary steps of the [original analysis][5], which was done
+before I learned the value of reproducible research.)
 
 ## ChIP-Seq analysis pipeline
 
