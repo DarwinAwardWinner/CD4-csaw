@@ -113,6 +113,8 @@ def read_R_dataframe(rdsfile):
 subworkflow hg38_ref:
     workdir: os.path.expanduser("~/references/hg38")
 
+include: 'rulegraph.Snakefile'
+
 rule all:
     output: "temp"
     shell: 'false'
