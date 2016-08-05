@@ -11,16 +11,6 @@ from rpy2.robjects import pandas2ri
 
 pandas2ri.activate()
 
-# Run a separate Snakemake workflow to fetch the sample metadata,
-# which must be avilable before evaluating the rules below
-from processify import processify
-from snakemake import snakemake
-snakemake = processify(snakemake)
-snakemake('pre.Snakefile',
-          targets=expand(os.path.join('saved_data', 'samplemeta-{dataset}.RDS'),
-                         dataset=('RNASeq', 'ChIPSeq')),
-          quiet=True)
-
 fastq_compression_cmds = {
     'fq.gz': {
         'compress': ['gzip', '-c'],
@@ -110,14 +100,52 @@ def read_R_dataframe(rdsfile):
     df = readRDS((robjects.StrVector([rdsfile])))
     return(pandas2ri.ri2py(df))
 
+# Run a separate Snakemake workflow to fetch the sample metadata,
+# which must be avilable before evaluating the rules below. Without
+# this two-step workflow, the below rules would involve quite complex
+# use of multiple dynamic() inputs and outputs.
+from processify import processify
+from snakemake import snakemake
+snakemake = processify(snakemake)
+snakemake('pre.Snakefile',
+          targets=expand(os.path.join('saved_data', 'samplemeta-{dataset}.RDS'),
+                         dataset=('RNASeq', 'ChIPSeq')),
+          quiet=True)
+
+rnaseq_samplemeta = read_R_dataframe("saved_data/samplemeta-RNASeq.RDS")
+chipseq_samplemeta = read_R_dataframe("saved_data/samplemeta-ChIPSeq.RDS")
+
+rnaseq_star_outdirs = [
+    'rnaseq_star_hg38.analysisSet_knownGene',
+    'rnaseq_star_hg38.analysisSet_gencode.v25',
+]
+rnaseq_hisat_outdir = 'rnaseq_hisat2_grch38_snp_tran'
+
+aligned_rnaseq_star_bam_files = []
+for d in rnaseq_star_outdirs:
+    for samp in rnaseq_samplemeta["SRA_run"]:
+        aligned_rnaseq_star_bam_files.append(
+            'aligned/{dirname}/{samp}/Aligned.sortedByCoord.out.bam'.format(
+                dirname=d,
+                samp=samp))
+
+aligned_rnaseq_hisat_bam_files = []
+for samp in rnaseq_samplemeta["SRA_run"]:
+    aligned_rnaseq_hisat_bam_files.append(
+        'aligned/{dirname}/{samp}/Aligned.bam'.format(
+            dirname=rnaseq_hisat_outdir,
+            samp=samp))
+
+aligned_rnaseq_bam_files = aligned_rnaseq_star_bam_files + aligned_rnaseq_hisat_bam_files
+aligned_rnaseq_bai_files = [ bam + '.bai' for bam in aligned_rnaseq_bam_files ]
+
 subworkflow hg38_ref:
     workdir: os.path.expanduser("~/references/hg38")
 
 include: 'rulegraph.Snakefile'
 
 rule all:
-    output: "temp"
-    shell: 'false'
+    input: aligned_rnaseq_bai_files
 
 rule fetch_sra_run:
     '''Script to fetch the .sra file for an SRA run
@@ -220,6 +248,19 @@ rule align_rnaseq_with_hisat2_single_end:
             pipeline = Popen_pipeline(cmds, stdout=outfile, stderr=logfile)
             wait_for_subprocs(pipeline)
 
+rule index_bam:
+    '''Create .bai file for a bam file.'''
+    input: '{basename}.bam'
+    output: '{basename}.bam.bai'
+    shell: '''
+    picard-tools BuildBamIndex I={input:q} O={output:q} \
+        VALIDATION_STRINGENCY=LENIENT
+    '''
+
+rule count_star_knownGene:
+
+
+# TODO: Delete these
 rule extract_bam:
     '''Extract SRA file to BAM.'''
     input: 'sra_files/{sra_run}.sra'
@@ -234,18 +275,7 @@ rule extract_bam:
             SORT_ORDER=coordinate VALIDATION_STRINGENCY=LENIENT
     '''
 
-rule index_bam:
-    '''Create .bai file for a bam file.'''
-    input: '{basename}.bam'
-    output: '{basename}.bam.bai'
-    shell: '''
-    picard-tools BuildBamIndex I={input:q} O={output:q} \
-        VALIDATION_STRINGENCY=LENIENT
-    '''
-
-rnaseq_samplemeta = read_R_dataframe("saved_data/samplemeta-RNASeq.RDS")
 rnaseq_bam_files = [ "bam_files/{}.bam".format(basename) for basename in rnaseq_samplemeta["SRA_run"] ]
-chipseq_samplemeta = read_R_dataframe("saved_data/samplemeta-ChIPSeq.RDS")
 chipseq_bam_files = [ "bam_files/{}.bam".format(basename) for basename in chipseq_samplemeta["SRA_run"] ]
 
 rule count_rnaseq_reads:
