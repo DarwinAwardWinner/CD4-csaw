@@ -19,3 +19,11 @@
 temp-core-*
 /fastq_files/
 /aligned/
+
+
+# Output files
+*.svg
+*.rda
+*.rds
+*.saf
+*.pdf

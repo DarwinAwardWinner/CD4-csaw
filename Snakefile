@@ -9,6 +9,9 @@ from atomicwrites import atomic_write, AtomicWriter
 from rpy2 import robjects
 from rpy2.robjects import pandas2ri
 
+from snakemake.utils import min_version
+min_version("3.7.1")
+
 pandas2ri.activate()
 
 fastq_compression_cmds = {
