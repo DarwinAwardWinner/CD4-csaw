@@ -159,6 +159,17 @@ read.RDS.or.RDA <- function(filename) {
     }))
 }
 
+save.RDS.or.RDA <-
+    function(object, file, ascii = FALSE, version = NULL, compress = TRUE,
+             savetype=ifelse(str_detect(file, regex("\\.rda(ta)?", ignore_case = TRUE)),
+                             "rda", "rds")) {
+    if (savetype == "rda") {
+        save(list="object", file=file, ascii=ascii, version=version, compress=compress)
+    } else{
+        saveRDS(object=object, file=file, ascii=ascii, version=version, compress=compress)
+    }
+}
+
 ## Read a table from a R data file, csv, or xlsx file. Returns a data
 ## frame or thorws an error.
 read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL) {
@@ -557,6 +568,6 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
     colnames(sexp) <- colData(sexp)$title
     rownames(sexp) <- mcols(sexp)$ENTREZ
 
-    saveRDS(sexp, cmdopts$SUMEXP_OUTPUT_FILE)
+    save.RDS.or.RDA(sexp, cmdopts$output_file)
     invisible(NULL)
 }
