@@ -46,7 +46,7 @@ get.options <- function(opts) {
     ## Do argument parsing early so the script exits quickly if arguments are invalid
     optlist <- list(
         make_option(c("-s", "--samplemeta-file"), metavar="FILENAME.RDS", type="character",
-                    help="(REQUIRED) RDS file containing a data frame of sample metadata."),
+                    help="(REQUIRED) RDS/RData/xlsx/csv file containing a table of sample metadata. Any existing rownames will be replaced with the values in the sample ID  column (see below)."),
         make_option(c("-c", "--sample-id-column"), type="character", default="Sample",
                     help="Sample metadata column name that holds the sample IDs. These will be substituted into '--bam-file-pattern' to determine the BAM file names."),
         make_option(c("-p", "--bam-file-pattern"), metavar="PATTERN", type="character",
@@ -132,8 +132,8 @@ library(Rsubread)
 library(annotate)
 library(SummarizedExperiment)
 
-library(BSgenome.Hsapiens.UCSC.hg19)
-## library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+## library(BSgenome.Hsapiens.UCSC.hg19)
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 library(org.Hs.eg.db)
 
 tsmsg <- function(...) {
@@ -151,12 +151,17 @@ read.single.object.from.rda <- function(filename) {
 }
 
 ## Read a single object from RDS or RDA file
-read.RDS.or.RDA <- function(filename) {
-    suppressWarnings(tryCatch({
+read.RDS.or.RDA <- function(filename, expected.class="ANY") {
+    object <- suppressWarnings(tryCatch({
         readRDS(filename)
     }, error=function(...) {
         read.single.object.from.rda(filename)
     }))
+    if (!is(object, expected.class)) {
+        tsmsg("Converting object to ", expected.class)
+        object <- as(object, expected.class)
+    }
+    return(object)
 }
 
 save.RDS.or.RDA <-
@@ -180,8 +185,7 @@ read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NU
         read.xlsx.args %<>% as.list
         read.xlsx.args$xlsxFile <- filename
         lazy.results <- list(
-            rds=lazy(readRDS(filename)),
-            rda=lazy(read.single.object.from.rda(filename)),
+            rdata=lazy(read.RDS.or.RDA(filename, "data.frame")),
             table=lazy(do.call(read.table, read.table.args)),
             csv=lazy(do.call(read.csv, read.table.args)),
             xlsx=lazy(do.call(read.xlsx, read.xlsx.args)))
@@ -304,7 +308,7 @@ read.annotation.from.gff <- function(filename, format="GFF3", ...) {
     ## Allow the file to be an RDS file containing the GRanges
     ## resulting from import()
     gff <- tryCatch({
-        read.RDS.or.RDA(filename)
+        read.RDS.or.RDA(filename, "GRanges")
     }, error=function(...) {
         import(filename, format=format)
     })
@@ -322,7 +326,7 @@ read.annotation.from.saf <- function(filename, ...) {
 }
 
 read.annotation.from.rdata <- function(filename) {
-    read.RDS.or.RDA(filename) %>% as("GRangesList")
+    read.RDS.or.RDA(filename, "GRangesList")
 }
 
 
@@ -330,7 +334,7 @@ read.annotation.from.rdata <- function(filename) {
 read.additional.gene.info <- function(filename, gff_format="GFF3", geneFeatureType="gene", ...) {
     df <- tryCatch({
         gff <- tryCatch({
-            read.RDS.or.RDA(filename)
+            read.RDS.or.RDA(filename, "GRanges")
         }, error=function(...) {
             import(filename, format=gff_format)
         })
@@ -399,9 +403,9 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
 }
 
 {
-    ## cmdopts <- get.options(commandArgs(TRUE))
-    myargs <- c("-s", "./saved_data/samplemeta-RNASeq.RDS", "-c", "SRA_run", "-p", "aligned/rnaseq_star_hg38.analysisSet_gencode.v25/%s/Aligned.sortedByCoord.out.bam", "-o", "sexp.rds", "-j", "2", "-g", "~/references/hg38/gencode.v25.gff3")
-    cmdopts <- get.options(myargs)
+    cmdopts <- get.options(commandArgs(TRUE))
+    ## myargs <- c("-s", "./saved_data/samplemeta-RNASeq.RDS", "-c", "SRA_run", "-p", "aligned/rnaseq_star_hg38.analysisSet_gencode.v25/%s/Aligned.sortedByCoord.out.bam", "-o", "sexp.rds", "-j", "2", "-g", "~/references/hg38/gencode.v25.gff3")
+    ## cmdopts <- get.options(myargs)
     cmdopts$help <- NULL
 
     cmdopts$threads %<>% round %>% min(1)
@@ -414,9 +418,12 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
     assert_that(!file.exists(cmdopts$output_file))
 
     tsmsg("Loading sample metadata")
-    samplemeta <- readRDS(cmdopts$samplemeta_file)
+    samplemeta <- read.table.general(cmdopts$samplemeta_file)
 
     assert_that(cmdopts$sample_id_column %in% colnames(samplemeta))
+    assert_that(!anyDuplicated(samplemeta[[cmdopts$sample_id_column]]))
+
+    rownames(samplemeta) <- samplemeta[[cmdopts$sample_id_column]]
 
     samplemeta$bam_file <- sprintf.single.value(cmdopts$bam_file_pattern, samplemeta[[cmdopts$sample_id_column]])
     assert_that(all(file.exists(samplemeta$bam_file)))
@@ -486,7 +493,6 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
                 }
                 gene.annot[[metacols[i]]] <- bm[gene.annot$ENSEMBL]
             }
-
         } else if (idtype %in% "ENTREZID", "SYMBOL", "UNIGENE") {
             ## Add gene annotations as metadata on the exons-by-gene list
             metacols <- c("ENTREZID", "SYMBOL", "GENENAME", "UNIGENE", "ENSEMBL", "REFSEQ", "UCSCKG")
@@ -547,10 +553,6 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
         strandSpecific=0,
         nthreads=cmdopts$threads)
 
-    ## For debugging
-    save.image("temp.rda")
-    stop("Unimplemented")
-
     tsmsg("Saving SummarizedExperiment")
     sexp <- SummarizedExperiment(
         assays=List(
@@ -565,8 +567,8 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
                 sense.counts.stat=sense.fc$stat,
                 antisense.counts.stat=antisense.fc$stat) %>%
                 endoapply(. %>% { set_colnames(t(.[-1]), .[[1]])} %>% DataFrame)))
-    colnames(sexp) <- colData(sexp)$title
-    rownames(sexp) <- mcols(sexp)$ENTREZ
+    colnames(sexp) <- colData(sexp)[[cmdopts$sample_id_column]]
+    rownames(sexp) <- names(annot)
 
     save.RDS.or.RDA(sexp, cmdopts$output_file)
     invisible(NULL)
