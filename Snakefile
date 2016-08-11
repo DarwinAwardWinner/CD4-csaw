@@ -110,10 +110,13 @@ def read_R_dataframe(rdsfile):
 from processify import processify
 from snakemake import snakemake
 snakemake = processify(snakemake)
-snakemake('pre.Snakefile',
-          targets=expand(os.path.join('saved_data', 'samplemeta-{dataset}.RDS'),
-                         dataset=('RNASeq', 'ChIPSeq')),
-          quiet=True)
+result = snakemake(
+    'pre.Snakefile',
+    targets=expand(os.path.join('saved_data', 'samplemeta-{dataset}.RDS'),
+                   dataset=('RNASeq', 'ChIPSeq')),
+    quiet=True)
+if not result:
+    raise Exception("Could not retrieve experiment metadata from GEO")
 
 rnaseq_samplemeta = read_R_dataframe("saved_data/samplemeta-RNASeq.RDS")
 chipseq_samplemeta = read_R_dataframe("saved_data/samplemeta-ChIPSeq.RDS")
@@ -260,37 +263,62 @@ rule index_bam:
         VALIDATION_STRINGENCY=LENIENT
     '''
 
-rule count_star_knownGene:
+# rule count_rnaseq_hiseq2:
+#     input: samplemeta="saved_data/samplemeta-RNASeq.RDS",
+#            bam_files=???,
+#            txdb=???
+#     output: sexp=???.RDS
+#     threads: 8
+#     run:
+#         cmd = [
+#             "scripts/rnaseq-count.R",
+#             "--samplemeta-file", input.samplemeta,
+#             "--sample-id-column", ???,
+#             "--bam-file-pattern", ???,
+#             "--output-file", output.sexp,
+#             "--expected-bam-files", ",".join(input.bam_files),
+#             "--threads", str(threads),
+#             "--annotation-txdb", input.txdb,
+#             "--biomart-host", ???,
+#         ]
+#         check_call(cmd)
 
+# rule count_rnaseq_star_knownGene:
+#     input: samplemeta="saved_data/samplemeta-RNASeq.RDS",
+#            bam_files=???,
+#            txdb=???
+#     output: sexp=???.RDS
+#     threads: 8
+#     run:
+#         cmd = [
+#             "scripts/rnaseq-count.R",
+#             "--samplemeta-file", input.samplemeta,
+#             "--sample-id-column", ???,
+#             "--bam-file-pattern", ???,
+#             "--output-file", output.sexp,
+#             "--expected-bam-files", ",".join(input.bam_files),
+#             "--threads", str(threads),
+#             "--annotation-txdb", input.txdb,
+#             "--biomart-host", ???,
+#         ]
+#         check_call(cmd)
 
-# TODO: Delete these
-rule extract_bam:
-    '''Extract SRA file to BAM.'''
-    input: 'sra_files/{sra_run}.sra'
-    output: 'bam_files/{sra_run}.bam'
-    # The call to samtools is theoretically redundant, but needed
-    # because it munges the empty quality strings from sam-dump into
-    # "*", which picard will accept.
-    shell: '''
-    sam-dump -u -c {input:q} | \
-        samtools view -bS - | \
-        picard-tools SortSam I=/dev/stdin O={output:q} \
-            SORT_ORDER=coordinate VALIDATION_STRINGENCY=LENIENT
-    '''
-
-rnaseq_bam_files = [ "bam_files/{}.bam".format(basename) for basename in rnaseq_samplemeta["SRA_run"] ]
-chipseq_bam_files = [ "bam_files/{}.bam".format(basename) for basename in chipseq_samplemeta["SRA_run"] ]
-
-rule count_rnaseq_reads:
-    input: samplemeta="saved_data/samplemeta-RNASeq.RDS", bam_files=rnaseq_bam_files
-    output: "saved_data/SummarizedExperiment-RNASeq.RDS"
-    threads: 8
-    run:
-        cmd = [
-            "scripts/rnaseq-count.R",
-            "SAMPLEMETA_FILE={}".format(input.samplemeta),
-            "BAM_FILES={}".format(",".join(input.bam_files)),
-            "SUMEXP_OUTPUT_FILE={}".format(output[0]),
-            "THREADS={}".format(threads)
-        ]
-        check_call(cmd)
+# rule count_rnaseq_star_gencode:
+#     input: samplemeta="saved_data/samplemeta-RNASeq.RDS",
+#            bam_files=???,
+#            txdb=???
+#     output: sexp=???.RDS
+#     threads: 8
+#     run:
+#         cmd = [
+#             "scripts/rnaseq-count.R",
+#             "--samplemeta-file", input.samplemeta,
+#             "--sample-id-column", ???,
+#             "--bam-file-pattern", ???,
+#             "--output-file", output.sexp,
+#             "--expected-bam-files", ",".join(input.bam_files),
+#             "--threads", str(threads),
+#             "--annotation-txdb", input.txdb,
+#             "--biomart-host", ???,
+#         ]
+#         check_call(cmd)
