@@ -1,11 +1,12 @@
 import contextlib
 import os
 import os.path
+import rpy2.rinterface
 import shutil
 import subprocess
 
-from subprocess import check_call, Popen, PIPE, CalledProcessError, list2cmdline
 from atomicwrites import atomic_write, AtomicWriter
+from subprocess import check_call, Popen, PIPE, CalledProcessError, list2cmdline
 from rpy2 import robjects
 from rpy2.robjects import pandas2ri
 
@@ -13,6 +14,7 @@ from snakemake.utils import min_version
 min_version("3.7.1")
 
 pandas2ri.activate()
+rpy2.rinterface.set_writeconsole_warnerror(lambda x: sys.stderr.write(x))
 
 fastq_compression_cmds = {
     'fq.gz': {

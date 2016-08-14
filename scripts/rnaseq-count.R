@@ -37,10 +37,6 @@ match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg)
 known.gene.id.types <- c(entrez="ENTREZID", ensembl="ENSEMBL", unigene="UNIGENE", symbol="SYMBOL")
 gene.id.type.metavar <- sprintf("(%s)", str_c(names(known.gene.id.types), collapse="|"))
 
-default.mart.host <- tryCatch(
-    as.list(args(biomaRt::useEnsembl))$host,
-    error=function(...) "www.ensembl.org")
-
 get.options <- function(opts) {
 
     ## Do argument parsing early so the script exits quickly if arguments are invalid
@@ -60,10 +56,6 @@ get.options <- function(opts) {
         ## TODO: Allow different annotations, via txdb, or gff file
         make_option(c("-t", "--annotation-txdb"), metavar="PACKAGENAME", type="character",
                     help="Name of TxDb package to use for gene annotation"),
-        make_option(c("-u", "--txdb-geneid-type"), metavar=gene.id.type.metavar, type="character", default="auto",
-                    help="Type of gene ID used in the specified TxDb. Possible values are 'entrezgene' or 'ensemblgene'. Only required if it cannot be determined from the TxDb itself."),
-        make_option(c("-m", "--biomart-host"), type="character", default=default.mart.host,
-                    help="Host name to use for looking up gene IDs in Biomart. Older annotations should be matched with the appropriate historical version of Biomart listed here: http://uswest.ensembl.org/info/website/archives/index.html")
         make_option(c("-g", "--annotation-gff"), metavar="FILENAME", type="character",
                     help="File Name of GFF3 file to use for gene annotation."),
         make_option(c("-f", "--gff-exon-featuretype"), metavar="FEATURETYPE", type="character", default="exon",
@@ -71,7 +63,7 @@ get.options <- function(opts) {
         make_option(c("-i", "--gff-geneid-attr"), metavar="ATTRNAME", type="character", default="gene_id",
                     help="GFF feature attribute to use as a feature's Gene ID."),
         make_option(c("-e", "--gff-gene-featuretype"), metavar="FEATURETYPE", type="character", default="gene",
-                    help="GFF feature type to use"),
+                    help="GFF feature type from which gene metadata should be extracted."),
         make_option(c("-r", "--annotation-rds"), metavar="FILENAME", type="character",
                     help="File Name of RDS or RData file to use for gene annotation. It should contain a single GRanges or GRangesList object (or something that can be coereced into one), with each element representing a gene/feature to be counted. Any metadata columns on the object will be carried through to the output SummarizedExperiment."),
         make_option(c("--annotation-saf"), metavar="FILENAME", type="character",
@@ -437,82 +429,6 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
     if ("annotation_txdb" %in% names(cmdopts)) {
         txdb <- get.txdb(cmdopts$annotation_txdb)
         annot <- exonsBy(txdb, "gene")
-        if (cmdopts$txdb_geneid_type == "auto") {
-            idtype.from.meta <- metadata(txdb) %>% as.data.frame %>%
-                filter(name == "Type of Gene ID") %$% value
-            ## Try to find key words in the gene ID type
-            idtype <- idtype.from.meta %>%
-                str_detect(fixed(names(known.gene.id.types), ignore_case = TRUE)) %>%
-                which %>% .[1] %>% na.omit %>% known.gene.id.types[.]
-            if (length(idtype) != 1) {
-                idtype <- tryCatch({
-                    identify.ids(names(annot), db="org.Hs.eg.db", idtypes=known.gene.id.types)
-                }, error=function(...) {
-                    NULL
-                })
-            }
-        } else {
-            idtype <- known.gene.id.types[cmdopts$txdb_geneid_type]
-        }
-
-        if (is.null(idtype)) {
-            warning("Could not determine Gene ID type for TxDb. Gene metadata will not be added.")
-        } else if (idtype == "ENSEMBL") {
-            ## Remove version string from ENS IDs
-            names(annot) %<>% str_replace("\\.[0-9]+", "")
-            assert_that(!anyDuplicated(names(annot)))
-            library(biomaRt)
-            mart <- useEnsembl(biomart="ensembl", host=cmdopts$biomart_host, dataset="hsapiens_gene_ensembl")
-
-            gene.annot <- data.frame(row.names=names(annot), ENSEMBL=names(annot))
-            ## Names: Biomart attr name; values: corresponding data frame colname
-            metacols <- c(entrezgene="ENTREZID",
-                          external_gene_name="SYMBOL",
-                          wikigene_description="GENENAME",
-                          unigene="UNIGENE",
-                          ## ensembl_gene_id="ENSEMBL",
-                          refseq_mrna="REFSEQ",
-                          ucsc="UCSCKG")
-
-            for (i in names(metacols)) {
-                bm <- getBM(attributes=c("ensembl_gene_id", i),
-                            filters="ensembl_gene_id",
-                            values=names(annot),
-                            mart) %>%
-                    {List(split(as.character(.[[2]]), .[[1]]))} %>%
-                    .[! (. == "" | is.na(.)) ]
-                if (all(lengths(bm) <= 1)) {
-                    bm[lengths(bm) == 0] <- NA
-                    assert_that(all(lengths(bm) == 1))
-                    bm <-  unlist(bm)
-                } else {
-                    missing.ens <- setdiff(gene.annot$ENSEMBL, names(bm))
-                    missing.ids <- List(character(0)) %>% rep(length(missing.ens)) %>% setNames(missing.ens)
-                    bm %<>% c(missing.ids)
-
-                }
-                gene.annot[[metacols[i]]] <- bm[gene.annot$ENSEMBL]
-            }
-        } else if (idtype %in% "ENTREZID", "SYMBOL", "UNIGENE") {
-            ## Add gene annotations as metadata on the exons-by-gene list
-            metacols <- c("ENTREZID", "SYMBOL", "GENENAME", "UNIGENE", "ENSEMBL", "REFSEQ", "UCSCKG")
-            gene.annot <-
-                suppressMessages(
-                    DataFrame(row.names=names(annot),
-                              setNames(nm=metacols) %>%
-                              lapply(mapIds, x=db, keys=names(annot), keytype=idtype, multiVals="CharacterList")))
-            for (i in names(gene.annot)) {
-                ids <- gene.annot[[i]]
-                if (all(lengths(ids) <= 1)) {
-                    ids[lengths(ids) == 0] <- NA
-                    assert_that(all(lengths(ids) == 1))
-                    gene.annot[[i]] <- unlist(ids)
-                }
-            }
-            mcols(annot) %<>% cbind(gene.annot[names(annot),])
-        } else {
-            stop(str_c("Invalid gene ID type: ", deparse(idtype)))
-        }
     } else if ("annotation_gff" %in% names(cmdopts)) {
         annot <- cmdopts %$%
             read.annotation.from.gff(
@@ -535,6 +451,13 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
     }
 
     saf <- grl.to.saf(annot)
+
+    if (all(lengths(annot) == 1)) {
+        annot.mcols <- mcols(annot)
+        annot <- unlist(annot)
+        mcols(annot) <- annot.mcols
+        rm(annot.mcols)
+    }
 
     stop("Unimplemented")
     tsmsg("Computing sense counts")
