@@ -227,6 +227,7 @@ rule align_rnaseq_with_hisat2_single_end:
     input: fastq='fastq_files/{samplename}.fq.gz',
            index_f1=hg38_ref('HISAT2_index_grch38_snp_tran/index.1.ht2'),
            transcriptome_gff=hg38_ref('knownGene.gff3'),
+           chrom_mapping=hg38_ref('chrom_mapping_GRCh38_ensembl2UCSC.txt'),
     output: bam='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/Aligned.bam',
             log='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/hisat2.log'
     threads: 8
@@ -245,6 +246,10 @@ rule align_rnaseq_with_hisat2_single_end:
                 '-U', input.fastq,
                 '-k', '20',
                 '--time',
+            ],
+            [
+                # Convert to UCSC chromosome names
+                'scripts/bam-rename-chroms.py', input.chrom_mapping,
             ],
             [
                 'picard-tools', 'SortSam', 'I=/dev/stdin', 'O=/dev/stdout',
