@@ -285,7 +285,7 @@ rule count_rnaseq_hiseq2:
                             SRA_run=rnaseq_samplemeta['SRA_run']),
            bai_files=expand('aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam.bai',
                             SRA_run=rnaseq_samplemeta['SRA_run']),
-           txdb=hg38_ref('TxDb.Hsapiens.Ensembl.hg38.v85.sqlite3'),
+           txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v85.sqlite3'),
            genemeta=hg38_ref('genemeta.ensembl.85.RDS')
     output: sexp='saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_ensembl.{release}.RDS'
     threads: 4
@@ -311,7 +311,7 @@ rule count_rnaseq_star_ensembl:
            bai_files=expand(
                'aligned/rnaseq_star_hg38.analysisSet_ensembl.{{release}}/{SRA_run}/Aligned.sortedByCoord.out.bam.bai',
                SRA_run=rnaseq_samplemeta['SRA_run']),
-           txdb=hg38_ref('TxDb.Hsapiens.Ensembl.hg38.v{release}.sqlite3'),
+           txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v{release}.sqlite3'),
            genemeta=hg38_ref('genemeta.ensembl.{release}.RDS')
     output: sexp='saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_ensembl.{release,\\d+}.RDS'
     threads: 4
