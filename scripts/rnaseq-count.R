@@ -111,17 +111,16 @@ epilogue = "")
 ## pacakges & stuff
 get.options(commandArgs(TRUE))
 
-library(assert_that)
-library(future)
-library(stringr)
-library(magrittr)
-library(dplyr)
 library(assertthat)
+library(dplyr)
+library(future)
+library(magrittr)
 library(openxlsx)
+library(stringr)
 
+library(annotate)
 library(GenomicRanges)
 library(Rsubread)
-library(annotate)
 library(SummarizedExperiment)
 
 ## library(BSgenome.Hsapiens.UCSC.hg19)
@@ -150,7 +149,6 @@ read.RDS.or.RDA <- function(filename, expected.class="ANY") {
         read.single.object.from.rda(filename)
     }))
     if (!is(object, expected.class)) {
-        tsmsg("Converting object to ", expected.class)
         object <- as(object, expected.class)
     }
     return(object)
@@ -169,7 +167,8 @@ save.RDS.or.RDA <-
 
 ## Read a table from a R data file, csv, or xlsx file. Returns a data
 ## frame or thorws an error.
-read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL) {
+read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL,
+                               dataframe.class="data.frame") {
     suppressWarnings({
         read.table.args %<>% as.list
         read.table.args$file <- filename
@@ -177,14 +176,14 @@ read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NU
         read.xlsx.args %<>% as.list
         read.xlsx.args$xlsxFile <- filename
         lazy.results <- list(
-            rdata=lazy(read.RDS.or.RDA(filename, "data.frame")),
+            rdata=lazy(read.RDS.or.RDA(filename, dataframe.class)),
             table=lazy(do.call(read.table, read.table.args)),
             csv=lazy(do.call(read.csv, read.table.args)),
             xlsx=lazy(do.call(read.xlsx, read.xlsx.args)))
         for (lzresult in lazy.results) {
             result <- tryCatch({
-                x <- as.data.frame(value(lzresult))
-                assert_that(is.data.frame(x))
+                x <- as(value(lzresult), dataframe.class)
+                assert_that(is(x, dataframe.class))
                 x
             }, error=function(...) NULL)
             if (!is.null(result)) {
@@ -334,7 +333,7 @@ read.additional.gene.info <- function(filename, gff_format="GFF3", geneFeatureTy
         gff %>% .[.$type %in% geneFeatureType] %>%
             mcols %>% cleanup.mcols(mcols_df=.)
     }, error=function(...) {
-        tab <- read.table.general(filename, ...)
+        tab <- read.table.general(filename, ..., dataframe.class="DataFrame")
         ## Nonexistent or automatic row names
         if (.row_names_info(tab) <= 0) {
             row.names(tab) <- tab[[1]]
@@ -400,7 +399,13 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
     ## cmdopts <- get.options(myargs)
     cmdopts$help <- NULL
 
-    cmdopts$threads %<>% round %>% min(1)
+    cmdopts$threads %<>% round %>% max(1)
+    tsmsg("Running with ", cmdopts$threads, " threads")
+
+    ## Expand expected_bam_files into vector
+    if ("expected_bam_files" %in% names(cmdopts)) {
+        cmdopts$expected_bam_files %<>% str_split(",") %>% unlist
+    }
 
     tsmsg("Args:")
     print.var.vector(cmdopts)
@@ -412,17 +417,33 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
     tsmsg("Loading sample metadata")
     samplemeta <- read.table.general(cmdopts$samplemeta_file)
 
+    tsmsg("Got metadata for ", nrow(samplemeta), " samples")
+
     assert_that(cmdopts$sample_id_column %in% colnames(samplemeta))
     assert_that(!anyDuplicated(samplemeta[[cmdopts$sample_id_column]]))
 
     rownames(samplemeta) <- samplemeta[[cmdopts$sample_id_column]]
 
     samplemeta$bam_file <- sprintf.single.value(cmdopts$bam_file_pattern, samplemeta[[cmdopts$sample_id_column]])
-    assert_that(all(file.exists(samplemeta$bam_file)))
 
     if ("expected_bam_files" %in% names(cmdopts)) {
-        assert_that(setequal(samplemeta$bam_file, cmdopts$expected_bam_files))
+        tryCatch({
+            assert_that(setequal(samplemeta$bam_file, cmdopts$expected_bam_files))
+            tsmsg("Got all expected bam files")
+        }, error=function(...) {
+            unexpected_existing <- setdiff(samplemeta$bam_file, cmdopts$expected_bam_files)
+            expected_but_missing <- setdiff(cmdopts$expected_bam_files, samplemeta$bam_file)
+            if (length(unexpected_existing) > 0) {
+                tsmsg(sprintf("Got unexpected bam files: %s", deparse(unexpected_existing)))
+            }
+            if (length(expected_but_missing) > 0) {
+                tsmsg(sprintf("Didn't find expected bam files: %s", deparse(expected_but_missing)))
+            }
+            stop("Bam file list was not as expected")
+        })
     }
+
+    assert_that(all(file.exists(samplemeta$bam_file)))
 
     tsmsg("Reading annotation data")
 
@@ -443,11 +464,31 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
     }
 
     assert_that(is(annot, "GRangesList"))
+    tsmsg("Annotation has ", length(annot), " features")
 
     if ("additional_gene_info" %in% names(cmdopts)) {
+        tsmsg("Reading additional gene annotation metadata")
         additional_gene_info <- read.additional.gene.info(cmdopts$additional_gene_info)
+        genes_without_info <- setdiff(names(annot), rownames(additional_gene_info))
+        if (length(genes_without_info) > 0) {
+            empty_row <- list(character(0)) %>% rep(ncol(additional_gene_info)) %>% setNames(colnames(additional_gene_info))
+            single.val.cols <- sapply(additional_gene_info, function(x) all(lengths(x) == 1))
+            for (i in seq_along(empty_row)) {
+                if (single.val.cols[i]) {
+                    empty_row[[i]] <- NA
+                } else {
+                    empty_row[[i]] <- list(logical(0)) %>% as(class(additional_gene_info[[i]]))
+                }
+            }
+            empty_row %<>% DataFrame
+            empty_gene_table <- empty_row[rep(1, length(genes_without_info)),] %>%
+                set_rownames(genes_without_info)
+            additional_gene_info %<>% rbind(empty_gene_table)
+        }
+        assert_that(all(names(annot) %in% rownames(additional_gene_info)))
         mcols(annot)[colnames(additional_gene_info)] <- additional_gene_info[names(annot),]
-        rm(additional_gene_info)
+
+        rm(additional_gene_info, empty_gene_table, empty_row)
     }
 
     saf <- grl.to.saf(annot)
@@ -459,7 +500,6 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
         rm(annot.mcols)
     }
 
-    stop("Unimplemented")
     tsmsg("Computing sense counts")
     sense.fc <- featureCounts(
         samplemeta$bam_file, annot.ext=saf,
@@ -486,7 +526,7 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
         rowRanges=annot,
         metadata=List(
             stat=List(
-                counts.stat.=unstranded.fc$stat,
+                counts.stat=unstranded.fc$stat,
                 sense.counts.stat=sense.fc$stat,
                 antisense.counts.stat=antisense.fc$stat) %>%
                 endoapply(. %>% { set_colnames(t(.[-1]), .[[1]])} %>% DataFrame)))
