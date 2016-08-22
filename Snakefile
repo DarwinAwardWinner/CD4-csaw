@@ -10,6 +10,7 @@ from subprocess import check_call, Popen, PIPE, CalledProcessError, list2cmdline
 from rpy2 import robjects
 from rpy2.robjects import pandas2ri
 
+from snakemake.io import expand
 from snakemake.utils import min_version
 min_version("3.7.1")
 
@@ -34,6 +35,17 @@ fastq_compression_cmds = {
         'compress': ['cat'],
         'decompress': ['cat'],
     },
+}
+
+# http://www.gencodegenes.org/releases/; this is all the hg38 releases
+# so far
+gencode_to_ens_version = {
+    20: 76,
+    21: 77,
+    22: 79,
+    23: 81,
+    24: 83,
+    25: 85
 }
 
 def ensure_dir(path):
@@ -153,7 +165,12 @@ subworkflow hg38_ref:
 include: 'rulegraph.Snakefile'
 
 rule all:
-    input: aligned_rnaseq_bai_files
+    input:
+        rnaseq_counts=[
+            'saved_data/rnaseq_star_hg38.analysisSet_gencode.v25_counts.RDS',
+            'saved_data/rnaseq_star_hg38.analysisSet_knownGene_counts.RDS',
+            'saved_data/rnaseq_hisat2_grch38_snp_tran_counts.RDS',
+        ],
 
 rule fetch_sra_run:
     '''Script to fetch the .sra file for an SRA run
@@ -270,62 +287,88 @@ rule index_bam:
         VALIDATION_STRINGENCY=LENIENT
     '''
 
-# rule count_rnaseq_hiseq2:
-#     input: samplemeta="saved_data/samplemeta-RNASeq.RDS",
-#            bam_files=???,
-#            txdb=???
-#     output: sexp=???.RDS
-#     threads: 8
-#     run:
-#         cmd = [
-#             "scripts/rnaseq-count.R",
-#             "--samplemeta-file", input.samplemeta,
-#             "--sample-id-column", ???,
-#             "--bam-file-pattern", ???,
-#             "--output-file", output.sexp,
-#             "--expected-bam-files", ",".join(input.bam_files),
-#             "--threads", str(threads),
-#             "--annotation-txdb", input.txdb,
-#             "--biomart-host", ???,
-#         ]
-#         check_call(cmd)
+# The hisat2 documentation doesn't specify which version of Ensembl
+# they used to build the prebuilt index, so I guess we'll just use the
+# latest.
+rule count_rnaseq_hiseq2:
+    input: samplemeta='saved_data/samplemeta-RNASeq.RDS',
+           bam_files=expand('aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam',
+                            SRA_run=rnaseq_samplemeta['SRA_run']),
+           bai_files=expand('aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam.bai',
+                            SRA_run=rnaseq_samplemeta['SRA_run']),
+           txdb=hg38_ref('TxDb.Hsapiens.Ensembl.hg38.v85.sqlite3'),
+           genemeta=hg38_ref('genemeta.ensembl.v85.RDS')
+    output: sexp='saved_data/rnaseq_hisat2_grch38_snp_tran_counts.RDS'
+    threads: 4
+    run:
+        cmd = [
+            'scripts/rnaseq-count.R',
+            '--samplemeta-file', input.samplemeta,
+            '--sample-id-column', 'SRA_run',
+            '--bam-file-pattern', 'aligned/rnaseq_hisat2_grch38_snp_tran/%s/Aligned.bam',
+            '--output-file', output.sexp,
+            '--expected-bam-files', ','.join(input.bam_files),
+            '--threads', str(threads),
+            '--annotation-txdb', input.txdb,
+            '--additional-gene-info', input.genemeta,
+        ]
+        check_call(cmd)
 
-# rule count_rnaseq_star_knownGene:
-#     input: samplemeta="saved_data/samplemeta-RNASeq.RDS",
-#            bam_files=???,
-#            txdb=???
-#     output: sexp=???.RDS
-#     threads: 8
-#     run:
-#         cmd = [
-#             "scripts/rnaseq-count.R",
-#             "--samplemeta-file", input.samplemeta,
-#             "--sample-id-column", ???,
-#             "--bam-file-pattern", ???,
-#             "--output-file", output.sexp,
-#             "--expected-bam-files", ",".join(input.bam_files),
-#             "--threads", str(threads),
-#             "--annotation-txdb", input.txdb,
-#             "--biomart-host", ???,
-#         ]
-#         check_call(cmd)
+rule count_rnaseq_star_gencode:
+    input: samplemeta='saved_data/samplemeta-RNASeq.RDS',
+           bam_files=expand(
+               'aligned/rnaseq_star_hg38.analysisSet_gencode.v{{gencode_ver}}/{SRA_run}/Aligned.sortedByCoord.out.bam',
+               SRA_run=rnaseq_samplemeta['SRA_run']),
+           bai_files=expand(
+               'aligned/rnaseq_star_hg38.analysisSet_gencode.v{{gencode_ver}}/{SRA_run}/Aligned.sortedByCoord.out.bam.bai',
+               SRA_run=rnaseq_samplemeta['SRA_run']),
+           txdb=lambda wildcards: hg38_ref(
+               'TxDb.Hsapiens.Ensembl.hg38.v{ens_ver}.sqlite3'.format(
+                   ens_ver=gencode_to_ens_version[int(wildcards.gencode_ver)])),
+           genemeta=lambda wildcards: hg38_ref(
+               'genemeta.ensembl.v{ens_ver}.RDS'.format(
+               ens_ver=gencode_to_ens_version[int(wildcards.gencode_ver)]))
+    output: sexp='saved_data/rnaseq_star_hg38.analysisSet_gencode.v{gencode_ver,\\d+}_counts.RDS'
+    threads: 4
+    run:
+        cmd = [
+            'scripts/rnaseq-count.R',
+            '--samplemeta-file', input.samplemeta,
+            '--sample-id-column', 'SRA_run',
+            '--bam-file-pattern',
+            'aligned/rnaseq_star_hg38.analysisSet_gencode.v{gencode_ver}/%s/Aligned.sortedByCoord.out.bam'.format(
+                   gencode_ver=wildcards.gencode_ver,
+            ),
+            '--output-file', output.sexp,
+            '--expected-bam-files', ','.join(input.bam_files),
+            '--threads', str(threads),
+            '--annotation-txdb', input.txdb,
+            '--additional-gene-info', input.genemeta,
+        ]
+        print(cmd)
+        check_call(cmd)
 
-# rule count_rnaseq_star_gencode:
-#     input: samplemeta="saved_data/samplemeta-RNASeq.RDS",
-#            bam_files=???,
-#            txdb=???
-#     output: sexp=???.RDS
-#     threads: 8
-#     run:
-#         cmd = [
-#             "scripts/rnaseq-count.R",
-#             "--samplemeta-file", input.samplemeta,
-#             "--sample-id-column", ???,
-#             "--bam-file-pattern", ???,
-#             "--output-file", output.sexp,
-#             "--expected-bam-files", ",".join(input.bam_files),
-#             "--threads", str(threads),
-#             "--annotation-txdb", input.txdb,
-#             "--biomart-host", ???,
-#         ]
-#         check_call(cmd)
+rule count_rnaseq_star_knownGene:
+    input: samplemeta='saved_data/samplemeta-RNASeq.RDS',
+           bam_files=expand(
+               'aligned/rnaseq_star_hg38.analysisSet_knownGene/{SRA_run}/Aligned.sortedByCoord.out.bam',
+               SRA_run=rnaseq_samplemeta['SRA_run']),
+           bai_files=expand(
+               'aligned/rnaseq_star_hg38.analysisSet_knownGene/{SRA_run}/Aligned.sortedByCoord.out.bam.bai',
+               SRA_run=rnaseq_samplemeta['SRA_run']),
+           genemeta=hg38_ref('genemeta.org.Hs.eg.db.RDS')
+    output: sexp='saved_data/rnaseq_star_hg38.analysisSet_knownGene_counts.RDS'
+    threads: 4
+    run:
+        cmd = [
+            'scripts/rnaseq-count.R',
+            '--samplemeta-file', input.samplemeta,
+            '--sample-id-column', 'SRA_run',
+            '--bam-file-pattern', 'aligned/rnaseq_star_hg38.analysisSet_knownGene/%s/Aligned.sortedByCoord.out.bam',
+            '--output-file', output.sexp,
+            '--expected-bam-files', ','.join(input.bam_files),
+            '--threads', str(threads),
+            '--annotation-txdb', 'TxDb.Hsapiens.UCSC.hg38.knownGene',
+            '--additional-gene-info', input.genemeta,
+        ]
+        check_call(cmd)
