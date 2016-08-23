@@ -14,6 +14,12 @@ from snakemake.io import expand
 from snakemake.utils import min_version
 min_version("3.7.1")
 
+from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
+from snakemake.remote.FTP import RemoteProvider as FTPRemoteProvider
+
+HTTP = HTTPRemoteProvider()
+FTP = FTPRemoteProvider()
+
 pandas2ri.activate()
 rpy2.rinterface.set_writeconsole_warnerror(lambda x: sys.stderr.write(x))
 
@@ -175,7 +181,7 @@ rnaseq_hisat_outdir = 'rnaseq_hisat2_grch38_snp_tran'
 
 aligned_rnaseq_star_bam_files = expand(
     'aligned/{dirname}/{samp}/Aligned.sortedByCoord.out.bam',
-    dirname=rnaseq_star_outdirs, samp=rnaseq_samplemeta["SRA_run"])[]
+    dirname=rnaseq_star_outdirs, samp=rnaseq_samplemeta["SRA_run"])
 
 aligned_rnaseq_hisat_bam_files = expand(
     'aligned/{dirname}/{samp}/Aligned.bam',
@@ -480,4 +486,32 @@ rule align_chipseq_with_bowtie2:
       --end-to-end --very-sensitive | \
     picard-tools SortSam I=/dev/stdin O={output.bam:q} \
       SORT_ORDER=coordinate VALIDATION_STRINGENCY=LENIENT
+    '''
+
+rule get_liftover_chain:
+    input: FTP.remote('hgdownload.cse.ucsc.edu/goldenPath/{src_genome}/liftOver/{src_genome}ToHg38.over.chain.gz')
+    output: 'saved_data/{src_genome}ToHg38.over.chain.gz'
+    shell: 'mv {input:q} {output:q}'
+
+# Temp rule
+rule all_blacklists:
+    input:
+        ## Remember to cite: https://sites.google.com/site/anshulkundaje/projects/blacklists
+        'saved_data/wgEncodeDacMapabilityConsensusExcludable.bed.gz',
+        ## Cite: http://www.ncbi.nlm.nih.gov/pubmed/15499007
+        'saved_data/wgEncodeDukeMapabilityRegionsExcludable.bed.gz',
+
+# http://genome.ucsc.edu/cgi-bin/hgFileUi?db=hg19&g=wgEncodeMapability
+rule get_blacklist_regions:
+    input: FTP.remote('hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeMapability/{track_name}.bed.gz')
+    output: 'saved_data/{track_name}_hg19.bed.gz'
+    shell: 'mv {input:q} {output:q}'
+
+rule liftover_blacklist_regions:
+    input: bed='saved_data/{track_name}_hg19.bed.gz',
+           chain='saved_data/hg19ToHg38.over.chain.gz',
+    output: bed='saved_data/{track_name,[^_]+}.bed.gz'
+    shell: '''
+    liftOver {input.bed:q} {input.chain:q} /dev/stdout /dev/null | \
+      gzip -c - > {output.bed:q}
     '''
