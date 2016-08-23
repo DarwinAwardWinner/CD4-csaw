@@ -207,6 +207,11 @@ rule all:
             genome_build="hg38.analysisSet",
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run']),
+        chipseq_bai=expand(
+            'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}.bam.bai',
+            genome_build="hg38.analysisSet",
+            SRA_run=chipseq_samplemeta['SRA_run'],
+        ),
 
 rule fetch_sra_run:
     '''Script to fetch the .sra file for an SRA run
@@ -458,4 +463,21 @@ rule run_salmon_fastq:
       --output {params.outdir:q} \
       --auxDir aux_info \
       --numGibbsSamples 100
+    '''
+
+rule align_chipseq_with_bowtie2:
+    input:
+        fastq='fastq_files/{SRA_run}.fq.gz',
+        index_file=hg38_ref('BT2_index_{genome_build}/index.1.bt2l')
+    output:
+        bam='aligned/chipseq_bowtie2_{genome_build}/{SRA_run}.bam'
+    params:
+        index_basename=hg38_ref('BT2_index_{genome_build}/index')
+    threads: 8
+    shell: '''
+    bowtie2 --threads {threads:q} --mm \
+      -U {imput.fastq:q} -x {params.index_basename:q} -q \
+      --end-to-end --very-sensitive | \
+    picard-tools SortSam I=/dev/stdin O={output.bam:q} \
+      SORT_ORDER=coordinate VALIDATION_STRINGENCY=LENIENT
     '''
