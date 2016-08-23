@@ -173,20 +173,13 @@ rnaseq_star_outdirs = [
 ]
 rnaseq_hisat_outdir = 'rnaseq_hisat2_grch38_snp_tran'
 
-aligned_rnaseq_star_bam_files = []
-for d in rnaseq_star_outdirs:
-    for samp in rnaseq_samplemeta["SRA_run"]:
-        aligned_rnaseq_star_bam_files.append(
-            'aligned/{dirname}/{samp}/Aligned.sortedByCoord.out.bam'.format(
-                dirname=d,
-                samp=samp))
+aligned_rnaseq_star_bam_files = expand(
+    'aligned/{dirname}/{samp}/Aligned.sortedByCoord.out.bam',
+    dirname=rnaseq_star_outdirs, samp=rnaseq_samplemeta["SRA_run"])[]
 
-aligned_rnaseq_hisat_bam_files = []
-for samp in rnaseq_samplemeta["SRA_run"]:
-    aligned_rnaseq_hisat_bam_files.append(
-        'aligned/{dirname}/{samp}/Aligned.bam'.format(
-            dirname=rnaseq_hisat_outdir,
-            samp=samp))
+aligned_rnaseq_hisat_bam_files = expand(
+    'aligned/{dirname}/{samp}/Aligned.bam',
+    dirname=rnaseq_hisat_outdir, samp=rnaseq_samplemeta["SRA_run"])
 
 aligned_rnaseq_bam_files = aligned_rnaseq_star_bam_files + aligned_rnaseq_hisat_bam_files
 aligned_rnaseq_bai_files = [ bam + '.bai' for bam in aligned_rnaseq_bam_files ]
