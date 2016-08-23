@@ -106,6 +106,47 @@ def read_R_dataframe(rdsfile):
     df = readRDS((robjects.StrVector([rdsfile])))
     return(pandas2ri.ri2py(df))
 
+def list_salmon_output_files(outdir, alignment=False):
+    if alignment:
+        file_list = [
+            'quant.genes.sf',
+            'aux_info/fld.gz',
+            'aux_info/expected_bias.gz',
+            'aux_info/obs3_seq.gz',
+            'aux_info/observed_bias.gz',
+            'aux_info/observed_bias_3p.gz',
+            'aux_info/bootstrap/names.tsv.gz',
+            'aux_info/bootstrap/bootstraps.gz',
+            'aux_info/exp3_seq.gz',
+            'aux_info/meta_info.json',
+            'aux_info/exp5_seq.gz',
+            'aux_info/obs5_seq.gz',
+            'quant.sf',
+            'logs/salmon.log',
+            'cmd_info.json',
+        ]
+    else:
+        file_list = [
+            'logs/salmon_quant.log',
+            'quant.sf',
+            'cmd_info.json',
+            'quant.genes.sf',
+            'libParams/flenDist.txt',
+            'lib_format_counts.json',
+            'aux_info/observed_bias_3p.gz',
+            'aux_info/exp3_seq.gz',
+            'aux_info/bootstrap/names.tsv.gz',
+            'aux_info/bootstrap/bootstraps.gz',
+            'aux_info/obs3_seq.gz',
+            'aux_info/obs5_seq.gz',
+            'aux_info/exp5_seq.gz',
+            'aux_info/meta_info.json',
+            'aux_info/observed_bias.gz',
+            'aux_info/expected_bias.gz',
+            'aux_info/fld.gz',
+        ]
+    return [ os.path.join(outdir, f) for f in file_list ]
+
 # Run a separate Snakemake workflow to fetch the sample metadata,
 # which must be avilable before evaluating the rules below. Without
 # this two-step workflow, the below rules would involve quite complex
@@ -123,6 +164,8 @@ if not result:
 
 rnaseq_samplemeta = read_R_dataframe("saved_data/samplemeta-RNASeq.RDS")
 chipseq_samplemeta = read_R_dataframe("saved_data/samplemeta-ChIPSeq.RDS")
+
+rnaseq_sample_libtypes = dict(zip(rnaseq_samplemeta['SRA_run'], rnaseq_samplemeta['libType']))
 
 rnaseq_star_outdirs = [
     'rnaseq_star_hg38.analysisSet_knownGene',
@@ -155,11 +198,22 @@ include: 'rulegraph.Snakefile'
 
 rule all:
     input:
+        rulegraphs=['rulegraph-all.pdf', 'dag-all.pdf'],
         rnaseq_counts=[
             'saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_ensembl.85.RDS',
             'saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_knownGene.RDS',
             'saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_ensembl.85.RDS',
         ],
+        salmon_quant=expand(
+            'salmon_quant/{genome_build}_{transcriptome}/{SRA_run}/cmd_info.json',
+            genome_build="hg38.analysisSet",
+            transcriptome=['knownGene', 'ensembl.85'],
+            SRA_run=rnaseq_samplemeta['SRA_run']),
+        salmon_star_quant=expand(
+            'aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant/cmd_info.json',
+            genome_build="hg38.analysisSet",
+            transcriptome=['knownGene', 'ensembl.85'],
+            SRA_run=rnaseq_samplemeta['SRA_run']),
 
 rule fetch_sra_run:
     '''Script to fetch the .sra file for an SRA run
@@ -363,7 +417,52 @@ rule count_rnaseq_star_knownGene:
         ]
         check_call(cmd)
 
-rule run_salmon:
+
+# TODO: Get correct libType for each sample
+rule run_salmon_star_transcriptome_bam:
     input:
-        salmon_index=hg38_ref("Salmon_index_{genome_build}_{transcriptome}/sa.bin")
+        transcriptome_fa=hg38_ref('{genome_build}_{transcriptome}_transcripts.fa'),
+        genemap_file=hg38_ref('Salmon_index_{genome_build}_{transcriptome}/genemap.txt'),
+        bam_file='aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/Aligned.toTranscriptome.out.bam',
     output:
+        list_salmon_output_files('aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant', alignment=True)
+    params: outdir='aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant',
+        libtype=lambda wildcards: rnaseq_sample_libtypes[wildcards.SRA_run]
+    threads: 8
+    shell: '''
+    salmon quant \
+      --targets {input.transcriptome_fa:q} \
+      --alignments {input.bam_file:q} \
+      --threads {threads:q} \
+      --libType {params.libtype:q} \
+      --seqBias --gcBias \
+      --geneMap {input.genemap_file:q} \
+      --output {params.outdir:q} \
+      --auxDir aux_info \
+      --numGibbsSamples 100
+    '''
+
+rule run_salmon_fastq:
+    input:
+        salmon_index=hg38_ref('Salmon_index_{genome_build}_{transcriptome}/sa.bin'),
+        genemap_file=hg38_ref('Salmon_index_{genome_build}_{transcriptome}/genemap.txt'),
+        fastq='fastq_files/{SRA_run}.fq.gz',
+    output:
+        list_salmon_output_files('salmon_quant/{genome_build}_{transcriptome}/{SRA_run}')
+    params:
+        index_dir=hg38_ref('Salmon_index_{genome_build}_{transcriptome}'),
+        outdir='salmon_quant/{genome_build}_{transcriptome}/{SRA_run}',
+        libtype=lambda wildcards: rnaseq_sample_libtypes[wildcards.SRA_run]
+    threads: 16
+    shell: '''
+    salmon quant \
+      --index {params.index_dir:q} \
+      --unmatedReads {input.fastq:q} \
+      --threads {threads:q} \
+      --libType {params.libtype:q} \
+      --seqBias --gcBias \
+      --geneMap {input.genemap_file:q} \
+      --output {params.outdir:q} \
+      --auxDir aux_info \
+      --numGibbsSamples 100
+    '''
