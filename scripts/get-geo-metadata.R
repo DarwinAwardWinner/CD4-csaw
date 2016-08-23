@@ -110,7 +110,8 @@ samplemeta <- lapply(esets, function(eset) {
         ## Only in RNA-seq
         mutate_if_present(
             "technical_batch",
-            technical_batch=sprintf("B%s", technical_batch)) %>%
+            technical_batch=sprintf("B%s", technical_batch),
+            libType=ifelse(technical_batch == "B1", "ISF", "ISR")) %>%
         ## Only in ChIP-seq
         mutate_if_present(
             "chip_antibody",
