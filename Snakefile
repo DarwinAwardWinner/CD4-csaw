@@ -280,13 +280,16 @@ rule index_bam:
 # they used to build the prebuilt index. Hopefully it doesn't matter
 # too much.
 rule count_rnaseq_hiseq2:
-    input: samplemeta='saved_data/samplemeta-RNASeq.RDS',
-           bam_files=expand('aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam',
-                            SRA_run=rnaseq_samplemeta['SRA_run']),
-           bai_files=expand('aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam.bai',
-                            SRA_run=rnaseq_samplemeta['SRA_run']),
-           txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v85.sqlite3'),
-           genemeta=hg38_ref('genemeta.ensembl.85.RDS')
+    input:
+        samplemeta='saved_data/samplemeta-RNASeq.RDS',
+        bam_files=expand(
+            'aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam',
+            SRA_run=rnaseq_samplemeta['SRA_run']),
+        bai_files=expand(
+            'aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam.bai',
+            SRA_run=rnaseq_samplemeta['SRA_run']),
+        txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v85.sqlite3'),
+        genemeta=hg38_ref('genemeta.ensembl.85.RDS')
     output: sexp='saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_ensembl.{release}.RDS'
     threads: 4
     run:
@@ -304,15 +307,16 @@ rule count_rnaseq_hiseq2:
         check_call(cmd)
 
 rule count_rnaseq_star_ensembl:
-    input: samplemeta='saved_data/samplemeta-RNASeq.RDS',
-           bam_files=expand(
-               'aligned/rnaseq_star_hg38.analysisSet_ensembl.{{release}}/{SRA_run}/Aligned.sortedByCoord.out.bam',
-               SRA_run=rnaseq_samplemeta['SRA_run']),
-           bai_files=expand(
-               'aligned/rnaseq_star_hg38.analysisSet_ensembl.{{release}}/{SRA_run}/Aligned.sortedByCoord.out.bam.bai',
-               SRA_run=rnaseq_samplemeta['SRA_run']),
-           txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v{release}.sqlite3'),
-           genemeta=hg38_ref('genemeta.ensembl.{release}.RDS')
+    input:
+        samplemeta='saved_data/samplemeta-RNASeq.RDS',
+        bam_files=expand(
+            'aligned/rnaseq_star_hg38.analysisSet_ensembl.{{release}}/{SRA_run}/Aligned.sortedByCoord.out.bam',
+            SRA_run=rnaseq_samplemeta['SRA_run']),
+        bai_files=expand(
+            'aligned/rnaseq_star_hg38.analysisSet_ensembl.{{release}}/{SRA_run}/Aligned.sortedByCoord.out.bam.bai',
+            SRA_run=rnaseq_samplemeta['SRA_run']),
+        txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v{release}.sqlite3'),
+        genemeta=hg38_ref('genemeta.ensembl.{release}.RDS')
     output: sexp='saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_ensembl.{release,\\d+}.RDS'
     threads: 4
     run:
@@ -334,14 +338,15 @@ rule count_rnaseq_star_ensembl:
         check_call(cmd)
 
 rule count_rnaseq_star_knownGene:
-    input: samplemeta='saved_data/samplemeta-RNASeq.RDS',
-           bam_files=expand(
-               'aligned/rnaseq_star_hg38.analysisSet_knownGene/{SRA_run}/Aligned.sortedByCoord.out.bam',
-               SRA_run=rnaseq_samplemeta['SRA_run']),
-           bai_files=expand(
-               'aligned/rnaseq_star_hg38.analysisSet_knownGene/{SRA_run}/Aligned.sortedByCoord.out.bam.bai',
-               SRA_run=rnaseq_samplemeta['SRA_run']),
-           genemeta=hg38_ref('genemeta.org.Hs.eg.db.RDS')
+    input:
+        samplemeta='saved_data/samplemeta-RNASeq.RDS',
+        bam_files=expand(
+            'aligned/rnaseq_star_hg38.analysisSet_knownGene/{SRA_run}/Aligned.sortedByCoord.out.bam',
+            SRA_run=rnaseq_samplemeta['SRA_run']),
+        bai_files=expand(
+            'aligned/rnaseq_star_hg38.analysisSet_knownGene/{SRA_run}/Aligned.sortedByCoord.out.bam.bai',
+            SRA_run=rnaseq_samplemeta['SRA_run']),
+        genemeta=hg38_ref('genemeta.org.Hs.eg.db.RDS')
     output: sexp='saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_knownGene.RDS'
     threads: 4
     run:
