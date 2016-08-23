@@ -18,6 +18,54 @@ be possible for anyone to reproduce the analysis with these scripts.
 other preliminary steps of the [original analysis][5], which was done
 before I learned the value of reproducible research.)
 
+## Workflow
+
+### Completed components
+
+* RNA-seq mapping (STAR & HISAT2)
+* RNA-seq counting
+
+### Testing components
+
+* RNA-seq quantification using Salmon (using both STAR transcriptome
+  alignement and quasi-alignment)
+* ChIP-seq mapping with bowtie2
+
+### TODO components
+
+* RNA-seq differential gene expression
+* RNA-seq differential gene/transcript/exon/whatever expression from
+  Salmon quantification
+* ChIP-seq peak calling
+* ChIP-seq peak IDR pipeline
+* csaw analysis of ChIP-seq
+
+## TODO Other
+
+* Document required software
+* Make analysis into a reproducible workflow
+* ChIPQC: http://bioconductor.org/packages/release/bioc/html/ChIPQC.html
+* ChIP-Seq blacklists: http://www.broadinstitute.org/~anshul/projects/encode/rawdata/blacklists/hg19-blacklist-README.pdf
+* Motif enrichment
+* Document dependencies fully, including all Python & R packages. Also
+  provide links to dependencies. Provide install script for packages.
+
+## Dependencies (incomplete)
+
+* R/Bioconductor + many packages
+* Python + many packages
+* Snakemake for running the workflow
+* STAR, HISAT2, and Bowtie2 aligners
+* Picard tools
+* SRA toolkit for extracting reads from SRA files
+* UCSC command-line tools (e.g. liftOver)
+
+# Old workflow
+
+The workflow described below starts from the BAM files (which were
+aligned to hg19) instead of re-aligning to hg38. This section and the
+old workflow will be deleted once the new workflow catches up.
+
 ## ChIP-Seq analysis pipeline
 
 1. `csaw-pre-count-qc.R`: Perform some QC steps that do not require
