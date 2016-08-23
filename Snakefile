@@ -219,6 +219,29 @@ rule all:
             SRA_run=chipseq_samplemeta['SRA_run'],
         ),
 
+# Temp rule
+rule all_salmon:
+    input:
+        salmon_quant=expand(
+            'salmon_quant/{genome_build}_{transcriptome}/{SRA_run}/cmd_info.json',
+            genome_build="hg38.analysisSet",
+            transcriptome=['knownGene', 'ensembl.85'],
+            SRA_run=rnaseq_samplemeta['SRA_run']),
+        salmon_star_quant=expand(
+            'aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant/cmd_info.json',
+            genome_build="hg38.analysisSet",
+            transcriptome=['knownGene', 'ensembl.85'],
+            SRA_run=rnaseq_samplemeta['SRA_run']),
+
+# Temp rule
+rule all_chipseq_bai:
+    input:
+        chipseq_bai=expand(
+            'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}.bam.bai',
+            genome_build="hg38.analysisSet",
+            SRA_run=chipseq_samplemeta['SRA_run'],
+        ),
+
 rule fetch_sra_run:
     '''Script to fetch the .sra file for an SRA run
 
