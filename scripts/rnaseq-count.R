@@ -487,8 +487,6 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
         }
         assert_that(all(names(annot) %in% rownames(additional_gene_info)))
         mcols(annot)[colnames(additional_gene_info)] <- additional_gene_info[names(annot),]
-
-        rm(additional_gene_info, empty_gene_table, empty_row)
     }
 
     saf <- grl.to.saf(annot)
@@ -499,6 +497,20 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
         mcols(annot) <- annot.mcols
         rm(annot.mcols)
     }
+
+    empty.counts <- matrix(NA, nrow=length(annot), ncol=nrow(samplemeta))
+    sexp <- SummarizedExperiment(
+        assays=List(
+            counts=empty.counts,
+            sense.counts=empty.counts,
+            antisense.counts=empty.counts
+        ),
+        colData=as(samplemeta, "DataFrame"),
+        rowRanges=annot,
+        metadata=list()
+    )
+    colnames(sexp) <- colData(sexp)[[cmdopts$sample_id_column]]
+    rownames(sexp) <- names(annot)
 
     tsmsg("Computing sense counts")
     sense.fc <- featureCounts(
@@ -515,24 +527,21 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
         samplemeta$bam_file, annot.ext=saf,
         strandSpecific=0,
         nthreads=cmdopts$threads)
+    assay(sexp)$counts <- unstranded.fc$counts
+    assay(sexp)$sense.counts <- sense.fc$counts
+    assay(sexp)$antisense.counts <- antisense.fc$counts
+
+    count.stats <- List(counts=unstranded.fc$stat,
+                        sense.counts=sense.fc$stat,
+                        antisense.counts=antisense.fc$stat) %>%
+        endoapply(function(x) {
+            x <- data.frame(set_colnames(t(x[,-1]), x[[1]]))
+            rownames(x) <- colnames(sexp)
+            x
+        })
+    metadata(sexp)$stat <- count.stats
 
     tsmsg("Saving SummarizedExperiment")
-    sexp <- SummarizedExperiment(
-        assays=List(
-            counts=unstranded.fc$counts,
-            sense.counts=sense.fc$counts,
-            antisense.counts=antisense.fc$counts),
-        colData=as(samplemeta, "DataFrame"),
-        rowRanges=annot,
-        metadata=List(
-            stat=List(
-                counts.stat=unstranded.fc$stat,
-                sense.counts.stat=sense.fc$stat,
-                antisense.counts.stat=antisense.fc$stat) %>%
-                endoapply(. %>% { set_colnames(t(.[-1]), .[[1]])} %>% DataFrame)))
-    colnames(sexp) <- colData(sexp)[[cmdopts$sample_id_column]]
-    rownames(sexp) <- names(annot)
-
     save.RDS.or.RDA(sexp, cmdopts$output_file)
     invisible(NULL)
 }
