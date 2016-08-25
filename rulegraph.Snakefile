@@ -1,48 +1,59 @@
+import os.path
+import re
+
+def get_rule(name):
+    return getattr(rules, name)
+
+def is_target_rule(name):
+    return not get_rule(name).has_wildcards()
+
 rule rulegraphs:
-    input: 'rulegraph-all.pdf', 'dag-all.pdf'
+    input: 'rulegraphs/rulegraph-all.pdf', 'rulegraphs/dag-all.pdf',
 
 rule svg_to_png:
     input: '{filename}.svg'
     output: '{filename}.png'
-    # shell: '''
-    # rsvg-convert -u -d 180 -p 180 -f png {input:q} -o {output:q} &&
-    #   [ -s {output:q} ] || {{
-    #     echo >&2 "ERROR: Output has zero size";
-    #     rm -f {output:q};
-    #     exit 1;
-    #   }}
-    # '''
     shell: '''inkscape {input:q} --export-png={output:q} --export-dpi=300'''
 
 rule svg_to_pdf:
     input: '{filename}.svg'
     output: '{filename}.pdf'
-    # shell: '''
-    # rsvg-convert -u -d 180 -p 180 -f png {input:q} -o {output:q} &&
-    #   [ -s {output:q} ] || {{
-    #     echo >&2 "ERROR: Output has zero size";
-    #     rm -f {output:q};
-    #     exit 1;
-    #   }}
-    # '''
     shell: '''inkscape {input:q} --export-pdf={output:q} --export-dpi=300'''
 
 rule dag_svg:
     input:  'Snakefile', 'rulegraph.Snakefile'
-    output: 'dag-{target}.svg'
-    shell: '''
-    set -o pipefail;
-    snakemake --nolock -f --dag {wildcards.target:q} | \
-      perl -lape 's/graph\[/graph[rankdir=LR,/g' | \
-      dot -Tsvg > {output:q}
-    '''
+    output: 'rulegraphs/dag-{target}.svg'
+    params: target_path=lambda wildcards: re.sub(":", os.path.sep, wildcards.target)
+    run:
+        if is_target_rule(params.target_path):
+            rule = get_rule(params.target_path)
+            if len(rule.output):
+                real_targets = rule.output
+            else:
+                real_targets = rule.input
+        else:
+            real_targets = [params.target_path]
+        shell('''
+        set -o pipefail;
+        snakemake --nolock -f --dag {real_targets:q} | \
+        dot -Grankdir=LR -Tsvg > {output:q}
+        ''')
 
 rule rulegraph_svg:
     input: 'Snakefile', 'rulegraph.Snakefile'
-    output: 'rulegraph-{target}.svg'
-    shell: '''
-    set -o pipefail;
-    snakemake --nolock -f --rulegraph {wildcards.target:q} | \
-      perl -lape 's/graph\[/graph[rankdir=TB,/g' | \
-      dot -Tsvg > {output:q}
-    '''
+    output: 'rulegraphs/rulegraph-{target}.svg'
+    params: target_path=lambda wildcards: re.sub(":", os.path.sep, wildcards.target)
+    run:
+        if is_target_rule(params.target_path):
+            rule = get_rule(params.target_path)
+            if len(rule.output):
+                real_targets = rule.output
+            else:
+                real_targets = rule.input
+        else:
+            real_targets = [params.target_path]
+        shell('''
+        set -o pipefail;
+        snakemake --nolock -f --rulegraph {real_targets:q} | \
+        dot -Grankdir=TB -Tsvg > {output:q}
+        ''')
