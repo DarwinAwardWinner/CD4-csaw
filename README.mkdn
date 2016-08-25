@@ -20,6 +20,8 @@ before I learned the value of reproducible research.)
 
 ## Workflow
 
+![Rule Graph](rulegraphs/rulegraph-all.png "Rule graph of currently implemented workflow")
+
 ### Completed components
 
 * RNA-seq mapping (STAR & HISAT2)
