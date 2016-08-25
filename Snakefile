@@ -197,7 +197,6 @@ include: 'rulegraph.Snakefile'
 
 rule all:
     input:
-        rulegraphs=['rulegraph-all.pdf', 'dag-all.pdf'],
         rnaseq_counts=[
             'saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_ensembl.85.RDS',
             'saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_knownGene.RDS',
