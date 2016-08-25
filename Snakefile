@@ -252,14 +252,14 @@ rule fetch_sra_run:
     (An SRA run identifier starts with SRR.)
 
     '''
-    output: 'sra_files/{sra_run}.sra'
+    output: 'sra_files/{sra_run,SRR.*}.sra'
     shell: 'scripts/get-sra-run-files.R {wildcards.sra_run:q}'
     resources: concurrent_downloads=1
 
 rule extract_fastq:
     '''Extract FASTQ from SRA files.'''
     input: 'sra_files/{sra_run}.sra'
-    output: 'fastq_files/{sra_run,SRR\\d+}.{fqext,fq(|\\.gz|\\.bz2|\\.qp)}'
+    output: 'fastq_files/{sra_run}.{fqext,fq(|\\.gz|\\.bz2|\\.qp)}'
     run:
         cmds = [
             ['fastq-dump', '--stdout', input[0]],
