@@ -212,6 +212,11 @@ rule all:
             genome_build="hg38.analysisSet",
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run']),
+        chipseq_bam=expand(
+            'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}.bam',
+            genome_build="hg38.analysisSet",
+            SRA_run=chipseq_samplemeta['SRA_run'],
+        ),
         chipseq_bai=expand(
             'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}.bam.bai',
             genome_build="hg38.analysisSet",
