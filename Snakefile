@@ -510,7 +510,7 @@ rule align_chipseq_with_bowtie2:
     shell: '''
     bowtie2 --threads {threads:q} --mm \
       -U {input.fastq:q} -x {params.index_basename:q} -q \
-      --end-to-end --very-sensitive | \
+      --end-to-end --sensitive | \
     picard-tools SortSam I=/dev/stdin O={output.bam:q} \
       SORT_ORDER=coordinate VALIDATION_STRINGENCY=LENIENT
     '''
