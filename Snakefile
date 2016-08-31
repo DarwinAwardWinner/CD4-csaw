@@ -200,6 +200,7 @@ rule all:
             'saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_ensembl.85.RDS',
             'saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_knownGene.RDS',
             'saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_ensembl.85.RDS',
+            'saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_knownGene.RDS',
         ],
         salmon_quant=expand(
             'salmon_quant/{genome_build}_{transcriptome}/{SRA_run}/cmd_info.json',
@@ -375,7 +376,7 @@ rule index_bam:
 # The hisat2 documentation doesn't specify which version of Ensembl
 # they used to build the prebuilt index. Hopefully it doesn't matter
 # too much.
-rule count_rnaseq_hiseq2:
+rule count_rnaseq_hisat2_ensembl:
     input:
         samplemeta='saved_data/samplemeta-RNASeq.RDS',
         bam_files=expand(
@@ -398,6 +399,32 @@ rule count_rnaseq_hiseq2:
             '--expected-bam-files', ','.join(input.bam_files),
             '--threads', str(threads),
             '--annotation-txdb', input.txdb,
+            '--additional-gene-info', input.genemeta,
+        ]
+        check_call(cmd)
+
+rule count_rnaseq_hisat2_knownGene:
+    input:
+        samplemeta='saved_data/samplemeta-RNASeq.RDS',
+        bam_files=expand(
+            'aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam',
+            SRA_run=rnaseq_samplemeta['SRA_run']),
+        bai_files=expand(
+            'aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam.bai',
+            SRA_run=rnaseq_samplemeta['SRA_run']),
+        genemeta=hg38_ref('genemeta.org.Hs.eg.db.RDS')
+    output: sexp='saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_knownGene.RDS'
+    threads: 4
+    run:
+        cmd = [
+            'scripts/rnaseq-count.R',
+            '--samplemeta-file', input.samplemeta,
+            '--sample-id-column', 'SRA_run',
+            '--bam-file-pattern', 'aligned/rnaseq_hisat2_grch38_snp_tran/%s/Aligned.bam',
+            '--output-file', output.sexp,
+            '--expected-bam-files', ','.join(input.bam_files),
+            '--threads', str(threads),
+            '--annotation-txdb', 'TxDb.Hsapiens.UCSC.hg38.knownGene',
             '--additional-gene-info', input.genemeta,
         ]
         check_call(cmd)
