@@ -1,4 +1,3 @@
-import contextlib
 import os
 import os.path
 import rpy2.rinterface
@@ -285,7 +284,6 @@ rule align_rnaseq_with_star_single_end:
     run:
         index_genomedir = os.path.dirname(input.index_sa)
         outdir = os.path.dirname(output.bam) + os.path.sep
-        ensure_dir(outdir)
         read_cmd = list2cmdline(fastq_compression_cmds['fq.gz']['decompress'])
         star_cmd = [
             'STAR',
@@ -325,7 +323,6 @@ rule align_rnaseq_with_hisat2_single_end:
     run:
         index_basename = re.sub('\\.1\\.ht2', "", input.index_f1)
         outdir = os.path.dirname(output.bam)
-        ensure_dir(outdir)
         cmds = [
             [
                 'hisat2',
