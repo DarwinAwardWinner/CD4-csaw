@@ -527,9 +527,9 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
         samplemeta$bam_file, annot.ext=saf,
         strandSpecific=0,
         nthreads=cmdopts$threads)
-    assay(sexp)$counts <- unstranded.fc$counts
-    assay(sexp)$sense.counts <- sense.fc$counts
-    assay(sexp)$antisense.counts <- antisense.fc$counts
+    assay(sexp, "counts")[,] <- unstranded.fc$counts
+    assay(sexp, "sense.counts")[,] <- sense.fc$counts
+    assay(sexp, "antisense.counts")[,] <- antisense.fc$counts
 
     count.stats <- List(counts=unstranded.fc$stat,
                         sense.counts=sense.fc$stat,
