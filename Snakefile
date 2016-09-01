@@ -1,8 +1,10 @@
 import os
 import os.path
 import rpy2.rinterface
+import re
 import shutil
 import subprocess
+import sys
 
 from atomicwrites import atomic_write, AtomicWriter
 from subprocess import check_call, Popen, PIPE, CalledProcessError, list2cmdline
@@ -18,6 +20,8 @@ from snakemake.remote.FTP import RemoteProvider as FTPRemoteProvider
 
 HTTP = HTTPRemoteProvider()
 FTP = FTPRemoteProvider()
+
+from tool_versions import *
 
 pandas2ri.activate()
 rpy2.rinterface.set_writeconsole_warnerror(lambda x: sys.stderr.write(x))
@@ -253,13 +257,15 @@ rule fetch_sra_run:
 
     '''
     output: 'sra_files/{sra_run,SRR.*}.sra'
-    shell: 'scripts/get-sra-run-files.R {wildcards.sra_run:q}'
+    version: ASCP_VERSION
     resources: concurrent_downloads=1
+    shell: 'scripts/get-sra-run-files.R {wildcards.sra_run:q}'
 
 rule extract_fastq:
     '''Extract FASTQ from SRA files.'''
     input: 'sra_files/{sra_run}.sra'
     output: 'fastq_files/{sra_run}.{fqext,fq(|\\.gz|\\.bz2|\\.qp)}'
+    version: SRATOOLKIT_VERSION
     run:
         cmds = [
             ['fastq-dump', '--stdout', input[0]],
@@ -283,6 +289,7 @@ rule align_rnaseq_with_star_single_end:
     params: temp_sam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.out.sam',
             temp_tx_bam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/TEMP_Aligned.toTranscriptome.out.bam',
             temp_tx_bam_header='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/TEMP_Aligned.toTranscriptome.out.bam.header'
+    version: STAR_VERSION
     threads: 8
     run:
         index_genomedir = os.path.dirname(input.index_sa)
@@ -334,6 +341,7 @@ rule align_rnaseq_with_hisat2_single_end:
            chrom_mapping=hg38_ref('chrom_mapping_GRCh38_ensembl2UCSC.txt'),
     output: bam='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/Aligned.bam',
             log='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/hisat2.log'
+    version: HISAT2_VERSION
     threads: 8
     run:
         index_basename = re.sub('\\.1\\.ht2', "", input.index_f1)
@@ -388,6 +396,7 @@ rule count_rnaseq_hisat2_ensembl:
         txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v85.sqlite3'),
         genemeta=hg38_ref('genemeta.ensembl.85.RDS')
     output: sexp='saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_ensembl.{release}.RDS'
+    version: BIOC_VERSION
     threads: 4
     run:
         cmd = [
@@ -414,6 +423,7 @@ rule count_rnaseq_hisat2_knownGene:
             SRA_run=rnaseq_samplemeta['SRA_run']),
         genemeta=hg38_ref('genemeta.org.Hs.eg.db.RDS')
     output: sexp='saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_knownGene.RDS'
+    version: R_package_version('RSubread')
     threads: 4
     run:
         cmd = [
@@ -441,6 +451,7 @@ rule count_rnaseq_star_ensembl:
         txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v{release}.sqlite3'),
         genemeta=hg38_ref('genemeta.ensembl.{release}.RDS')
     output: sexp='saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_ensembl.{release,\\d+}.RDS'
+    version: R_package_version('RSubread')
     threads: 4
     run:
         cmd = [
@@ -471,6 +482,7 @@ rule count_rnaseq_star_knownGene:
             SRA_run=rnaseq_samplemeta['SRA_run']),
         genemeta=hg38_ref('genemeta.org.Hs.eg.db.RDS')
     output: sexp='saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_knownGene.RDS'
+    version: R_package_version('RSubread')
     threads: 4
     run:
         cmd = [
@@ -497,6 +509,7 @@ rule run_salmon_star_transcriptome_bam:
         list_salmon_output_files('aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant', alignment=True)
     params: outdir='aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant',
         libtype=lambda wildcards: rnaseq_sample_libtypes[wildcards.SRA_run]
+    version: SALMON_VERSION
     threads: 8
     shell: '''
     salmon quant \
@@ -522,6 +535,7 @@ rule run_salmon_fastq:
         index_dir=hg38_ref('Salmon_index_{genome_build}_{transcriptome}'),
         outdir='salmon_quant/{genome_build}_{transcriptome}/{SRA_run}',
         libtype=lambda wildcards: rnaseq_sample_libtypes[wildcards.SRA_run]
+    version: SALMON_VERSION
     threads: 16
     shell: '''
     salmon quant \
@@ -544,6 +558,7 @@ rule align_chipseq_with_bowtie2:
         bam='aligned/chipseq_bowtie2_{genome_build}/{SRA_run}.bam'
     params:
         index_basename=hg38_ref('BT2_index_{genome_build}/index')
+    version: BOWTIE2_VERSION
     threads: 8
     shell: '''
     bowtie2 --threads {threads:q} --mm \
@@ -554,7 +569,7 @@ rule align_chipseq_with_bowtie2:
     '''
 
 rule get_liftover_chain:
-    input: FTP.remote('hgdownload.cse.ucsc.edu/goldenPath/{src_genome}/liftOver/{src_genome}ToHg38.over.chain.gz')
+    input: FTP.remote('hgdownload.cse.ucsc.edu/goldenPath/{src_genome}/liftOver/{src_genome}ToHg38.over.chain.gz', static=True)
     output: 'saved_data/{src_genome}ToHg38.over.chain.gz'
     shell: 'mv {input:q} {output:q}'
 
@@ -568,7 +583,7 @@ rule all_blacklists:
 
 # http://genome.ucsc.edu/cgi-bin/hgFileUi?db=hg19&g=wgEncodeMapability
 rule get_blacklist_regions:
-    input: FTP.remote('hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeMapability/{track_name}.bed.gz')
+    input: FTP.remote('hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeMapability/{track_name}.bed.gz', static=True)
     output: 'saved_data/{track_name}_hg19.bed.gz'
     shell: 'mv {input:q} {output:q}'
 
