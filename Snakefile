@@ -116,44 +116,26 @@ def read_R_dataframe(rdsfile):
     return(pandas2ri.ri2py(df))
 
 def list_salmon_output_files(outdir, alignment=False):
+    file_list = [
+        'aux_info/bootstrap/bootstraps.gz',
+        'aux_info/bootstrap/names.tsv.gz',
+        'aux_info/exp3_seq.gz',
+        'aux_info/exp5_seq.gz',
+        'aux_info/expected_bias.gz',
+        'aux_info/fld.gz',
+        'aux_info/meta_info.json',
+        'aux_info/obs3_seq.gz',
+        'aux_info/obs5_seq.gz',
+        'aux_info/observed_bias.gz',
+        'aux_info/observed_bias_3p.gz',
+        'cmd_info.json',
+        'quant.genes.sf',
+        'quant.sf',
+    ]
     if alignment:
-        file_list = [
-            'quant.genes.sf',
-            'aux_info/fld.gz',
-            'aux_info/expected_bias.gz',
-            'aux_info/obs3_seq.gz',
-            'aux_info/observed_bias.gz',
-            'aux_info/observed_bias_3p.gz',
-            'aux_info/bootstrap/names.tsv.gz',
-            'aux_info/bootstrap/bootstraps.gz',
-            'aux_info/exp3_seq.gz',
-            'aux_info/meta_info.json',
-            'aux_info/exp5_seq.gz',
-            'aux_info/obs5_seq.gz',
-            'quant.sf',
-            'logs/salmon.log',
-            'cmd_info.json',
-        ]
+        file_list += ['logs/salmon.log',]
     else:
-        file_list = [
-            'logs/salmon_quant.log',
-            'quant.sf',
-            'cmd_info.json',
-            'quant.genes.sf',
-            'libParams/flenDist.txt',
-            'lib_format_counts.json',
-            'aux_info/observed_bias_3p.gz',
-            'aux_info/exp3_seq.gz',
-            'aux_info/bootstrap/names.tsv.gz',
-            'aux_info/bootstrap/bootstraps.gz',
-            'aux_info/obs3_seq.gz',
-            'aux_info/obs5_seq.gz',
-            'aux_info/exp5_seq.gz',
-            'aux_info/meta_info.json',
-            'aux_info/observed_bias.gz',
-            'aux_info/expected_bias.gz',
-            'aux_info/fld.gz',
-        ]
+        file_list += ['libParams/flenDist.txt', 'logs/salmon_quant.log',]
     return [ os.path.join(outdir, f) for f in file_list ]
 
 # Run a separate Snakemake workflow to fetch the sample metadata,
