@@ -13,7 +13,7 @@ from rpy2.robjects import pandas2ri
 
 from snakemake.io import expand
 from snakemake.utils import min_version
-min_version("3.7.1")
+min_version('3.7.1')
 
 from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
 from snakemake.remote.FTP import RemoteProvider as FTPRemoteProvider
@@ -67,7 +67,7 @@ def Popen_pipeline(cmds, stdin=None, stdout=None, *args, **kwargs):
     '''
     cmds = list(cmds)
     if len(cmds) == 0:
-        raise ValueError("Cannot run a pipeline with zero commands")
+        raise ValueError('Cannot run a pipeline with zero commands')
     if len(cmds) == 1:
         return [Popen(cmds[0], stdin=stdin, stdout=stdout, *args, **kwargs)]
     else:
@@ -151,10 +151,10 @@ result = snakemake(
                    dataset=('RNASeq', 'ChIPSeq')),
     quiet=True)
 if not result:
-    raise Exception("Could not retrieve experiment metadata from GEO")
+    raise Exception('Could not retrieve experiment metadata from GEO')
 
-rnaseq_samplemeta = read_R_dataframe("saved_data/samplemeta-RNASeq.RDS")
-chipseq_samplemeta = read_R_dataframe("saved_data/samplemeta-ChIPSeq.RDS")
+rnaseq_samplemeta = read_R_dataframe('saved_data/samplemeta-RNASeq.RDS')
+chipseq_samplemeta = read_R_dataframe('saved_data/samplemeta-ChIPSeq.RDS')
 
 rnaseq_sample_libtypes = dict(zip(rnaseq_samplemeta['SRA_run'], rnaseq_samplemeta['libType']))
 
@@ -166,17 +166,17 @@ rnaseq_hisat_outdir = 'rnaseq_hisat2_grch38_snp_tran'
 
 aligned_rnaseq_star_bam_files = expand(
     'aligned/{dirname}/{samp}/Aligned.sortedByCoord.out.bam',
-    dirname=rnaseq_star_outdirs, samp=rnaseq_samplemeta["SRA_run"])
+    dirname=rnaseq_star_outdirs, samp=rnaseq_samplemeta['SRA_run'])
 
 aligned_rnaseq_hisat_bam_files = expand(
     'aligned/{dirname}/{samp}/Aligned.bam',
-    dirname=rnaseq_hisat_outdir, samp=rnaseq_samplemeta["SRA_run"])
+    dirname=rnaseq_hisat_outdir, samp=rnaseq_samplemeta['SRA_run'])
 
 aligned_rnaseq_bam_files = aligned_rnaseq_star_bam_files + aligned_rnaseq_hisat_bam_files
 aligned_rnaseq_bai_files = [ bam + '.bai' for bam in aligned_rnaseq_bam_files ]
 
 subworkflow hg38_ref:
-    workdir: os.path.expanduser("~/references/hg38")
+    workdir: os.path.expanduser('~/references/hg38')
 
 include: 'rulegraph.Snakefile'
 
@@ -190,22 +190,22 @@ rule all:
         ],
         salmon_quant=expand(
             'salmon_quant/{genome_build}_{transcriptome}/{SRA_run}/cmd_info.json',
-            genome_build="hg38.analysisSet",
+            genome_build='hg38.analysisSet',
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run']),
         salmon_star_quant=expand(
             'aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant/cmd_info.json',
-            genome_build="hg38.analysisSet",
+            genome_build='hg38.analysisSet',
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run']),
         chipseq_bam=expand(
             'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}.bam',
-            genome_build="hg38.analysisSet",
+            genome_build='hg38.analysisSet',
             SRA_run=chipseq_samplemeta['SRA_run'],
         ),
         chipseq_bai=expand(
             'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}.bam.bai',
-            genome_build="hg38.analysisSet",
+            genome_build='hg38.analysisSet',
             SRA_run=chipseq_samplemeta['SRA_run'],
         ),
 
@@ -214,12 +214,12 @@ rule all_salmon:
     input:
         salmon_quant=expand(
             'salmon_quant/{genome_build}_{transcriptome}/{SRA_run}/cmd_info.json',
-            genome_build="hg38.analysisSet",
+            genome_build='hg38.analysisSet',
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run']),
         salmon_star_quant=expand(
             'aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant/cmd_info.json',
-            genome_build="hg38.analysisSet",
+            genome_build='hg38.analysisSet',
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run']),
 
@@ -228,7 +228,7 @@ rule all_chipseq_bai:
     input:
         chipseq_bai=expand(
             'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}.bam.bai',
-            genome_build="hg38.analysisSet",
+            genome_build='hg38.analysisSet',
             SRA_run=chipseq_samplemeta['SRA_run'],
         ),
 
@@ -254,7 +254,7 @@ rule extract_fastq:
             ['scripts/fill-in-empty-fastq-qual.py'],
             fastq_compression_cmds[wildcards.fqext]['compress'],
         ]
-        with atomic_write(output[0], mode="wb", overwrite=True) as outfile:
+        with atomic_write(output[0], mode='wb', overwrite=True) as outfile:
             pipeline = Popen_pipeline(cmds, stdout=outfile)
             wait_for_subprocs(pipeline)
 
@@ -302,8 +302,8 @@ rule align_rnaseq_with_star_single_end:
         shell(picard_sort_cmd)
         # Delete sam file
         os.remove(params.temp_sam)
-        # Remove "transcript:" from transcriptome bam reference names,
-        # e.g. "transcript:ENST00000379319" becomes "ENST00000379319".
+        # Remove 'transcript:' from transcriptome bam reference names,
+        # e.g. 'transcript:ENST00000379319' becomes 'ENST00000379319'.
 
         # Create new header
         shell('samtools view -H {output.tx_bam:q} | sed -e "s/SN:transcript:/SN:/" > {params.temp_tx_bam_header:q}')
@@ -326,7 +326,7 @@ rule align_rnaseq_with_hisat2_single_end:
     version: HISAT2_VERSION
     threads: 8
     run:
-        index_basename = re.sub('\\.1\\.ht2', "", input.index_f1)
+        index_basename = re.sub('\\.1\\.ht2', '', input.index_f1)
         outdir = os.path.dirname(output.bam)
         cmds = [
             [
@@ -349,8 +349,8 @@ rule align_rnaseq_with_hisat2_single_end:
                 'SORT_ORDER=coordinate', 'VALIDATION_STRINGENCY=LENIENT',
             ]
         ]
-        with atomic_write(output.bam, mode="wb", overwrite=True) as outfile, \
-             open(output.log, mode="wb") as logfile:
+        with atomic_write(output.bam, mode='wb', overwrite=True) as outfile, \
+             open(output.log, mode='wb') as logfile:
             pipeline = Popen_pipeline(cmds, stdout=outfile, stderr=logfile)
             wait_for_subprocs(pipeline)
 
