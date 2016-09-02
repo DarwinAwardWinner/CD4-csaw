@@ -108,6 +108,12 @@ except Exception:
     SRATOOLKIT_VERSION = None
 
 try:
+    MACS_VERSION = 'macs2 ' + get_command_version_string('macs2 --version', 'macs2\\s+(?P<version>\\S+)')
+except Exception:
+    MACS_VERSION = None
+
+# R, BioC, & packages
+try:
     from rpy2.robjects import r
     from rpy2.rinterface import RRuntimeError
     R_VERSION = ''.join(r('R.version$version.string'))

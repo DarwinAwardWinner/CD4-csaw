@@ -9,7 +9,8 @@ import sys
 from atomicwrites import atomic_write, AtomicWriter
 from subprocess import check_call, Popen, PIPE, CalledProcessError, list2cmdline
 from rpy2 import robjects
-from rpy2.robjects import pandas2ri
+from rpy2.robjects import r, pandas2ri
+from rpy2.robjects import globalenv as r_env
 
 from snakemake.io import expand
 from snakemake.utils import min_version
@@ -174,6 +175,13 @@ aligned_rnaseq_hisat_bam_files = expand(
 
 aligned_rnaseq_bam_files = aligned_rnaseq_star_bam_files + aligned_rnaseq_hisat_bam_files
 aligned_rnaseq_bai_files = [ bam + '.bai' for bam in aligned_rnaseq_bam_files ]
+
+aligned_chipseq_input_bam_files = expand(
+    'aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}.bam',
+    SRA_run=list(chipseq_samplemeta['SRA_run'][chipseq_samplemeta['chip_antibody'] == 'input']))
+aligned_chipseq_bam_files = expand(
+    'aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}.bam',
+    SRA_run=list(chipseq_samplemeta['SRA_run'][chipseq_samplemeta['chip_antibody'] != 'input']))
 
 subworkflow hg38_ref:
     workdir: os.path.expanduser('~/references/hg38')
@@ -362,6 +370,15 @@ rule index_bam:
     picard-tools BuildBamIndex I={input:q} O={output:q} \
         VALIDATION_STRINGENCY=LENIENT
     '''
+
+# rule bam2bed:
+#     '''Create .bai file for a bam file.'''
+#     input: '{basename}.bam'
+#     output: '{basename}_reads.bed'
+#     shell: '''
+#     picard-tools BuildBamIndex I={input:q} O={output:q} \
+#         VALIDATION_STRINGENCY=LENIENT
+#     '''
 
 # The hisat2 documentation doesn't specify which version of Ensembl
 # they used to build the prebuilt index. Hopefully it doesn't matter
@@ -577,3 +594,19 @@ rule liftover_blacklist_regions:
     liftOver {input.bed:q} {input.chain:q} /dev/stdout /dev/null | \
       gzip -c - > {output.bed:q}
     '''
+
+rule macs_predictd:
+    input: bam_files=aligned_chipseq_bam_files,
+    output: rfile='saved_data/macs_predictd/predictd',
+            pdf='saved_data/macs_predictd/predictd_model.pdf',
+            logfile='saved_data/macs_predictd/output.log'
+    params: outdir='saved_data/macs_predictd'
+    version: MACS_VERSION
+    run:
+        rfile_basename = os.path.basename(output.rfile)
+        shell('''
+        macs2 predictd -i {input.bam_files:q} -f BAM -g hs \
+          --outdir {params.outdir:q} --rfile {output.rfile:q} &>{output.logfile:q}
+        cd {params.outdir:q}
+        Rscript {output.rfile:q}
+        ''')
