@@ -139,6 +139,12 @@ def list_salmon_output_files(outdir, alignment=False):
         file_list += ['libParams/flenDist.txt', 'logs/salmon_quant.log',]
     return [ os.path.join(outdir, f) for f in file_list ]
 
+def list_kallisto_output_files(outdir):
+    file_list = [
+        'abundance.h5', 'abundance.tsv', 'run_info.json',
+    ]
+    return [ os.path.join(outdir, f) for f in file_list ]
+
 # Run a separate Snakemake workflow to fetch the sample metadata,
 # which must be avilable before evaluating the rules below. Without
 # this two-step workflow, the below rules would involve quite complex
@@ -203,6 +209,11 @@ rule all:
             SRA_run=rnaseq_samplemeta['SRA_run']),
         salmon_star_quant=expand(
             'aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant/cmd_info.json',
+            genome_build='hg38.analysisSet',
+            transcriptome=['knownGene', 'ensembl.85'],
+            SRA_run=rnaseq_samplemeta['SRA_run']),
+        kallisto_quant=expand(
+            'kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}/run_info.json',
             genome_build='hg38.analysisSet',
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run']),
@@ -548,6 +559,32 @@ rule run_salmon_fastq:
       --auxDir aux_info \
       --numGibbsSamples 100
     '''
+
+rule run_kallisto_fastq:
+    input:
+        kallisto_index=hg38_ref('Kallisto_index_{genome_build}_{transcriptome}'),
+        fastq='fastq_files/{SRA_run}.fq.gz',
+    output:
+        list_kallisto_output_files('kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}')
+    params:
+        outdir='salmon_quant/{genome_build}_{transcriptome}/{SRA_run}',
+        libtype=lambda wildcards: rnaseq_sample_libtypes[wildcards.SRA_run]
+    version: SALMON_VERSION
+    threads: 16
+    run:
+        libType = list(rnaseq_samplemeta['libType'][rnaseq_samplemeta['SRA_run'] == wildcards.SRA_run])[0]
+        if libType == 'ISF':
+            lib_opt = '--fr-stranded'
+        elif libType == 'ISR':
+            lib_opt = '--rf-stranded'
+        else:
+            raise ValueError('Unknown kallisto libtype: {}'.format(libType))
+        shell('''
+        kallisto quant \
+          --index {kallisto_index:q} --output-dir {params.outdir:q} \
+          --single {lib_opt:q} --threads {threads:q} --bootstrap-samples 100 \
+          --bias --fragment-length 200 --sd 80 {input.fastq:q}
+        ''')
 
 rule align_chipseq_with_bowtie2:
     input:
