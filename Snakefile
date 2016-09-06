@@ -183,10 +183,10 @@ aligned_rnaseq_bam_files = aligned_rnaseq_star_bam_files + aligned_rnaseq_hisat_
 aligned_rnaseq_bai_files = [ bam + '.bai' for bam in aligned_rnaseq_bam_files ]
 
 aligned_chipseq_input_bam_files = expand(
-    'aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}.bam',
+    'aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam',
     SRA_run=list(chipseq_samplemeta['SRA_run'][chipseq_samplemeta['chip_antibody'] == 'input']))
 aligned_chipseq_bam_files = expand(
-    'aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}.bam',
+    'aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam',
     SRA_run=list(chipseq_samplemeta['SRA_run'][chipseq_samplemeta['chip_antibody'] != 'input']))
 
 subworkflow hg38_ref:
@@ -218,12 +218,12 @@ rule all:
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run']),
         chipseq_bam=expand(
-            'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}.bam',
+            'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
             genome_build='hg38.analysisSet',
             SRA_run=chipseq_samplemeta['SRA_run'],
         ),
         chipseq_bai=expand(
-            'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}.bam.bai',
+            'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam.bai',
             genome_build='hg38.analysisSet',
             SRA_run=chipseq_samplemeta['SRA_run'],
         ),
@@ -254,7 +254,7 @@ rule all_kallisto:
 rule all_chipseq_bai:
     input:
         chipseq_bai=expand(
-            'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}.bam.bai',
+            'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam.bai',
             genome_build='hg38.analysisSet',
             SRA_run=chipseq_samplemeta['SRA_run'],
         ),
@@ -516,7 +516,6 @@ rule count_rnaseq_star_knownGene:
         ]
         check_call(cmd)
 
-
 # TODO: Get correct libType for each sample
 rule run_salmon_star_transcriptome_bam:
     input:
@@ -599,7 +598,7 @@ rule align_chipseq_with_bowtie2:
         fastq='fastq_files/{SRA_run}.fq.gz',
         index_file=hg38_ref('BT2_index_{genome_build}/index.1.bt2l')
     output:
-        bam='aligned/chipseq_bowtie2_{genome_build}/{SRA_run}.bam'
+        bam='aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam'
     params:
         index_basename=hg38_ref('BT2_index_{genome_build}/index')
     version: BOWTIE2_VERSION
