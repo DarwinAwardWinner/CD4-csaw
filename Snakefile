@@ -242,6 +242,14 @@ rule all_salmon:
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run']),
 
+rule all_kallisto:
+    input:
+        kallisto_quant=expand(
+            'kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}/run_info.json',
+            genome_build='hg38.analysisSet',
+            transcriptome=['knownGene', 'ensembl.85'],
+            SRA_run=rnaseq_samplemeta['SRA_run']),
+
 # Temp rule
 rule all_chipseq_bai:
     input:
@@ -567,9 +575,9 @@ rule run_kallisto_fastq:
     output:
         list_kallisto_output_files('kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}')
     params:
-        outdir='salmon_quant/{genome_build}_{transcriptome}/{SRA_run}',
+        outdir='kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}',
         libtype=lambda wildcards: rnaseq_sample_libtypes[wildcards.SRA_run]
-    version: SALMON_VERSION
+    version: KALLISTO_VERSION
     threads: 16
     run:
         libType = list(rnaseq_samplemeta['libType'][rnaseq_samplemeta['SRA_run'] == wildcards.SRA_run])[0]
@@ -581,7 +589,7 @@ rule run_kallisto_fastq:
             raise ValueError('Unknown kallisto libtype: {}'.format(libType))
         shell('''
         kallisto quant \
-          --index {kallisto_index:q} --output-dir {params.outdir:q} \
+          --index {input.kallisto_index:q} --output-dir {params.outdir:q} \
           --single {lib_opt:q} --threads {threads:q} --bootstrap-samples 100 \
           --bias --fragment-length 200 --sd 80 {input.fastq:q}
         ''')
