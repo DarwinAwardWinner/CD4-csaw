@@ -611,7 +611,7 @@ rule run_kallisto_fastq:
         shell('''
         kallisto quant \
           --index {input.kallisto_index:q} --output-dir {params.outdir:q} \
-          --single {lib_opt:q} --threads {threads:q} --bootstrap-samples 100 \
+          {lib_opt:q} --single --threads {threads:q} --bootstrap-samples 100 \
           --bias --fragment-length 200 --sd 80 {input.fastq:q}
         ''')
 
