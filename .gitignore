@@ -19,7 +19,8 @@
 temp-core-*
 /fastq_files/
 /aligned/
-
+/salmon_quant
+/kallisto_quant
 
 # Output files
 *.svg
@@ -28,4 +29,3 @@ temp-core-*
 *.saf
 *.pdf
 *.png
-/salmon_quant
