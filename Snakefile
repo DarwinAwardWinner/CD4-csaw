@@ -538,7 +538,7 @@ rule run_salmon_star_transcriptome_bam:
       --alignments {input.bam_file:q} \
       --threads {threads:q} \
       --libType {params.libtype:q} \
-      --seqBias --gcBias \
+      --seqBias --gcBias --useVBOpt \
       --geneMap {input.genemap_file:q} \
       --output {params.outdir:q} \
       --auxDir aux_info \
@@ -564,7 +564,7 @@ rule run_salmon_fastq:
       --unmatedReads {input.fastq:q} \
       --threads {threads:q} \
       --libType {params.libtype:q} \
-      --seqBias --gcBias \
+      --seqBias --gcBias --useVBOpt \
       --geneMap {input.genemap_file:q} \
       --output {params.outdir:q} \
       --auxDir aux_info \
