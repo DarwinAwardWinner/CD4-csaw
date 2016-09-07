@@ -97,6 +97,11 @@ except Exception:
     SALMON_VERSION = None
 
 try:
+    KALLISTO_VERSION = 'kallisto ' + get_command_version_string('kallisto', '^kallisto\\s+(?P<version>\\S+)')
+except Exception:
+    KALLISTO_VERSION = None
+
+try:
     ascp_path = shutil.which("ascp") or os.path.expanduser("~/.aspera/connect/bin/ascp")
     ASCP_VERSION = 'ascp ' + get_command_version_string([ascp_path, '--version'], 'ascp version\\s+(?P<version>\\S+)')
 except Exception:
