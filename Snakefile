@@ -229,6 +229,7 @@ rule all:
             genome_build='hg38.analysisSet',
             SRA_run=chipseq_samplemeta['SRA_run'],
         ),
+        macs_predictd='saved_data/macs_predictd/output.log',
 
 rule all_rnaseq_counts:
     input:
@@ -669,10 +670,11 @@ rule macs_predictd:
     params: outdir='saved_data/macs_predictd'
     version: MACS_VERSION
     run:
-        rfile_basename = os.path.basename(output.rfile)
+        output_rfile_basename = os.path.basename(output.rfile)
         shell('''
         macs2 predictd -i {input.bam_files:q} -f BAM -g hs \
-          --outdir {params.outdir:q} --rfile {output.rfile:q} &>{output.logfile:q}
+          --outdir {params.outdir:q} --rfile {output_rfile_basename:q} \
+          &>{output.logfile:q}
         cd {params.outdir:q}
-        Rscript {output.rfile:q}
+        Rscript {output_rfile_basename:q}
         ''')
