@@ -203,15 +203,17 @@ rule all:
             'saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_knownGene.RDS',
         ],
         salmon_quant=expand(
-            'salmon_quant/{genome_build}_{transcriptome}/{SRA_run}/cmd_info.json',
+            'salmon_quant/{genome_build}_{transcriptome}/{SRA_run}/{filename}',
             genome_build='hg38.analysisSet',
             transcriptome=['knownGene', 'ensembl.85'],
-            SRA_run=rnaseq_samplemeta['SRA_run']),
+            SRA_run=rnaseq_samplemeta['SRA_run'],
+            filename=['cmd_info.json', 'aux_info/bootstrap/quant_bootstraps.tsv']),
         salmon_star_quant=expand(
-            'aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant/cmd_info.json',
+            'aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant/{filename}',
             genome_build='hg38.analysisSet',
             transcriptome=['knownGene', 'ensembl.85'],
-            SRA_run=rnaseq_samplemeta['SRA_run']),
+            SRA_run=rnaseq_samplemeta['SRA_run'],
+            filename=['cmd_info.json', 'aux_info/bootstrap/quant_bootstraps.tsv']),
         kallisto_quant=expand(
             'kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}/run_info.json',
             genome_build='hg38.analysisSet',
@@ -232,15 +234,17 @@ rule all:
 rule all_salmon:
     input:
         salmon_quant=expand(
-            'salmon_quant/{genome_build}_{transcriptome}/{SRA_run}/cmd_info.json',
+            'salmon_quant/{genome_build}_{transcriptome}/{SRA_run}/{filename}',
             genome_build='hg38.analysisSet',
             transcriptome=['knownGene', 'ensembl.85'],
-            SRA_run=rnaseq_samplemeta['SRA_run']),
+            SRA_run=rnaseq_samplemeta['SRA_run'],
+            filename=['cmd_info.json', 'aux_info/bootstrap/quant_bootstraps.tsv']),
         salmon_star_quant=expand(
-            'aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant/cmd_info.json',
+            'aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant/{filename}',
             genome_build='hg38.analysisSet',
             transcriptome=['knownGene', 'ensembl.85'],
-            SRA_run=rnaseq_samplemeta['SRA_run']),
+            SRA_run=rnaseq_samplemeta['SRA_run'],
+            filename=['cmd_info.json', 'aux_info/bootstrap/quant_bootstraps.tsv']),
 
 rule all_kallisto:
     input:
@@ -565,6 +569,15 @@ rule run_salmon_fastq:
       --output {params.outdir:q} \
       --auxDir aux_info \
       --numGibbsSamples 100
+    '''
+
+rule convert_salmon_bootstraps_to_tsv:
+    input: '{salmon_quant_dir}/aux_info/bootstrap/bootstraps.gz'
+    output: '{salmon_quant_dir}/aux_info/bootstrap/quant_bootstraps.tsv'
+    shell: '''
+    scripts/ConvertBootstrapsToTSV.py \
+      {wildcards.salmon_quant_dir:q} \
+      {wildcards.salmon_quant_dir:q}/aux_info/bootstrap/
     '''
 
 rule run_kallisto_fastq:
