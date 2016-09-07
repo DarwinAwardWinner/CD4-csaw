@@ -299,7 +299,6 @@ rule extract_fastq:
             pipeline = Popen_pipeline(cmds, stdout=outfile)
             wait_for_subprocs(pipeline)
 
-# TODO: Transcriptome-space BAM and gene counts
 rule align_rnaseq_with_star_single_end:
     '''Align fastq file with star'''
     input: fastq='fastq_files/{samplename}.fq.gz',
@@ -615,6 +614,9 @@ rule run_kallisto_fastq:
           {lib_opt:q} --single --threads {threads:q} --bootstrap-samples 100 \
           --bias --fragment-length 200 --sd 80 {input.fastq:q}
         ''')
+
+# TODO: Write R script to convert bootstraps into SummarizedExperiment
+# RDS file, and write a rule for it.
 
 rule align_chipseq_with_bowtie2:
     input:
