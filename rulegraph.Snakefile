@@ -7,8 +7,12 @@ def get_rule(name):
 def is_target_rule(name):
     return not get_rule(name).has_wildcards()
 
-rule rulegraphs:
-    input: 'rulegraphs/rulegraph-all.pdf', 'rulegraphs/dag-all.pdf',
+rule all_rulegraphs:
+    input:
+        expand('rulegraphs/{graphtype}-{target}.{filetype}',
+               graphtype=['rulegraph', 'dag',],
+               target=['all', 'all_rnaseq_counts', 'all_salmon', 'all_kallisto', 'all_chipseq_bai',],
+               filetype=['pdf', 'png'])
 
 rule svg_to_png:
     input: '{filename}.svg'
