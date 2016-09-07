@@ -230,6 +230,15 @@ rule all:
             SRA_run=chipseq_samplemeta['SRA_run'],
         ),
 
+rule all_rnaseq_counts:
+    input:
+        rnaseq_counts=[
+            'saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_ensembl.85.RDS',
+            'saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_knownGene.RDS',
+            'saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_ensembl.85.RDS',
+            'saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_knownGene.RDS',
+        ],
+
 # Temp rule
 rule all_salmon:
     input:
