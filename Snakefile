@@ -187,23 +187,26 @@ def list_macs_callpeak_output_files(basename):
     ]
     return [ basename + ext for ext in ext_list ]
 
-# Run a separate Snakemake workflow to fetch the sample metadata,
-# which must be avilable before evaluating the rules below. Without
-# this two-step workflow, the below rules would involve quite complex
-# use of multiple dynamic() inputs and outputs.
-from processify import processify
-from snakemake import snakemake
-snakemake = processify(snakemake)
-result = snakemake(
-    'pre.Snakefile',
-    targets=expand(os.path.join('saved_data', 'samplemeta-{dataset}.RDS'),
-                   dataset=('RNASeq', 'ChIPSeq')),
-    quiet=True)
-if not result:
-    raise Exception('Could not retrieve experiment metadata from GEO')
-
-rnaseq_samplemeta = read_R_dataframe('saved_data/samplemeta-RNASeq.RDS')
-chipseq_samplemeta = read_R_dataframe('saved_data/samplemeta-ChIPSeq.RDS')
+# Run a separate Snakemake workflow (if needed) to fetch the sample
+# metadata, which must be avilable before evaluating the rules below.
+# Without this two-step workflow, the below rules would involve quite
+# complex use of multiple dynamic() inputs and outputs.
+try:
+    rnaseq_samplemeta = read_R_dataframe('saved_data/samplemeta-RNASeq.RDS')
+    chipseq_samplemeta = read_R_dataframe('saved_data/samplemeta-ChIPSeq.RDS')
+except Exception:
+    from processify import processify
+    from snakemake import snakemake
+    snakemake = processify(snakemake)
+    result = snakemake(
+        'pre.Snakefile',
+        targets=['saved_data/samplemeta-RNASeq.RDS', 'saved_data/samplemeta-ChIPSeq.RDS'],
+        lock=False,
+        quiet=True)
+    if not result:
+        raise Exception('Could not retrieve experiment metadata from GEO')
+    rnaseq_samplemeta = read_R_dataframe('saved_data/samplemeta-RNASeq.RDS')
+    chipseq_samplemeta = read_R_dataframe('saved_data/samplemeta-ChIPSeq.RDS')
 
 rnaseq_sample_libtypes = dict(zip(rnaseq_samplemeta['SRA_run'], rnaseq_samplemeta['libType']))
 
