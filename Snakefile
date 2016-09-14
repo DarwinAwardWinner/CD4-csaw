@@ -6,6 +6,9 @@ import shutil
 import subprocess
 import sys
 
+import numpy as np
+import pandas as pd
+
 from atomicwrites import atomic_write, AtomicWriter
 from subprocess import check_call, Popen, PIPE, CalledProcessError, list2cmdline
 from rpy2 import robjects
@@ -116,6 +119,35 @@ def read_R_dataframe(rdsfile):
     df = readRDS((robjects.StrVector([rdsfile])))
     return(pandas2ri.ri2py(df))
 
+# TODO: Does a function like this already exist in pandas?
+def dfselect(dframe, what=None, where=None, **where_kwargs):
+    '''Filter DataFrame and select columns.
+
+    First, the DataFrame is filtered according to the 'where'
+    arguments. Each key (or keyword argument) in 'where' should be a
+    column name, and its value should be the allowed value or values
+    for that column. Rows will be selected if they match all the
+    requirements in 'where'.
+
+    Second, if 'what' is not None, it will be used to select one or
+    more columns. As normal, using a single string returns a Series
+    object, while using a list of strings returns a DataFrame with a
+    subset of columns selected.
+
+    '''
+    if where is None:
+        where = dict()
+    where.update(where_kwargs)
+    if where:
+        selected = pd.Series(True, index=dframe.index)
+        for (colname, allowed_vals) in where.items():
+            selected &= dframe[colname].isin(pd.Series(allowed_vals))
+        dframe = dframe[selected]
+    if what is None:
+        return dframe
+    else:
+        return dframe[what]
+
 def list_salmon_output_files(outdir, alignment=False):
     file_list = [
         'aux_info/bootstrap/bootstraps.gz',
@@ -144,6 +176,16 @@ def list_kallisto_output_files(outdir):
         'abundance.h5', 'abundance.tsv', 'run_info.json',
     ]
     return [ os.path.join(outdir, f) for f in file_list ]
+
+def list_macs_callpeak_output_files(basename):
+    ext_list = [
+        '_control_lambda.bdg',
+        '_peaks.narrowPeak',
+        '_peaks.xls',
+        '_summits.bed',
+        '_treat_pileup.bdg',
+    ]
+    return [ basename + ext for ext in ext_list ]
 
 # Run a separate Snakemake workflow to fetch the sample metadata,
 # which must be avilable before evaluating the rules below. Without
@@ -680,3 +722,162 @@ rule macs_predictd:
         cd {params.outdir:q}
         Rscript {output_rfile_basename:q}
         ''')
+
+rule macs_callpeak_all_conditions_all_donors:
+    input:
+        chip_input=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody="input"),
+               genome_build=wildcards.genome_build),
+        chip_pulldown=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody=wildcards.chip_antibody),
+               genome_build=wildcards.genome_build)
+    output:
+        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall'),
+        log='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall.log'
+    params:
+        outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL',
+    version: MACS_VERSION
+    shell: '''
+    macs2 callpeak \
+      --treatment {input.chip_pulldown:q} \
+      --control {input.chip_input:q} \
+      --format BAM \
+      --gsize hs \
+      --keep-dup auto \
+      --outdir {params.outdir:q} \
+      --name peakcall \
+      --bdg \
+      --nomodel --extsize 147 \
+      --pvalue=0.5 \
+      2>&1 | tee {output.log:q}
+    '''
+
+rule macs_callpeak_all_conditions_single_donor:
+    input:
+        chip_input=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody="input"),
+               genome_build=wildcards.genome_build),
+        chip_pulldown=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody=wildcards.chip_antibody,
+                                donor_id=wildcards.donor),
+               genome_build=wildcards.genome_build)
+    output:
+        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peakcall'),
+        log='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peakcall.log'
+    params:
+        outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}',
+    version: MACS_VERSION
+    shell: '''
+    macs2 callpeak \
+      --treatment {input.chip_pulldown:q} \
+      --control {input.chip_input:q} \
+      --format BAM \
+      --gsize hs \
+      --keep-dup auto \
+      --outdir {params.outdir:q} \
+      --name peakcall \
+      --bdg \
+      --nomodel --extsize 147 \
+      --pvalue=0.5 \
+      2>&1 | tee {output.log:q}
+    '''
+
+rule macs_callpeak_single_condition_all_donors:
+    input:
+        chip_input=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody="input"),
+               genome_build=wildcards.genome_build),
+        chip_pulldown=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody=wildcards.chip_antibody,
+                                cell_type=wildcards.cell_type,
+                                days_after_activation=float(wildcards.time_point)),
+               genome_build=wildcards.genome_build)
+    output:
+        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall'),
+        log='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall.log'
+    params:
+        outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL',
+    version: MACS_VERSION
+    shell: '''
+    macs2 callpeak \
+      --treatment {input.chip_pulldown:q} \
+      --control {input.chip_input:q} \
+      --format BAM \
+      --gsize hs \
+      --keep-dup auto \
+      --outdir {params.outdir:q} \
+      --name peakcall \
+      --bdg \
+      --nomodel --extsize 147 \
+      --pvalue=0.5 \
+      2>&1 | tee {output.log:q}
+    '''
+
+rule macs_callpeak_single_condition_single_donor:
+    input:
+        chip_input=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody="input"),
+               genome_build=wildcards.genome_build),
+        chip_pulldown=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody=wildcards.chip_antibody,
+                                donor_id=wildcards.donor,
+                                cell_type=wildcards.cell_type,
+                                days_after_activation=float(wildcards.time_point)),
+               genome_build=wildcards.genome_build)
+    output:
+        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor,D[0-9]+}/peakcall'),
+        log='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor,D[0-9]+}/peakcall.log'
+    params:
+        outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}',
+    version: MACS_VERSION
+    shell: '''
+    macs2 callpeak \
+      --treatment {input.chip_pulldown:q} \
+      --control {input.chip_input:q} \
+      --format BAM \
+      --gsize hs \
+      --keep-dup auto \
+      --outdir {params.outdir:q} \
+      --name peakcall \
+      --bdg \
+      --nomodel --extsize 147 \
+      --pvalue=0.5 \
+      2>&1 | tee {output.log:q}
+    '''
+
+rule all_macs_callpeak_test:
+    input:
+        ac_ad=expand('peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall.log',
+                     genome_build='hg38.analysisSet',
+                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input'])),
+        ac_sd=expand('peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}/peakcall.log',
+                     genome_build='hg38.analysisSet',
+                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
+                     donor=set(chipseq_samplemeta['donor_id'])),
+        sc_ad=expand('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall.log',
+                     genome_build='hg38.analysisSet',
+                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
+                     cell_type=set(chipseq_samplemeta['cell_type']),
+                     time_point=map(int, set(chipseq_samplemeta['days_after_activation']))),
+        sc_sd=expand('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}/peakcall.log',
+                     genome_build='hg38.analysisSet',
+                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
+                     cell_type=set(chipseq_samplemeta['cell_type']),
+                     time_point=map(int, set(chipseq_samplemeta['days_after_activation'])),
+                     donor=set(chipseq_samplemeta['donor_id']))
