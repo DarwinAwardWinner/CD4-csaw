@@ -29,6 +29,7 @@ before I learned the value of reproducible research.)
 * RNA-seq quantification using Salmon (using both STAR transcriptome
   alignement and quasi-alignment)
 * ChIP-seq mapping with bowtie2
+* ChIP-seq peak calling
 
 ### Testing components
 
@@ -37,7 +38,6 @@ before I learned the value of reproducible research.)
 * RNA-seq differential gene expression
 * RNA-seq differential gene/transcript/exon/whatever expression from
   Salmon quantification
-* ChIP-seq peak calling
 * ChIP-seq peak IDR pipeline
 * csaw analysis of ChIP-seq
 
