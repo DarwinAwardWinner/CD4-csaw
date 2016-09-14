@@ -10,8 +10,15 @@ def is_target_rule(name):
 rule all_rulegraphs:
     input:
         expand('rulegraphs/{graphtype}-{target}.{filetype}',
-               graphtype=['rulegraph', 'dag',],
-               target=['all', 'all_rnaseq_counts', 'all_salmon', 'all_kallisto', 'all_chipseq_bai',],
+               graphtype=['rulegraph',],
+               target=['all', 'all_rnaseq_counts', 'all_salmon', 'all_kallisto', 'all_chipseq_bai', 'all_macs_callpeak', 'all_epic_callpeak',],
+               filetype=['pdf', 'png'])
+
+rule all_dags:
+    input:
+        expand('rulegraphs/{graphtype}-{target}.{filetype}',
+               graphtype=['dag',],
+               target=['all', 'all_rnaseq_counts', 'all_salmon', 'all_kallisto', 'all_chipseq_bai', 'all_macs_callpeak', 'all_epic_callpeak',],
                filetype=['pdf', 'png'])
 
 rule svg_to_png:
