@@ -66,5 +66,5 @@ rule rulegraph_svg:
         shell('''
         set -o pipefail;
         snakemake --nolock -f --rulegraph {real_targets:q} | \
-        dot -Grankdir=TB -Tsvg > {output:q}
+        dot -Grankdir=LR -Tsvg > {output:q}
         ''')
