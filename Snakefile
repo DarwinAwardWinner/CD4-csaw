@@ -445,14 +445,26 @@ rule index_bam:
         VALIDATION_STRINGENCY=LENIENT
     '''
 
-# rule bam2bed:
-#     '''Create .bai file for a bam file.'''
-#     input: '{basename}.bam'
-#     output: '{basename}_reads.bed'
-#     shell: '''
-#     picard-tools BuildBamIndex I={input:q} O={output:q} \
-#         VALIDATION_STRINGENCY=LENIENT
-#     '''
+rule bam2bed:
+    '''Create .bai file for a bam file.'''
+    input: '{basename}.bam'
+    output: '{basename}_reads.bed'
+    shell: '''
+    picard-tools BuildBamIndex I={input:q} O={output:q} \
+        VALIDATION_STRINGENCY=LENIENT
+    '''
+
+rule bam2bed_macs_filterdup:
+    input: '{basename}.bam'
+    output: bed='{basename}_reads_macs_filterdup.bed',
+            log='{basename}_macs_filterdup.log'
+    version: MACS_VERSION
+    shell: '''
+    macs2 filterdup --ifile {input:q} --format BAM \
+      --gsize hs --keep-dup auto \
+      --ofile {output.bed:q} \
+      2>&1 | tee {output.log:q} 1>&2
+    '''
 
 # The hisat2 documentation doesn't specify which version of Ensembl
 # they used to build the prebuilt index. Hopefully it doesn't matter
@@ -876,6 +888,177 @@ rule all_macs_callpeak_test:
                      cell_type=set(chipseq_samplemeta['cell_type']),
                      time_point=map(int, set(chipseq_samplemeta['days_after_activation']))),
         sc_sd=expand('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}/peakcall.log',
+                     genome_build='hg38.analysisSet',
+                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
+                     cell_type=set(chipseq_samplemeta['cell_type']),
+                     time_point=map(int, set(chipseq_samplemeta['days_after_activation'])),
+                     donor=set(chipseq_samplemeta['donor_id']))
+
+rule epic_callpeak_all_conditions_all_donors:
+    input:
+        chip_input=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody="input"),
+               genome_build=wildcards.genome_build),
+        chip_pulldown=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody=wildcards.chip_antibody),
+               genome_build=wildcards.genome_build)
+    output:
+        peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.tsv',
+        chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/bigwig/sum_treatment.bw',
+        control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/bigwig/sum_input.bw',
+        log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall.log',
+    params:
+        outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL',
+    threads: 4
+    version: EPIC_VERSION
+    shell: '''
+    epic \
+      --treatment {input.chip_pulldown:q} \
+      --control {input.chip_input:q} \
+      --number-cores {threads:q} \
+      --genome hg38 \
+      --fragment-size 147 \
+      --keep-duplicates True \
+      --bigwig {params.outdir:q}/bigwigs \
+      >{output.peaks:q} \
+      2>{output.log:q} &
+    tail -f {output.log:q} 1>&2
+    wait
+    '''
+
+rule epic_callpeak_all_conditions_single_donor:
+    input:
+        chip_input=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody="input"),
+               genome_build=wildcards.genome_build),
+        chip_pulldown=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody=wildcards.chip_antibody,
+                                donor_id=wildcards.donor),
+               genome_build=wildcards.genome_build)
+    output:
+        peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peaks.tsv',
+        chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/bigwig/sum_treatment.bw',
+        control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/bigwig/sum_input.bw',
+        log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peakcall.log',
+    params:
+        outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}',
+    threads: 4
+    version: EPIC_VERSION
+    shell: '''
+    epic \
+      --treatment {input.chip_pulldown:q} \
+      --control {input.chip_input:q} \
+      --number-cores {threads:q} \
+      --genome hg38 \
+      --fragment-size 147 \
+      --keep-duplicates True \
+      --bigwig {params.outdir:q}/bigwigs \
+      >{output.peaks:q} \
+      2>{output.log:q} &
+    tail -f {output.log:q} 1>&2
+    wait
+    '''
+
+rule epic_callpeak_single_condition_all_donors:
+    input:
+        chip_input=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody="input"),
+               genome_build=wildcards.genome_build),
+        chip_pulldown=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody=wildcards.chip_antibody,
+                                cell_type=wildcards.cell_type,
+                                days_after_activation=float(wildcards.time_point)),
+               genome_build=wildcards.genome_build)
+    output:
+        peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peaks.tsv',
+        chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/bigwig/sum_treatment.bw',
+        control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/bigwig/sum_input.bw',
+        log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall.log',
+    params:
+        outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL',
+    threads: 4
+    version: EPIC_VERSION
+    shell: '''
+    epic \
+      --treatment {input.chip_pulldown:q} \
+      --control {input.chip_input:q} \
+      --number-cores {threads:q} \
+      --genome hg38 \
+      --fragment-size 147 \
+      --keep-duplicates True \
+      --bigwig {params.outdir:q}/bigwig \
+      >{output.peaks:q} \
+      2>{output.log:q} &
+    tail -f {output.log:q} 1>&2
+    wait
+    '''
+
+rule epic_callpeak_single_condition_single_donor:
+    input:
+        chip_input=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody="input"),
+               genome_build=wildcards.genome_build),
+        chip_pulldown=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
+               SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                chip_antibody=wildcards.chip_antibody,
+                                donor_id=wildcards.donor,
+                                cell_type=wildcards.cell_type,
+                                days_after_activation=float(wildcards.time_point)),
+               genome_build=wildcards.genome_build)
+    output:
+        peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor,D[0-9]+}/peaks.tsv',
+        chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor,D[0-9]+}/bigwig/sum_treatment.bw',
+        control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor,D[0-9]+}/bigwig/sum_input.bw',
+        log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor,D[0-9]+}/peakcall.log',
+    params:
+        outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}',
+    threads: 4
+    version: EPIC_VERSION
+    shell: '''
+    epic \
+      --treatment {input.chip_pulldown:q} \
+      --control {input.chip_input:q} \
+      --number-cores {threads:q} \
+      --genome hg38 \
+      --fragment-size 147 \
+      --keep-duplicates True \
+      --bigwig {params.outdir:q}/bigwig \
+      >{output.peaks:q} \
+      2>{output.log:q} &
+    tail -f {output.log:q} 1>&2
+    wait
+    '''
+
+rule all_epic_callpeak_test:
+    input:
+        ac_ad=expand('peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.tsv',
+                     genome_build='hg38.analysisSet',
+                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input'])),
+        ac_sd=expand('peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}/peaks.tsv',
+                     genome_build='hg38.analysisSet',
+                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
+                     donor=set(chipseq_samplemeta['donor_id'])),
+        sc_ad=expand('peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peaks.tsv',
+                     genome_build='hg38.analysisSet',
+                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
+                     cell_type=set(chipseq_samplemeta['cell_type']),
+                     time_point=map(int, set(chipseq_samplemeta['days_after_activation']))),
+        sc_sd=expand('peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}/peaks.tsv',
                      genome_build='hg38.analysisSet',
                      chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
                      cell_type=set(chipseq_samplemeta['cell_type']),

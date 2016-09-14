@@ -117,6 +117,11 @@ try:
 except Exception:
     MACS_VERSION = None
 
+try:
+    EPIC_VERSION = 'epic ' + get_command_version_string('epic --version', 'epic\\s+(?P<version>\\S+)')
+except Exception:
+    EPIC_VERSION = None
+
 # R, BioC, & packages
 try:
     from rpy2.robjects import r
