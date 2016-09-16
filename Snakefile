@@ -330,12 +330,6 @@ rule all_salmon:
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run'],
             filename=['cmd_info.json', 'aux_info/bootstrap/quant_bootstraps.tsv']),
-        salmon_star_quant=expand(
-            'aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant/{filename}',
-            genome_build='hg38.analysisSet',
-            transcriptome=['knownGene', 'ensembl.85'],
-            SRA_run=rnaseq_samplemeta['SRA_run'],
-            filename=['cmd_info.json', 'aux_info/bootstrap/quant_bootstraps.tsv']),
 
 rule all_kallisto:
     input:
@@ -429,8 +423,6 @@ rule align_rnaseq_with_star_single_end:
            transcriptome_gff=hg38_ref('{transcriptome}.gff3'),
     output: bam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.sortedByCoord.out.bam',
             sj='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/SJ.out.tab',
-            tx_bam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.toTranscriptome.out.bam',
-            gene_counts='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/ReadsPerGene.out.tab',
             logs=expand('aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/{fname}',
                         fname=['Log.final.out', 'Log.out', 'Log.progress.out'])
     params: temp_sam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.out.sam',
@@ -458,7 +450,6 @@ rule align_rnaseq_with_star_single_end:
             '--outSAMunmapped', 'Within',
             '--outFileNamePrefix', outdir,
             '--outSAMtype', 'SAM',
-            '--quantMode', 'TranscriptomeSAM', 'GeneCounts',
         ]
         # Run STAR
         shell(list2cmdline(map(str, star_cmd)))
@@ -665,30 +656,6 @@ rule count_rnaseq_star_knownGene:
             '--additional-gene-info', input.genemeta,
         ]
         check_call(cmd)
-
-rule run_salmon_star_transcriptome_bam:
-    input:
-        transcriptome_fa=hg38_ref('{genome_build}_{transcriptome}_transcripts.fa'),
-        genemap_file=hg38_ref('Salmon_index_{genome_build}_{transcriptome}/genemap.txt'),
-        bam_file='aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/Aligned.toTranscriptome.out.bam',
-    output:
-        list_salmon_output_files('aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant', alignment=True)
-    params: outdir='aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant',
-        libtype=lambda wildcards: rnaseq_sample_libtypes[wildcards.SRA_run]
-    version: SALMON_VERSION
-    threads: 8
-    shell: '''
-    salmon quant \
-      --targets {input.transcriptome_fa:q} \
-      --alignments {input.bam_file:q} \
-      --threads {threads:q} \
-      --libType {params.libtype:q} \
-      --seqBias --gcBias --useVBOpt \
-      --geneMap {input.genemap_file:q} \
-      --output {params.outdir:q} \
-      --auxDir aux_info \
-      --numGibbsSamples 100
-    '''
 
 rule run_salmon_fastq:
     input:
