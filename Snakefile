@@ -253,12 +253,6 @@ rule all:
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run'],
             filename=['cmd_info.json', 'aux_info/bootstrap/quant_bootstraps.tsv']),
-        salmon_star_quant=expand(
-            'aligned/rnaseq_star_{genome_build}_{transcriptome}/{SRA_run}/salmon_quant/{filename}',
-            genome_build='hg38.analysisSet',
-            transcriptome=['knownGene', 'ensembl.85'],
-            SRA_run=rnaseq_samplemeta['SRA_run'],
-            filename=['cmd_info.json', 'aux_info/bootstrap/quant_bootstraps.tsv']),
         kallisto_quant=expand(
             'kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}/run_info.json',
             genome_build='hg38.analysisSet',
