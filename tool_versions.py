@@ -122,6 +122,11 @@ try:
 except Exception:
     EPIC_VERSION = None
 
+try:
+    FASTQ_TOOLS_VERSION = 'fastq-tools ' + get_command_version_string('fastq-sort --version', '(?P<version>\\d+(\\.\\d+)*)')
+except Exception:
+    FASTQ_TOOLS_VERSION = None
+
 # R, BioC, & packages
 try:
     from rpy2.robjects import r

@@ -701,12 +701,17 @@ rule run_salmon_fastq:
         index_dir=hg38_ref('Salmon_index_{genome_build}_{transcriptome}'),
         outdir='salmon_quant/{genome_build}_{transcriptome}/{SRA_run}',
         libtype=lambda wildcards: rnaseq_sample_libtypes[wildcards.SRA_run]
-    version: SALMON_VERSION
+    version: [SALMON_VERSION, FASTQ_TOOLS_VERSION]
     threads: 16
     shell: '''
+    mkdir -p {params.outdir:q}
+    echo "Shuffling input reads..."
+    zcat {input.fastq:q} > {params.outdir:q}/temp.fq
+    fastq-sort --random --seed=1986 {params.outdir:q}/temp.fq > {params.outdir:q}/temp_shuffled.fq
+    echo "Finished shuffling reads."
     salmon quant \
       --index {params.index_dir:q} \
-      --unmatedReads {input.fastq:q} \
+      --unmatedReads {params.outdir:q}/temp_shuffled.fq \
       --threads {threads:q} \
       --libType {params.libtype:q} \
       --seqBias --gcBias --useVBOpt \
@@ -714,6 +719,7 @@ rule run_salmon_fastq:
       --output {params.outdir:q} \
       --auxDir aux_info \
       --numGibbsSamples 100
+    rm -f {params.outdir:q}/temp.fq {params.outdir:q}/temp_shuffled.fq
     '''
 
 rule convert_salmon_bootstraps_to_tsv:
