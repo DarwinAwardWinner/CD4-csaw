@@ -1102,3 +1102,12 @@ rule epic_callpeak_single_condition_single_donor:
     tail -f {output.log:q} 1>&2
     wait
     '''
+
+rule csaw_compute_ccf:
+    input:
+        bam_files=expand("aligned/chipseq_bowtie2_hg38.analysisSet/{sra_run}/Aligned.{ext}",
+                         sra_run=chipseq_samplemeta['SRA_run'],
+                         ext=['bam', 'bam.bai'])
+    output:
+        'saved_data/csaw-ccf.RDS', 'saved_data/csaw-ccf-noBL.RDS'
+    shell: 'Rscript scripts/csaw-compute-ccf.R'
