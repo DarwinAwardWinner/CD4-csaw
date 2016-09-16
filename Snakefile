@@ -698,6 +698,11 @@ rule convert_salmon_bootstraps_to_tsv:
       {wildcards.salmon_quant_dir:q}/aux_info/bootstrap/
     '''
 
+rule convert_salmon_to_hdf5:
+    input: list_salmon_output_files('{salmon_quant_dir}')
+    output: '{salmon_quant_dir}/abundance.h5'
+    shell: ''' scripts/convert-salmon-to-hdf5.R {wildcards.salmon_quant_dir:q} '''
+
 rule run_kallisto_fastq:
     input:
         kallisto_index=hg38_ref('Kallisto_index_{genome_build}_{transcriptome}'),
