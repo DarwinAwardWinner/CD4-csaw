@@ -417,8 +417,8 @@ rule align_rnaseq_with_star_single_end:
            transcriptome_gff=hg38_ref('{transcriptome}.gff3'),
     output: bam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.sortedByCoord.out.bam',
             sj='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/SJ.out.tab',
-            logs=expand('aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/{fname}',
-                        fname=['Log.final.out', 'Log.out', 'Log.progress.out'])
+            logs=[ os.path.join('aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}', fname)
+                   for fname in ['Log.final.out', 'Log.out', 'Log.progress.out'] ],
     params: temp_sam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.out.sam',
             temp_tx_bam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/TEMP_Aligned.toTranscriptome.out.bam',
             temp_tx_bam_header='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/TEMP_Aligned.toTranscriptome.out.bam.header'
