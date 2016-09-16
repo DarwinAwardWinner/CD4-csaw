@@ -666,7 +666,6 @@ rule count_rnaseq_star_knownGene:
         ]
         check_call(cmd)
 
-# TODO: Get correct libType for each sample
 rule run_salmon_star_transcriptome_bam:
     input:
         transcriptome_fa=hg38_ref('{genome_build}_{transcriptome}_transcripts.fa'),
