@@ -179,11 +179,11 @@ def list_kallisto_output_files(outdir):
 
 def list_macs_callpeak_output_files(basename):
     ext_list = [
-        '_control_lambda.bdg',
         '_peaks.narrowPeak',
         '_peaks.xls',
         '_summits.bed',
-        '_treat_pileup.bdg',
+        # '_control_lambda.bdg',
+        # '_treat_pileup.bdg',
     ]
     return [ basename + ext for ext in ext_list ]
 
@@ -948,7 +948,6 @@ rule macs_callpeak_single_condition_single_donor:
       --keep-dup auto \
       --outdir {params.outdir:q} \
       --name peakcall \
-      --bdg \
       --nomodel --extsize 147 \
       --pvalue=0.5 \
       2>&1 | tee {output.log:q}
