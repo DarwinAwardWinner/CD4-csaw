@@ -431,6 +431,8 @@ rule align_rnaseq_with_star_single_end:
             sj='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/SJ.out.tab',
             tx_bam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.toTranscriptome.out.bam',
             gene_counts='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/ReadsPerGene.out.tab',
+            logs=expand('aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/{fname}',
+                        fname=['Log.final.out', 'Log.out', 'Log.progress.out'])
     params: temp_sam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.out.sam',
             temp_tx_bam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/TEMP_Aligned.toTranscriptome.out.bam',
             temp_tx_bam_header='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/TEMP_Aligned.toTranscriptome.out.bam.header'
