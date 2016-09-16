@@ -707,7 +707,7 @@ rule quant_rnaseq_with_kallisto:
     params:
         outdir='kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}',
         libtype=lambda wildcards: rnaseq_sample_libtypes[wildcards.SRA_run]
-    version: KALLISTO_VERSION
+    version: [KALLISTO_VERSION, FASTQ_TOOLS_VERSION]
     threads: 16
     run:
         libType = list(rnaseq_samplemeta['libType'][rnaseq_samplemeta['SRA_run'] == wildcards.SRA_run])[0]
@@ -718,10 +718,16 @@ rule quant_rnaseq_with_kallisto:
         else:
             raise ValueError('Unknown kallisto libtype: {}'.format(libType))
         shell('''
+        mkdir -p {params.outdir:q}
+        echo "Shuffling input reads..."
+        zcat {input.fastq:q} > {params.outdir:q}/temp.fq
+        fastq-sort --random --seed=1986 {params.outdir:q}/temp.fq > {params.outdir:q}/temp_shuffled.fq
+        echo "Finished shuffling reads."
         kallisto quant \
           --index {input.kallisto_index:q} --output-dir {params.outdir:q} \
           {lib_opt:q} --single --threads {threads:q} --bootstrap-samples 100 \
-          --bias --fragment-length 200 --sd 80 {input.fastq:q}
+          --bias --fragment-length 200 --sd 80 {params.outdir:q}/temp_shuffled.fq
+        rm -f {params.outdir:q}/temp.fq {params.outdir:q}/temp_shuffled.fq
         ''')
 
 # TODO: Write R script to convert bootstraps into SummarizedExperiment
