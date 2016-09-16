@@ -26,10 +26,10 @@ before I learned the value of reproducible research.)
 
 * RNA-seq mapping (STAR & HISAT2)
 * RNA-seq counting
-* RNA-seq quantification using Salmon (using both STAR transcriptome
-  alignement and quasi-alignment)
+* RNA-seq alignment-free quantification using Salmon & Kallisto
 * ChIP-seq mapping with bowtie2
-* ChIP-seq peak calling
+* ChIP-seq peak calling with MACS2 and Epic
+* Computation of cross-correlation function for ChIP-Seq samples
 
 ### Testing components
 
