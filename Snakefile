@@ -305,6 +305,7 @@ rule all:
                           cell_type=set(chipseq_samplemeta['cell_type']),
                           time_point=map(int, set(chipseq_samplemeta['days_after_activation'])),
                           donor=set(chipseq_samplemeta['donor_id'])),
+        ccf_data_files=['saved_data/csaw-ccf.RDS', 'saved_data/csaw-ccf-noBL.RDS'],
 
 rule all_rnaseq_counts:
     input:
