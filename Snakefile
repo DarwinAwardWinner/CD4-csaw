@@ -651,7 +651,7 @@ rule count_rnaseq_star_knownGene:
         ]
         check_call(cmd)
 
-rule run_salmon_fastq:
+rule quant_rnaseq_with_salmon:
     input:
         salmon_index=hg38_ref('Salmon_index_{genome_build}_{transcriptome}/sa.bin'),
         genemap_file=hg38_ref('Salmon_index_{genome_build}_{transcriptome}/genemap.txt'),
@@ -697,7 +697,7 @@ rule convert_salmon_to_hdf5:
     output: '{salmon_quant_dir}/abundance.h5'
     shell: ''' scripts/convert-salmon-to-hdf5.R {wildcards.salmon_quant_dir:q} '''
 
-rule run_kallisto_fastq:
+rule quant_rnaseq_with_kallisto:
     input:
         kallisto_index=hg38_ref('Kallisto_index_{genome_build}_{transcriptome}'),
         fastq='fastq_files/{SRA_run}.fq.gz',
