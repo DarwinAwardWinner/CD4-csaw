@@ -397,19 +397,29 @@ rule fetch_sra_run:
     shell: 'scripts/get-sra-run-files.R {wildcards.sra_run:q}'
 
 rule extract_fastq:
-    '''Extract FASTQ from SRA files.'''
+    '''Extract FASTQ from SRA files.
+
+    During extraction, the reads are also shuffled deterministically
+    (i.e. using a fixed seed). This ensures that downstream tools
+    expecting the reads in random order with respect to their mapping
+    position (e.g. Salmon) will be satisfied.
+
+    '''
     input: 'sra_files/{sra_run}.sra'
     output: 'fastq_files/{sra_run}.{fqext,fq(|\\.gz|\\.bz2|\\.qp)}'
-    version: SRATOOLKIT_VERSION
+    params: temp_unshuffled='fastq_files/{sra_run}_unshuffled.fq_temp'
+    params: temp_shuffled='fastq_files/{sra_run}_shuffled.fq_temp'
+    version: (SRATOOLKIT_VERSION, FASTQ_TOOLS_VERSION)
     run:
-        cmds = [
-            ['fastq-dump', '--stdout', input[0]],
-            ['scripts/fill-in-empty-fastq-qual.py'],
-            fastq_compression_cmds[wildcards.fqext]['compress'],
-        ]
-        with atomic_write(output[0], mode='wb', overwrite=True) as outfile:
-            pipeline = Popen_pipeline(cmds, stdout=outfile)
-            wait_for_subprocs(pipeline)
+        compression_cmd = fastq_compression_cmds[wildcards.fqext]['compress']
+        shell('''
+        fastq-dump --stdout {input:q} | \
+          scripts/fill-in-empty-fastq-qual.py \
+          > {params.temp_unshuffled:q}
+        fastq-sort --random --seed=1986 {params.temp_unshuffled:q} > {params.temp_shuffled:q}
+        {compression_cmd} < {params.temp_shuffled:q} > {output:q}
+        rm -f {params.temp_unshuffled:q} {params.temp_shuffled:q}
+        ''')
 
 rule align_rnaseq_with_star_single_end:
     '''Align fastq file with star'''
@@ -649,17 +659,12 @@ rule quant_rnaseq_with_salmon:
         index_dir=hg38_ref('Salmon_index_{genome_build}_{transcriptome}'),
         outdir='salmon_quant/{genome_build}_{transcriptome}/{SRA_run}',
         libtype=lambda wildcards: rnaseq_sample_libtypes[wildcards.SRA_run]
-    version: [SALMON_VERSION, FASTQ_TOOLS_VERSION]
+    version: SALMON_VERSION
     threads: 16
     shell: '''
-    mkdir -p {params.outdir:q}
-    echo "Shuffling input reads..."
-    zcat {input.fastq:q} > {params.outdir:q}/temp.fq
-    fastq-sort --random --seed=1986 {params.outdir:q}/temp.fq > {params.outdir:q}/temp_shuffled.fq
-    echo "Finished shuffling reads."
     salmon quant \
       --index {params.index_dir:q} \
-      --unmatedReads {params.outdir:q}/temp_shuffled.fq \
+      --unmatedReads {input.fastq:q} \
       --threads {threads:q} \
       --libType {params.libtype:q} \
       --seqBias --gcBias --useVBOpt \
@@ -667,7 +672,6 @@ rule quant_rnaseq_with_salmon:
       --output {params.outdir:q} \
       --auxDir aux_info \
       --numGibbsSamples 100
-    rm -f {params.outdir:q}/temp.fq {params.outdir:q}/temp_shuffled.fq
     '''
 
 rule convert_salmon_bootstraps_to_tsv:
@@ -693,7 +697,7 @@ rule quant_rnaseq_with_kallisto:
     params:
         outdir='kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}',
         libtype=lambda wildcards: rnaseq_sample_libtypes[wildcards.SRA_run]
-    version: [KALLISTO_VERSION, FASTQ_TOOLS_VERSION]
+    version: KALLISTO_VERSION
     threads: 16
     run:
         libType = list(rnaseq_samplemeta['libType'][rnaseq_samplemeta['SRA_run'] == wildcards.SRA_run])[0]
@@ -705,15 +709,10 @@ rule quant_rnaseq_with_kallisto:
             raise ValueError('Unknown kallisto libtype: {}'.format(libType))
         shell('''
         mkdir -p {params.outdir:q}
-        echo "Shuffling input reads..."
-        zcat {input.fastq:q} > {params.outdir:q}/temp.fq
-        fastq-sort --random --seed=1986 {params.outdir:q}/temp.fq > {params.outdir:q}/temp_shuffled.fq
-        echo "Finished shuffling reads."
         kallisto quant \
           --index {input.kallisto_index:q} --output-dir {params.outdir:q} \
           {lib_opt:q} --single --threads {threads:q} --bootstrap-samples 100 \
-          --bias --fragment-length 200 --sd 80 {params.outdir:q}/temp_shuffled.fq
-        rm -f {params.outdir:q}/temp.fq {params.outdir:q}/temp_shuffled.fq
+          --bias --fragment-length 200 --sd 80 {input.fastq:q}
         ''')
 
 # TODO: Write R script to convert bootstraps into SummarizedExperiment
