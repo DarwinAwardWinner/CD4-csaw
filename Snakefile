@@ -421,8 +421,6 @@ rule align_rnaseq_with_star_single_end:
             logs=[ os.path.join('aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}', fname)
                    for fname in ['Log.final.out', 'Log.out', 'Log.progress.out'] ],
     params: temp_sam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.out.sam',
-            temp_tx_bam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/TEMP_Aligned.toTranscriptome.out.bam',
-            temp_tx_bam_header='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/TEMP_Aligned.toTranscriptome.out.bam.header'
     version: STAR_VERSION
     threads: 8
     run:
@@ -453,18 +451,6 @@ rule align_rnaseq_with_star_single_end:
         shell(picard_sort_cmd)
         # Delete sam file
         os.remove(params.temp_sam)
-        # Remove 'transcript:' from transcriptome bam reference names,
-        # e.g. 'transcript:ENST00000379319' becomes 'ENST00000379319'.
-
-        # Create new header
-        shell('samtools view -H {output.tx_bam:q} | sed -e "s/SN:transcript:/SN:/" > {params.temp_tx_bam_header:q}')
-        # Move bam file out of the way
-        shell('mv {output.tx_bam:q} {params.temp_tx_bam:q}')
-        # Replace header into original file name
-        picard_replaceheader_cmd = 'picard-tools ReplaceSamHeader I={params.temp_tx_bam:q} HEADER={params.temp_tx_bam_header:q} O={output.tx_bam:q} VALIDATION_STRINGENCY=LENIENT'
-        shell(picard_replaceheader_cmd)
-        # Clean up temp files
-        shell('rm -f {params.temp_tx_bam:q} {params.temp_tx_bam_header:q}')
 
 rule align_rnaseq_with_hisat2_single_end:
     '''Align fastq file with HISAT2'''
