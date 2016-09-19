@@ -407,8 +407,8 @@ rule extract_fastq:
     '''
     input: 'sra_files/{sra_run}.sra'
     output: 'fastq_files/{sra_run}.{fqext,fq(|\\.gz|\\.bz2|\\.qp)}'
-    params: temp_unshuffled='fastq_files/{sra_run}_unshuffled.fq_temp'
-    params: temp_shuffled='fastq_files/{sra_run}_shuffled.fq_temp'
+    params: temp_unshuffled='fastq_files/{sra_run}_unshuffled.fq_temp',
+            temp_shuffled='fastq_files/{sra_run}_shuffled.fq_temp'
     version: (SRATOOLKIT_VERSION, FASTQ_TOOLS_VERSION)
     run:
         compression_cmd = fastq_compression_cmds[wildcards.fqext]['compress']
