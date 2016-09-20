@@ -413,10 +413,13 @@ rule extract_fastq:
     run:
         compression_cmd = fastq_compression_cmds[wildcards.fqext]['compress']
         shell('''
+        echo "Dumping fastq for {wildcards.sra_run:q}..."
         fastq-dump --stdout {input:q} | \
           scripts/fill-in-empty-fastq-qual.py \
           > {params.temp_unshuffled:q}
+        echo "Shuffling fastq for {wildcards.sra_run:q}..."
         fastq-sort --random --seed=1986 {params.temp_unshuffled:q} > {params.temp_shuffled:q}
+        echo "Compressing fastq for {wildcards.sra_run:q}..."
         {compression_cmd} < {params.temp_shuffled:q} > {output:q}
         rm -f {params.temp_unshuffled:q} {params.temp_shuffled:q}
         ''')
