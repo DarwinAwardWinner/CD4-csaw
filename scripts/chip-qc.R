@@ -1,12 +1,17 @@
 #!/usr/bin/env Rscript
 
+tsmsg <- function(...) {
+    message(date(), ": ", ...)
+}
+
 getScriptPath <- function() {
     argv <-commandArgs()
     dir <- na.omit(stringr::str_match(argv, "^--file=(.*)$")[,2])[1]
     if (!is.na(dir) && !is.null(dir))
         return(dir)
 }
-setwd(file.path(dirname(getScriptPath()), ".."))
+tryCatch(setwd(file.path(dirname(getScriptPath()), "..")),
+         error=function(...) tsmsg("WARNING: Could not determine script path. Ensure that you are already in the correct directory."))
 
 library(stringr)
 library(magrittr)
