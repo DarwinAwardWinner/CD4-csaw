@@ -14,6 +14,7 @@ from subprocess import check_call, Popen, PIPE, CalledProcessError, list2cmdline
 from rpy2 import robjects
 from rpy2.robjects import r, pandas2ri
 from rpy2.robjects import globalenv as r_env
+from warnings import warn
 
 from snakemake.io import expand
 from snakemake.utils import min_version
@@ -127,7 +128,9 @@ def dfselect(dframe, what=None, where=None, **where_kwargs):
     arguments. Each key (or keyword argument) in 'where' should be a
     column name, and its value should be the allowed value or values
     for that column. Rows will be selected if they match all the
-    requirements in 'where'.
+    requirements in 'where'. Each filter can also be a callable, which
+    should take a single value and return True for including that
+    value and False for excluding it.
 
     Second, if 'what' is not None, it will be used to select one or
     more columns. As normal, using a single string returns a Series
@@ -141,12 +144,81 @@ def dfselect(dframe, what=None, where=None, **where_kwargs):
     if where:
         selected = pd.Series(True, index=dframe.index)
         for (colname, allowed_vals) in where.items():
-            selected &= dframe[colname].isin(pd.Series(allowed_vals))
+            if callable(allowed_vals):
+                allow_func = allowed_vals
+                allowed_rows = [allow_func(x) for x in dframe[colname]]
+            else:
+                try:
+                    allowed_vals = pd.Series(allowed_vals)
+                except TypeError:
+                    allowed_vals = pd.Series(list(allowed_vals))
+                allowed_rows = dframe[colname].isin(allowed_vals)
+            selected &= allowed_rows
         dframe = dframe[selected]
     if what is None:
         return dframe
     else:
         return dframe[what]
+
+def recycled(it, length=None):
+    '''Recycle iterable to specified length.
+
+    Items are returned in round-robin order until the specified length
+    is reached. If length is None, the iterable is recycled
+    indefinitely.
+
+    Cannot handle infinite-length iterators as inputs, since it needs
+    to enumerate all the elements of an iterable in order to recycle
+    them.
+
+    '''
+    if length is None:
+        x = list(it)
+        while True:
+            yield from iter(x)
+    else:
+        need_recycling = True
+        try:
+            if len(it) >= length:
+                need_recycling = False
+        except TypeError:
+            pass
+        if need_recycling:
+            it = recycled(it)
+            i = 0
+            while i < length:
+                i += 1
+                yield next(it)
+        else:
+            yield from iter(it[:length])
+    raise StopIteration
+
+def zip_recycled(*args, length=None):
+    '''Like zip(), but recycles all iterables to the specified length.
+
+    If length is None,
+
+    Cannot handle infinite-length iterators as inputs, since it needs
+    to enumerate all the elements of an iterable in order to recycle
+    them.
+
+    '''
+    return zip(*(recycled(arg, length) for arg in args))
+
+def zip_longest_recycled(*args, warn_on_uneven=True):
+    '''Like itertools.zip_longest(), but recycles shorter iterables.
+
+    Unless kwarg warn_on_mismatch is set to False, a warning will be
+    raised if all the iterable lengths do not divide evenly into the
+    length of the longest iterable.
+
+    '''
+    args = [list(arg) for arg in args]
+    maxlen = max(map(len, args))
+    if warn_on_uneven:
+        if max(maxlen % len(arg) for arg in args) > 0:
+            warn("Longest iterable's length is not a multiple of shorter.")
+    return zip_recycled(*args, length=maxlen)
 
 def list_salmon_output_files(outdir, alignment=False):
     file_list = [
@@ -227,6 +299,7 @@ aligned_rnaseq_hisat_bam_files = expand(
 aligned_rnaseq_bam_files = aligned_rnaseq_star_bam_files + aligned_rnaseq_hisat_bam_files
 aligned_rnaseq_bai_files = [ bam + '.bai' for bam in aligned_rnaseq_bam_files ]
 
+chipseq_samplemeta_noinput = dfselect(chipseq_samplemeta, chip_antibody=lambda x: x != 'input')
 aligned_chipseq_input_bam_files = expand(
     'aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam',
     SRA_run=list(chipseq_samplemeta['SRA_run'][chipseq_samplemeta['chip_antibody'] == 'input']))
@@ -269,42 +342,50 @@ rule all:
             SRA_run=chipseq_samplemeta['SRA_run'],
         ),
         macs_predictd='saved_data/macs_predictd/output.log',
-        macs_ac_ad=expand('peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall_peaks.narrowPeak',
-                          genome_build='hg38.analysisSet',
-                          chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input'])),
-        macs_ac_sd=expand('peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}/peakcall_peaks.narrowPeak',
-                          genome_build='hg38.analysisSet',
-                          chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
-                          donor=set(chipseq_samplemeta['donor_id'])),
-        macs_sc_ad=expand('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall_peaks.narrowPeak',
-                          genome_build='hg38.analysisSet',
-                          chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
-                          cell_type=set(chipseq_samplemeta['cell_type']),
-                          time_point=map(int, set(chipseq_samplemeta['days_after_activation']))),
-        macs_sc_sd=expand('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}/peakcall_peaks.narrowPeak',
-                          genome_build='hg38.analysisSet',
-                          chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
-                          cell_type=set(chipseq_samplemeta['cell_type']),
-                          time_point=map(int, set(chipseq_samplemeta['days_after_activation'])),
-                          donor=set(chipseq_samplemeta['donor_id'])),
-        epic_ac_ad=expand('peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.tsv',
-                          genome_build='hg38.analysisSet',
-                          chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input'])),
-        epic_ac_sd=expand('peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}/peaks.tsv',
-                          genome_build='hg38.analysisSet',
-                          chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
-                          donor=set(chipseq_samplemeta['donor_id'])),
-        epic_sc_ad=expand('peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peaks.tsv',
-                          genome_build='hg38.analysisSet',
-                          chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
-                          cell_type=set(chipseq_samplemeta['cell_type']),
-                          time_point=map(int, set(chipseq_samplemeta['days_after_activation']))),
-        epic_sc_sd=expand('peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}/peaks.tsv',
-                          genome_build='hg38.analysisSet',
-                          chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
-                          cell_type=set(chipseq_samplemeta['cell_type']),
-                          time_point=map(int, set(chipseq_samplemeta['days_after_activation'])),
-                          donor=set(chipseq_samplemeta['donor_id'])),
+        macs_ac_ad=set(expand(
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall_peaks.narrowPeak', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'])),
+        macs_ac_sd=set(expand(
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}/peakcall_peaks.narrowPeak', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
+            donor=chipseq_samplemeta_noinput['donor_id'])),
+        macs_sc_ad=set(expand(
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall_peaks.narrowPeak', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
+            cell_type=chipseq_samplemeta_noinput['cell_type'],
+            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']))),
+        macs_sc_sd=set(expand(
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}/peakcall_peaks.narrowPeak', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
+            cell_type=chipseq_samplemeta_noinput['cell_type'],
+            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']),
+            donor=chipseq_samplemeta_noinput['donor_id'])),
+        epic_ac_ad=set(expand(
+            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.tsv', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'])),
+        epic_ac_sd=set(expand(
+            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}/peaks.tsv', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
+            donor=chipseq_samplemeta_noinput['donor_id'])),
+        epic_sc_ad=set(expand(
+            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peaks.tsv', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
+            cell_type=chipseq_samplemeta_noinput['cell_type'],
+            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']))),
+        epic_sc_sd=set(expand(
+            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}/peaks.tsv', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
+            cell_type=chipseq_samplemeta_noinput['cell_type'],
+            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']),
+            donor=chipseq_samplemeta_noinput['donor_id'])),
         ccf_data_files=['saved_data/csaw-ccf.RDS', 'saved_data/csaw-ccf-noBL.RDS'],
 
 rule all_rnaseq_counts:
@@ -345,45 +426,53 @@ rule all_chipseq_bai:
 
 rule all_macs_callpeak:
     input:
-        ac_ad=expand('peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall_peaks.narrowPeak',
-                     genome_build='hg38.analysisSet',
-                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input'])),
-        ac_sd=expand('peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}/peakcall_peaks.narrowPeak',
-                     genome_build='hg38.analysisSet',
-                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
-                     donor=set(chipseq_samplemeta['donor_id'])),
-        sc_ad=expand('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall_peaks.narrowPeak',
-                     genome_build='hg38.analysisSet',
-                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
-                     cell_type=set(chipseq_samplemeta['cell_type']),
-                     time_point=map(int, set(chipseq_samplemeta['days_after_activation']))),
-        sc_sd=expand('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}/peakcall_peaks.narrowPeak',
-                     genome_build='hg38.analysisSet',
-                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
-                     cell_type=set(chipseq_samplemeta['cell_type']),
-                     time_point=map(int, set(chipseq_samplemeta['days_after_activation'])),
-                     donor=set(chipseq_samplemeta['donor_id'])),
+        ac_ad=set(expand(
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall_peaks.narrowPeak', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'])),
+        ac_sd=set(expand(
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}/peakcall_peaks.narrowPeak', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
+            donor=chipseq_samplemeta_noinput['donor_id'])),
+        sc_ad=set(expand(
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall_peaks.narrowPeak', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
+            cell_type=chipseq_samplemeta_noinput['cell_type'],
+            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']))),
+        sc_sd=set(expand(
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}/peakcall_peaks.narrowPeak', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
+            cell_type=chipseq_samplemeta_noinput['cell_type'],
+            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']),
+            donor=chipseq_samplemeta_noinput['donor_id'])),
 
 rule all_epic_callpeak:
     input:
-        ac_ad=expand('peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.tsv',
-                     genome_build='hg38.analysisSet',
-                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input'])),
-        ac_sd=expand('peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}/peaks.tsv',
-                     genome_build='hg38.analysisSet',
-                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
-                     donor=set(chipseq_samplemeta['donor_id'])),
-        sc_ad=expand('peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peaks.tsv',
-                     genome_build='hg38.analysisSet',
-                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
-                     cell_type=set(chipseq_samplemeta['cell_type']),
-                     time_point=map(int, set(chipseq_samplemeta['days_after_activation']))),
-        sc_sd=expand('peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}/peaks.tsv',
-                     genome_build='hg38.analysisSet',
-                     chip_antibody=set(chipseq_samplemeta['chip_antibody']).difference(['input']),
-                     cell_type=set(chipseq_samplemeta['cell_type']),
-                     time_point=map(int, set(chipseq_samplemeta['days_after_activation'])),
-                     donor=set(chipseq_samplemeta['donor_id'])),
+        ac_ad=set(expand(
+            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.tsv', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'])),
+        ac_sd=set(expand(
+            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}/peaks.tsv', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
+            donor=chipseq_samplemeta_noinput['donor_id'])),
+        sc_ad=set(expand(
+            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peaks.tsv', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
+            cell_type=chipseq_samplemeta_noinput['cell_type'],
+            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']))),
+        sc_sd=set(expand(
+            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}/peaks.tsv', zip_longest_recycled,
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
+            cell_type=chipseq_samplemeta_noinput['cell_type'],
+            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']),
+            donor=chipseq_samplemeta_noinput['donor_id'])),
 
 rule fetch_sra_run:
     '''Script to fetch the .sra file for an SRA run
