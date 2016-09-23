@@ -26,7 +26,7 @@ from snakemake.remote.FTP import RemoteProvider as FTPRemoteProvider
 HTTP = HTTPRemoteProvider()
 FTP = FTPRemoteProvider()
 
-from tool_versions import *
+exec(open("tool_versions.py").read())
 
 pandas2ri.activate()
 rpy2.rinterface.set_writeconsole_warnerror(lambda x: sys.stderr.write(x))
