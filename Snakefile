@@ -1159,6 +1159,90 @@ rule epic_callpeak_single_condition_single_donor:
     tail -f {output.log:q} 1>&2
     wait
     '''
+rule run_idr_macs_all_conditions:
+    input:
+        all_donor_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall_peaks.narrowPeak',
+        donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorA}/peakcall_peaks.narrowPeak',
+        donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peakcall_peaks.narrowPeak',
+    output:
+        outfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
+        logfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
+        plotfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
+    shell: '''
+    idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
+      --peak-list {input.all_donor_peaks:q} \
+      --input-file-type narrowPeak \
+      --output-file {output.outfile:q} \
+      --output-file-type narrowPeak \
+      --log-output-file {output.logfile:q} \
+      --plot \
+      --random-seed 1986
+    mv {output.outfile:q}.png {output.plotfile:q}
+    '''
+
+rule run_idr_macs_single_condition:
+    input:
+        all_donor_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall_peaks.narrowPeak',
+        donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donorA}/peakcall_peaks.narrowPeak',
+        donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donorB}/peakcall_peaks.narrowPeak',
+    output:
+        outfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
+        logfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
+        plotfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
+    shell: '''
+    idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
+      --peak-list {input.all_donor_peaks:q} \
+      --input-file-type narrowPeak \
+      --output-file {output.outfile:q} \
+      --output-file-type narrowPeak \
+      --log-output-file {output.logfile:q} \
+      --plot \
+      --random-seed 1986
+    mv {output.outfile:q}.png {output.plotfile:q}
+    '''
+
+# TODO: Figure out what format Epic's peaks.tsv file is
+rule run_idr_epic_all_conditions:
+    input:
+        all_donor_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.tsv',
+        donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorA}/peaks.tsv',
+        donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peaks.tsv',
+    output:
+        outfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
+        logfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
+        plotfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
+    shell: '''
+    idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
+      --peak-list {input.all_donor_peaks:q} \
+      --input-file-type narrowPeak \
+      --output-file {output.outfile:q} \
+      --output-file-type narrowPeak \
+      --log-output-file {output.logfile:q} \
+      --plot \
+      --random-seed 1986
+    mv {output.outfile:q}.png {output.plotfile:q}
+    '''
+
+rule run_idr_epic_single_condition:
+    input:
+        all_donor_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peaks.tsv',
+        donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donorA}/peaks.tsv',
+        donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donorB}/peaks.tsv',
+    output:
+        outfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
+        logfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
+        plotfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
+    shell: '''
+    idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
+      --peak-list {input.all_donor_peaks:q} \
+      --input-file-type narrowPeak \
+      --output-file {output.outfile:q} \
+      --output-file-type narrowPeak \
+      --log-output-file {output.logfile:q} \
+      --plot \
+      --random-seed 1986
+    mv {output.outfile:q}.png {output.plotfile:q}
+    '''
 
 rule csaw_compute_ccf:
     input:
