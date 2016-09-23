@@ -901,7 +901,6 @@ rule macs_callpeak_all_conditions_all_donors:
       --keep-dup auto \
       --outdir {params.outdir:q} \
       --name peakcall \
-      --bdg \
       --nomodel --extsize 147 \
       --pvalue=0.5 \
       2>&1 | tee {output.log:q}
