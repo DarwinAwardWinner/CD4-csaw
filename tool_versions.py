@@ -4,8 +4,8 @@ import shutil
 import subprocess
 import sys
 
-def get_command_version_string(cmd, regexp, use_stderr=None,
-                               encoding=sys.getdefaultencoding()):
+def get_command_version_string(cmd, regexp, *, prefix="", suffix="", use_stderr=None,
+                               encoding=sys.getdefaultencoding(), raise_on_error=False):
     '''Get the version string from a command.
 
     Arguments:
@@ -22,6 +22,11 @@ def get_command_version_string(cmd, regexp, use_stderr=None,
     doesn't match the output of the command, or is missing the named
     capture group, an exception is raised.
 
+    Keyword-only arguments:
+
+    prefix, suffix: Prepended/appended to the version string before
+    returning.
+
     use_stderr: If the command is known to print its version to
     standard error instead of standard output, set this to True. If it
     is known to print its version to standard output, set this to
@@ -29,103 +34,56 @@ def get_command_version_string(cmd, regexp, use_stderr=None,
     of both (standard output first) will be searched for the version
     string.
 
+    raise_on_error: If False (the default), will return None if an
+    error is encountered, including failing to find the command or
+    failing to match the regular expression. If True, the exception
+    will be raised as normal.
+
+    encoding: Which text encoding to use to read the output of the
+    command. Use the system default if not specified.
+
     '''
-    use_shell = isinstance(cmd, str)
-    p = subprocess.Popen(cmd, shell=use_shell, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    (stdout, stderr) = p.communicate()
-    if use_stderr is None:
-        output = stdout + stderr
-    elif use_stderr:
-        output = stderr
-    else:
-        output = stdout
-    output = output.decode(encoding)
-    m = re.search(regexp, output)
-    if m is None:
-        raise ValueError("Regular expression did not match command output")
-    return m.group("version")
+    try:
+        use_shell = isinstance(cmd, str)
+        p = subprocess.Popen(cmd, shell=use_shell, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (stdout, stderr) = p.communicate()
+        if use_stderr is None:
+            output = stdout + stderr
+        elif use_stderr:
+            output = stderr
+        else:
+            output = stdout
+        output = output.decode(encoding)
+        m = re.search(regexp, output)
+        if m is None:
+            raise ValueError("Regular expression did not match command output")
+        return prefix + m.group("version") + suffix
+    except Exception as ex:
+        if raise_on_error:
+            raise ex
+        else:
+            return None
+
+ascp_path = shutil.which("ascp") or os.path.expanduser("~/.aspera/connect/bin/ascp")
 
 # Determine the versions of various programs used
-try:
-    CUFFLINKS_VERSION = 'cufflinks ' + get_command_version_string('cufflinks --help', 'cufflinks v(?P<version>\S+)')
-except Exception:
-    CUFFLINKS_VERSION = None
-
-try:
-    SAMTOOLS_VERSION = 'samtools ' + get_command_version_string('samtools', 'Version:\\s+(?P<version>\\S+)')
-except Exception:
-    SAMTOOLS_VERSION = None
-
-try:
-    BOWTIE1_VERSION = 'bowtie ' + get_command_version_string('bowtie --version', 'version\\s+(?P<version>\\S+)')
-except Exception:
-    BOWTIE1_VERSION = None
-
-try:
-    BOWTIE2_VERSION = 'bowtie2 ' + get_command_version_string('bowtie2 --version', 'version\\s+(?P<version>\\S+)')
-except Exception:
-    BOWTIE2_VERSION = None
-
-try:
-    TOPHAT2_VERSION = 'tophat ' + get_command_version_string('tophat --version', 'TopHat v(?P<version>\\S+)')
-except Exception:
-    TOPHAT2_VERSION = None
-
-try:
-    HISAT2_VERSION = 'hisat2 ' + get_command_version_string('hisat2 --version', 'version\\s+(?P<version>\\S+)')
-except Exception:
-    HISAT2_VERSION = None
-
-try:
-    BWA_VERSION = 'bwa ' + get_command_version_string('bwa', 'Version:\\s+(?P<version>\\S+)')
-except Exception:
-    BWA_VERSION = None
-
-try:
-    BBMAP_VERSION = 'bbmap ' + get_command_version_string([BBMAP, '--version'], 'BBMap version (?P<version>\\S+)')
-except Exception:
-    BBMAP_VERSION = None
-
-try:
-    STAR_VERSION = 'STAR ' + get_command_version_string('STAR --version', 'STAR_(?P<version>\\S+)')
-except Exception:
-    STAR_VERSION = None
-
-try:
-    SALMON_VERSION = 'salmon ' + get_command_version_string('salmon --version', 'version\\s+:\\s+(?P<version>\\S+)')
-except Exception:
-    SALMON_VERSION = None
-
-try:
-    KALLISTO_VERSION = 'kallisto ' + get_command_version_string('kallisto', '^kallisto\\s+(?P<version>\\S+)')
-except Exception:
-    KALLISTO_VERSION = None
-
-try:
-    ascp_path = shutil.which("ascp") or os.path.expanduser("~/.aspera/connect/bin/ascp")
-    ASCP_VERSION = 'ascp ' + get_command_version_string([ascp_path, '--version'], 'ascp version\\s+(?P<version>\\S+)')
-except Exception:
-    ASCP_VERSION = None
-
-try:
-    SRATOOLKIT_VERSION = 'sratoolkit ' + get_command_version_string('fastq-dump --version', ':\\s+(?P<version>\\S+)')
-except Exception:
-    SRATOOLKIT_VERSION = None
-
-try:
-    MACS_VERSION = 'macs2 ' + get_command_version_string('macs2 --version', 'macs2\\s+(?P<version>\\S+)')
-except Exception:
-    MACS_VERSION = None
-
-try:
-    EPIC_VERSION = 'epic ' + get_command_version_string('epic --version', 'epic\\s+(?P<version>\\S+)')
-except Exception:
-    EPIC_VERSION = None
-
-try:
-    FASTQ_TOOLS_VERSION = 'fastq-tools ' + get_command_version_string('fastq-sort --version', '(?P<version>\\d+(\\.\\d+)*)')
-except Exception:
-    FASTQ_TOOLS_VERSION = None
+ASCP_VERSION = get_command_version_string(prefix='ascp ', [ascp_path, '--version'], 'ascp version\\s+(?P<version>\\S+)')
+BBMAP_VERSION = get_command_version_string(prefix='bbmap ', [BBMAP, '--version'], 'BBMap version (?P<version>\\S+)')
+BOWTIE1_VERSION = get_command_version_string(prefix='bowtie ', 'bowtie --version', 'version\\s+(?P<version>\\S+)')
+BOWTIE2_VERSION = get_command_version_string(prefix='bowtie2 ', 'bowtie2 --version', 'version\\s+(?P<version>\\S+)')
+BWA_VERSION = get_command_version_string(prefix='bwa ', 'bwa', 'Version:\\s+(?P<version>\\S+)')
+CUFFLINKS_VERSION = get_command_version_string(prefix='cufflinks ', 'cufflinks --help', 'cufflinks v(?P<version>\S+)')
+EPIC_VERSION = get_command_version_string(prefix='epic ', 'epic --version', 'epic\\s+(?P<version>\\S+)')
+FASTQ_TOOLS_VERSION = get_command_version_string(prefix='fastq-tools ', 'fastq-sort --version', '(?P<version>\\d+(\\.\\d+)*)')
+HISAT2_VERSION = get_command_version_string(prefix='hisat2 ', 'hisat2 --version', 'version\\s+(?P<version>\\S+)')
+IDR_VERSION = get_command_version_string(prefix='IDR ', 'idr --version', '(?P<version>\\d+(\\.\\d+)*)')
+KALLISTO_VERSION = get_command_version_string(prefix='kallisto ', 'kallisto', '^kallisto\\s+(?P<version>\\S+)')
+MACS_VERSION = get_command_version_string(prefix='macs2 ', 'macs2 --version', 'macs2\\s+(?P<version>\\S+)')
+SALMON_VERSION = get_command_version_string(prefix='salmon ', 'salmon --version', 'version\\s+:\\s+(?P<version>\\S+)')
+SAMTOOLS_VERSION = get_command_version_string(prefix='samtools ', 'samtools', 'Version:\\s+(?P<version>\\S+)')
+SRATOOLKIT_VERSION = get_command_version_string(prefix='sratoolkit ', 'fastq-dump --version', ':\\s+(?P<version>\\S+)')
+STAR_VERSION = get_command_version_string(prefix='STAR ', 'STAR --version', 'STAR_(?P<version>\\S+)')
+TOPHAT2_VERSION = get_command_version_string(prefix='tophat ', 'tophat --version', 'TopHat v(?P<version>\\S+)')
 
 # R, BioC, & packages
 try:
