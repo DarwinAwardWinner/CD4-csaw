@@ -405,7 +405,12 @@ rule all_salmon:
             genome_build='hg38.analysisSet',
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run'],
-            filename=['cmd_info.json', 'aux_info/bootstrap/quant_bootstraps.tsv', 'abundance.h5']),
+            filename=[
+                'cmd_info.json', 'abundance.h5',
+                # Don't need the bootstraps in text format, we can
+                # already get them through the HDF5 file.
+                # 'aux_info/bootstrap/quant_bootstraps.tsv',
+            ]),
 
 rule all_kallisto:
     input:
