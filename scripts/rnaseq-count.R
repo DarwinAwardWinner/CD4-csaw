@@ -123,8 +123,6 @@ library(GenomicRanges)
 library(Rsubread)
 library(SummarizedExperiment)
 
-## library(BSgenome.Hsapiens.UCSC.hg19)
-library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 library(org.Hs.eg.db)
 
 tsmsg <- function(...) {
