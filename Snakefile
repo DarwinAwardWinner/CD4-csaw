@@ -27,6 +27,7 @@ HTTP = HTTPRemoteProvider()
 FTP = FTPRemoteProvider()
 
 exec(open("tool_versions.py").read())
+exec(open("mem_requirements.py").read())
 
 pandas2ri.activate()
 rpy2.rinterface.set_writeconsole_warnerror(lambda x: sys.stderr.write(x))
@@ -531,6 +532,7 @@ rule align_rnaseq_with_star_single_end:
     params: temp_sam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.out.sam',
     version: STAR_VERSION
     threads: 8
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['star']
     run:
         index_genomedir = os.path.dirname(input.index_sa)
         outdir = os.path.dirname(output.bam) + os.path.sep
@@ -570,6 +572,7 @@ rule align_rnaseq_with_hisat2_single_end:
             log='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/hisat2.log'
     version: HISAT2_VERSION
     threads: 8
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['hisat2']
     run:
         index_basename = re.sub('\\.1\\.ht2', '', input.index_f1)
         outdir = os.path.dirname(output.bam)
@@ -646,6 +649,7 @@ rule count_rnaseq_hisat2_ensembl:
     output: sexp='saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_ensembl.{release}.RDS'
     version: BIOC_VERSION
     threads: 4
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
     run:
         cmd = [
             'scripts/rnaseq-count.R',
@@ -673,6 +677,7 @@ rule count_rnaseq_hisat2_knownGene:
     output: sexp='saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_knownGene.RDS'
     version: R_package_version('RSubread')
     threads: 4
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
     run:
         cmd = [
             'scripts/rnaseq-count.R',
@@ -701,6 +706,7 @@ rule count_rnaseq_star_ensembl:
     output: sexp='saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_ensembl.{release,\\d+}.RDS'
     version: R_package_version('RSubread')
     threads: 4
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
     run:
         cmd = [
             'scripts/rnaseq-count.R',
@@ -732,6 +738,7 @@ rule count_rnaseq_star_knownGene:
     output: sexp='saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_knownGene.RDS'
     version: R_package_version('RSubread')
     threads: 4
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
     run:
         cmd = [
             'scripts/rnaseq-count.R',
@@ -759,6 +766,7 @@ rule quant_rnaseq_with_salmon:
         libtype=lambda wildcards: rnaseq_sample_libtypes[wildcards.SRA_run]
     version: SALMON_VERSION
     threads: 16
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['salmon']
     shell: '''
     salmon quant \
       --index {params.index_dir:q} \
@@ -797,6 +805,7 @@ rule quant_rnaseq_with_kallisto:
         libtype=lambda wildcards: rnaseq_sample_libtypes[wildcards.SRA_run]
     version: KALLISTO_VERSION
     threads: 16
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['kallisto']
     run:
         libType = list(rnaseq_samplemeta['libType'][rnaseq_samplemeta['SRA_run'] == wildcards.SRA_run])[0]
         if libType == 'ISF':
@@ -826,6 +835,7 @@ rule align_chipseq_with_bowtie2:
         index_basename=hg38_ref('BT2_index_{genome_build}/index')
     version: BOWTIE2_VERSION
     threads: 8
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['bowtie2']
     shell: '''
     bowtie2 --threads {threads:q} --mm \
       -U {input.fastq:q} -x {params.index_basename:q} -q \
@@ -897,6 +907,7 @@ rule callpeak_macs_all_conditions_all_donors:
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL',
     version: MACS_VERSION
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['macs_callpeak']
     shell: '''
     macs2 callpeak \
       --treatment {input.chip_pulldown:q} \
@@ -930,6 +941,7 @@ rule callpeak_macs_all_conditions_single_donor:
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}',
     version: MACS_VERSION
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['macs_callpeak']
     shell: '''
     macs2 callpeak \
       --treatment {input.chip_pulldown:q} \
@@ -965,6 +977,7 @@ rule callpeak_macs_single_condition_all_donors:
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL',
     version: MACS_VERSION
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['macs_callpeak']
     shell: '''
     macs2 callpeak \
       --treatment {input.chip_pulldown:q} \
@@ -1001,6 +1014,7 @@ rule callpeak_macs_single_condition_single_donor:
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}',
     version: MACS_VERSION
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['macs_callpeak']
     shell: '''
     macs2 callpeak \
       --treatment {input.chip_pulldown:q} \
@@ -1034,8 +1048,9 @@ rule callpeak_epic_all_conditions_all_donors:
         log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall.log',
     params:
         outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL',
-    threads: 4
     version: EPIC_VERSION
+    threads: 4
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
     shell: '''
     epic \
       --treatment {input.chip_pulldown:q} \
@@ -1071,8 +1086,9 @@ rule callpeak_epic_all_conditions_single_donor:
         log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peakcall.log',
     params:
         outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}',
-    threads: 4
     version: EPIC_VERSION
+    threads: 4
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
     shell: '''
     epic \
       --treatment {input.chip_pulldown:q} \
@@ -1109,8 +1125,9 @@ rule callpeak_epic_single_condition_all_donors:
         log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall.log',
     params:
         outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL',
-    threads: 4
     version: EPIC_VERSION
+    threads: 4
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
     shell: '''
     epic \
       --treatment {input.chip_pulldown:q} \
@@ -1148,8 +1165,9 @@ rule callpeak_epic_single_condition_single_donor:
         log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor,D[0-9]+}/peakcall.log',
     params:
         outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}',
-    threads: 4
     version: EPIC_VERSION
+    threads: 4
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
     shell: '''
     epic \
       --treatment {input.chip_pulldown:q} \
