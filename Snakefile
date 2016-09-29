@@ -1199,7 +1199,7 @@ rule run_idr_macs_all_conditions:
         outfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
         logfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
         plotfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
-    resources: mem_gb=10
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['idr']
     shell: '''
     idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
       --peak-list {input.all_donor_peaks:q} \
@@ -1221,7 +1221,7 @@ rule run_idr_macs_single_condition:
         outfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
         logfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
         plotfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
-    resources: mem_gb=10
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['idr']
     shell: '''
     idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
       --peak-list {input.all_donor_peaks:q} \
@@ -1244,6 +1244,7 @@ rule run_idr_epic_all_conditions:
         outfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
         logfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
         plotfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['idr']
     shell: '''
     idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
       --peak-list {input.all_donor_peaks:q} \
@@ -1265,6 +1266,7 @@ rule run_idr_epic_single_condition:
         outfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
         logfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
         plotfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['idr']
     shell: '''
     idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
       --peak-list {input.all_donor_peaks:q} \

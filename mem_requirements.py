@@ -7,4 +7,5 @@ MEMORY_REQUIREMENTS_GB = {
     'bowtie2': 5,
     'macs_callpeak': 40,
     'epic_callpeak': 40,
+    'idr': 10,
 }
