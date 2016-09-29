@@ -879,7 +879,7 @@ rule macs_predictd:
         Rscript {output_rfile_basename:q}
         ''')
 
-rule macs_callpeak_all_conditions_all_donors:
+rule callpeak_macs_all_conditions_all_donors:
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
@@ -911,7 +911,7 @@ rule macs_callpeak_all_conditions_all_donors:
       2>&1 | tee {output.log:q}
     '''
 
-rule macs_callpeak_all_conditions_single_donor:
+rule callpeak_macs_all_conditions_single_donor:
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
@@ -945,7 +945,7 @@ rule macs_callpeak_all_conditions_single_donor:
       2>&1 | tee {output.log:q}
     '''
 
-rule macs_callpeak_single_condition_all_donors:
+rule callpeak_macs_single_condition_all_donors:
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
@@ -980,7 +980,7 @@ rule macs_callpeak_single_condition_all_donors:
       2>&1 | tee {output.log:q}
     '''
 
-rule macs_callpeak_single_condition_single_donor:
+rule callpeak_macs_single_condition_single_donor:
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
@@ -1015,7 +1015,7 @@ rule macs_callpeak_single_condition_single_donor:
       2>&1 | tee {output.log:q}
     '''
 
-rule epic_callpeak_all_conditions_all_donors:
+rule callpeak_epic_all_conditions_all_donors:
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
@@ -1051,7 +1051,7 @@ rule epic_callpeak_all_conditions_all_donors:
     wait
     '''
 
-rule epic_callpeak_all_conditions_single_donor:
+rule callpeak_epic_all_conditions_single_donor:
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
@@ -1088,7 +1088,7 @@ rule epic_callpeak_all_conditions_single_donor:
     wait
     '''
 
-rule epic_callpeak_single_condition_all_donors:
+rule callpeak_epic_single_condition_all_donors:
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
@@ -1126,7 +1126,7 @@ rule epic_callpeak_single_condition_all_donors:
     wait
     '''
 
-rule epic_callpeak_single_condition_single_donor:
+rule callpeak_epic_single_condition_single_donor:
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
