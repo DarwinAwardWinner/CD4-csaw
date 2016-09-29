@@ -102,6 +102,8 @@ def R_package_version(pkgname):
         from rpy2.robjects import r
         from rpy2.rinterface import RRuntimeError
         pkgversion = r('installed.packages()[,"Version"]').rx(pkgname)[0]
+        if r['is.na'](pkgversion)[0]:
+            raise ValueError("Could not determine package version for {!r}. Maybe the package is not installed?".format(pkgname))
         return ' '.join([pkgname, pkgversion])
     except Exception:
         return None
