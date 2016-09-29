@@ -31,3 +31,4 @@ temp-core-*
 /salmon_quant
 /kallisto_quant
 /peak_calls
+/idr_analysis

@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from atomicwrites import atomic_write, AtomicWriter
+from itertools import product, count
 from subprocess import check_call, Popen, PIPE, CalledProcessError, list2cmdline
 from rpy2 import robjects
 from rpy2.robjects import r, pandas2ri
@@ -281,6 +282,9 @@ except Exception:
     rnaseq_samplemeta = read_R_dataframe('saved_data/samplemeta-RNASeq.RDS')
     chipseq_samplemeta = read_R_dataframe('saved_data/samplemeta-ChIPSeq.RDS')
 
+rnaseq_samplemeta['time_point'] = rnaseq_samplemeta['days_after_activation'].apply(lambda x: "Day{:.0f}".format(x))
+chipseq_samplemeta['time_point'] = chipseq_samplemeta['days_after_activation'].apply(lambda x: "Day{:.0f}".format(x))
+
 rnaseq_sample_libtypes = dict(zip(rnaseq_samplemeta['SRA_run'], rnaseq_samplemeta['libType']))
 
 rnaseq_star_outdirs = [
@@ -301,6 +305,33 @@ aligned_rnaseq_bam_files = aligned_rnaseq_star_bam_files + aligned_rnaseq_hisat_
 aligned_rnaseq_bai_files = [ bam + '.bai' for bam in aligned_rnaseq_bam_files ]
 
 chipseq_samplemeta_noinput = dfselect(chipseq_samplemeta, chip_antibody=lambda x: x != 'input')
+
+def all_pairs(v, *, include_equal=False, include_reverse=False):
+    '''Return iterator over 2-tuples of input elements.
+
+    Tuples are yielded in arbitrary order. If 'include_equal' is True,
+    tuples with both elements the same will be allowed. If
+    'include_reverse' is True, tuples with the same elements in
+    opposite order (e.g. (1,2) and (2,1)) will both be yielded.
+
+    '''
+    try:
+        len(v)
+    except Exception:
+        v = list(v)
+    for i,j in product(range(len(v)), repeat=2):
+        if not include_equal and i == j:
+            continue
+        if not include_reverse and i > j:
+            continue
+        yield (v[i], v[j])
+
+idr_sample_pairs = chipseq_samplemeta_noinput.\
+                   groupby(['chip_antibody', 'cell_type', 'time_point']).\
+                   apply(lambda x: pd.DataFrame.from_items(zip(count(), list(all_pairs(list(x['donor_id'])))),
+                                                      orient='index', columns=['donorA', 'donorB'])).\
+                   reset_index(level=3, drop=True).reset_index()
+
 aligned_chipseq_input_bam_files = expand(
     'aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam',
     SRA_run=list(chipseq_samplemeta['SRA_run'][chipseq_samplemeta['chip_antibody'] == 'input']))
@@ -343,50 +374,16 @@ rule all:
             SRA_run=chipseq_samplemeta['SRA_run'],
         ),
         macs_predictd='saved_data/macs_predictd/output.log',
-        macs_ac_ad=set(expand(
-            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall_peaks.narrowPeak', zip_longest_recycled,
-            genome_build='hg38.analysisSet',
-            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'])),
-        macs_ac_sd=set(expand(
-            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}/peakcall_peaks.narrowPeak', zip_longest_recycled,
-            genome_build='hg38.analysisSet',
-            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
-            donor=chipseq_samplemeta_noinput['donor_id'])),
-        macs_sc_ad=set(expand(
-            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall_peaks.narrowPeak', zip_longest_recycled,
-            genome_build='hg38.analysisSet',
-            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
-            cell_type=chipseq_samplemeta_noinput['cell_type'],
-            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']))),
-        macs_sc_sd=set(expand(
-            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}/peakcall_peaks.narrowPeak', zip_longest_recycled,
-            genome_build='hg38.analysisSet',
-            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
-            cell_type=chipseq_samplemeta_noinput['cell_type'],
-            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']),
-            donor=chipseq_samplemeta_noinput['donor_id'])),
-        epic_ac_ad=set(expand(
-            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.tsv', zip_longest_recycled,
-            genome_build='hg38.analysisSet',
-            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'])),
-        epic_ac_sd=set(expand(
-            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}/peaks.tsv', zip_longest_recycled,
-            genome_build='hg38.analysisSet',
-            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
-            donor=chipseq_samplemeta_noinput['donor_id'])),
-        epic_sc_ad=set(expand(
-            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peaks.tsv', zip_longest_recycled,
-            genome_build='hg38.analysisSet',
-            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
-            cell_type=chipseq_samplemeta_noinput['cell_type'],
-            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']))),
-        epic_sc_sd=set(expand(
-            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}/peaks.tsv', zip_longest_recycled,
-            genome_build='hg38.analysisSet',
-            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
-            cell_type=chipseq_samplemeta_noinput['cell_type'],
-            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']),
-            donor=chipseq_samplemeta_noinput['donor_id'])),
+        idr_single_cond=expand(
+            expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.{cell_type}.{time_point}_{donorA}vs{donorB}/idrValues.txt',
+                   zip_longest_recycled,
+                   **dict(idr_sample_pairs.iteritems())),
+            peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet'),
+        idr_all_cond=set(expand(
+            expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.ALL_{donorA}vs{donorB}/idrValues.txt',
+                   zip_longest_recycled,
+                   **dict(idr_sample_pairs.iteritems())),
+            peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet')),
         ccf_data_files=['saved_data/csaw-ccf.RDS', 'saved_data/csaw-ccf-noBL.RDS'],
 
 rule all_rnaseq_counts:
@@ -442,17 +439,17 @@ rule all_macs_callpeak:
             chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
             donor=chipseq_samplemeta_noinput['donor_id'])),
         sc_ad=set(expand(
-            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall_peaks.narrowPeak', zip_longest_recycled,
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL/peakcall_peaks.narrowPeak', zip_longest_recycled,
             genome_build='hg38.analysisSet',
             chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
             cell_type=chipseq_samplemeta_noinput['cell_type'],
-            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']))),
+            time_point=chipseq_samplemeta_noinput['time_point'])),
         sc_sd=set(expand(
-            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}/peakcall_peaks.narrowPeak', zip_longest_recycled,
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donor}/peakcall_peaks.narrowPeak', zip_longest_recycled,
             genome_build='hg38.analysisSet',
             chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
             cell_type=chipseq_samplemeta_noinput['cell_type'],
-            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']),
+            time_point=chipseq_samplemeta_noinput['time_point'],
             donor=chipseq_samplemeta_noinput['donor_id'])),
 
 rule all_epic_callpeak:
@@ -467,18 +464,29 @@ rule all_epic_callpeak:
             chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
             donor=chipseq_samplemeta_noinput['donor_id'])),
         sc_ad=set(expand(
-            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peaks.tsv', zip_longest_recycled,
+            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL/peaks.tsv', zip_longest_recycled,
             genome_build='hg38.analysisSet',
             chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
             cell_type=chipseq_samplemeta_noinput['cell_type'],
-            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']))),
+            time_point=chipseq_samplemeta_noinput['time_point'])),
         sc_sd=set(expand(
-            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}/peaks.tsv', zip_longest_recycled,
+            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donor}/peaks.tsv', zip_longest_recycled,
             genome_build='hg38.analysisSet',
             chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
             cell_type=chipseq_samplemeta_noinput['cell_type'],
-            time_point=map(int, chipseq_samplemeta_noinput['days_after_activation']),
+            time_point=chipseq_samplemeta_noinput['time_point'],
             donor=chipseq_samplemeta_noinput['donor_id'])),
+
+rule all_idr:
+    input:
+        SingleCondition=expand(expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.{cell_type}.{time_point}_{donorA}vs{donorB}/idrValues.txt',
+                                      zip_longest_recycled,
+                                      **dict(idr_sample_pairs.iteritems())),
+                               peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet'),
+        AllCondition=set(expand(expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.ALL_{donorA}vs{donorB}/idrValues.txt',
+                                      zip_longest_recycled,
+                                      **dict(idr_sample_pairs.iteritems())),
+                                peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet'))
 
 rule fetch_sra_run:
     '''Script to fetch the .sra file for an SRA run
@@ -969,13 +977,13 @@ rule callpeak_macs_single_condition_all_donors:
                SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
                                 chip_antibody=wildcards.chip_antibody,
                                 cell_type=wildcards.cell_type,
-                                days_after_activation=float(wildcards.time_point)),
+                                time_point=wildcards.time_point),
                genome_build=wildcards.genome_build)
     output:
-        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall'),
-        log='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall.log'
+        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peakcall'),
+        log='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peakcall.log'
     params:
-        outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL',
+        outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL',
     version: MACS_VERSION
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['macs_callpeak']
     shell: '''
@@ -1006,13 +1014,13 @@ rule callpeak_macs_single_condition_single_donor:
                                 chip_antibody=wildcards.chip_antibody,
                                 donor_id=wildcards.donor,
                                 cell_type=wildcards.cell_type,
-                                days_after_activation=float(wildcards.time_point)),
+                                time_point=wildcards.time_point),
                genome_build=wildcards.genome_build)
     output:
-        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor,D[0-9]+}/peakcall'),
-        log='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor,D[0-9]+}/peakcall.log'
+        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peakcall'),
+        log='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peakcall.log'
     params:
-        outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}',
+        outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donor}',
     version: MACS_VERSION
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['macs_callpeak']
     shell: '''
@@ -1116,15 +1124,15 @@ rule callpeak_epic_single_condition_all_donors:
                SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
                                 chip_antibody=wildcards.chip_antibody,
                                 cell_type=wildcards.cell_type,
-                                days_after_activation=float(wildcards.time_point)),
+                                time_point=wildcards.time_point),
                genome_build=wildcards.genome_build)
     output:
-        peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peaks.tsv',
-        chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/bigwig/sum_treatment.bw',
-        control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/bigwig/sum_input.bw',
-        log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall.log',
+        peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peaks.tsv',
+        chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/bigwig/sum_treatment.bw',
+        control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/bigwig/sum_input.bw',
+        log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peakcall.log',
     params:
-        outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL',
+        outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL',
     version: EPIC_VERSION
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
@@ -1156,15 +1164,15 @@ rule callpeak_epic_single_condition_single_donor:
                                 chip_antibody=wildcards.chip_antibody,
                                 donor_id=wildcards.donor,
                                 cell_type=wildcards.cell_type,
-                                days_after_activation=float(wildcards.time_point)),
+                                time_point=wildcards.time_point),
                genome_build=wildcards.genome_build)
     output:
-        peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor,D[0-9]+}/peaks.tsv',
-        chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor,D[0-9]+}/bigwig/sum_treatment.bw',
-        control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor,D[0-9]+}/bigwig/sum_input.bw',
-        log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor,D[0-9]+}/peakcall.log',
+        peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peaks.tsv',
+        chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/bigwig/sum_treatment.bw',
+        control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/bigwig/sum_input.bw',
+        log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peakcall.log',
     params:
-        outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donor}',
+        outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donor}',
     version: EPIC_VERSION
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
@@ -1205,13 +1213,13 @@ rule run_idr_macs_all_conditions:
 
 rule run_idr_macs_single_condition:
     input:
-        all_donor_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peakcall_peaks.narrowPeak',
-        donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donorA}/peakcall_peaks.narrowPeak',
-        donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donorB}/peakcall_peaks.narrowPeak',
+        all_donor_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL/peakcall_peaks.narrowPeak',
+        donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorA}/peakcall_peaks.narrowPeak',
+        donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peakcall_peaks.narrowPeak',
     output:
-        outfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
-        logfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
-        plotfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
+        outfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
+        logfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
+        plotfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
     shell: '''
     idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
       --peak-list {input.all_donor_peaks:q} \
@@ -1248,13 +1256,13 @@ rule run_idr_epic_all_conditions:
 
 rule run_idr_epic_single_condition:
     input:
-        all_donor_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.ALL/peaks.tsv',
-        donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donorA}/peaks.tsv',
-        donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_donor.{donorB}/peaks.tsv',
+        all_donor_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL/peaks.tsv',
+        donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorA}/peaks.tsv',
+        donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peaks.tsv',
     output:
-        outfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
-        logfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
-        plotfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.Day{time_point}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
+        outfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
+        logfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
+        plotfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
     shell: '''
     idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
       --peak-list {input.all_donor_peaks:q} \
