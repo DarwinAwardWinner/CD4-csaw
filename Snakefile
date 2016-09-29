@@ -577,7 +577,7 @@ rule align_rnaseq_with_hisat2_single_end:
            transcriptome_gff=hg38_ref('knownGene.gff3'),
            chrom_mapping=hg38_ref('chrom_mapping_GRCh38_ensembl2UCSC.txt'),
     output: bam='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/Aligned.bam',
-            log='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/hisat2.log'
+    log: 'aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/hisat2.log'
     version: HISAT2_VERSION
     threads: 8
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['hisat2']
@@ -606,7 +606,7 @@ rule align_rnaseq_with_hisat2_single_end:
             ]
         ]
         with atomic_write(output.bam, mode='wb', overwrite=True) as outfile, \
-             open(output.log, mode='wb') as logfile:
+             open(log, mode='wb') as logfile:
             pipeline = Popen_pipeline(cmds, stdout=outfile, stderr=logfile)
             wait_for_subprocs(pipeline)
 
@@ -631,13 +631,13 @@ rule bam2bed:
 rule bam2bed_macs_filterdup:
     input: '{basename}.bam'
     output: bed='{basename}_reads_macs_filterdup.bed',
-            log='{basename}_macs_filterdup.log'
+    log: '{basename}_macs_filterdup.log'
     version: MACS_VERSION
     shell: '''
     macs2 filterdup --ifile {input:q} --format BAM \
       --gsize hs --keep-dup auto \
       --ofile {output.bed:q} \
-      2>&1 | tee {output.log:q} 1>&2
+      2>&1 | tee {log:q} 1>&2
     '''
 
 # The hisat2 documentation doesn't specify which version of Ensembl
@@ -884,6 +884,8 @@ rule macs_predictd:
     input: bam_files=aligned_chipseq_bam_files,
     output: rfile='saved_data/macs_predictd/predictd',
             pdf='saved_data/macs_predictd/predictd_model.pdf',
+            # This is actually the desired output file, despite being
+            # a log file.g
             logfile='saved_data/macs_predictd/output.log'
     params: outdir='saved_data/macs_predictd'
     version: MACS_VERSION
@@ -911,7 +913,7 @@ rule callpeak_macs_all_conditions_all_donors:
                genome_build=wildcards.genome_build)
     output:
         outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall'),
-        log='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall.log'
+    log: 'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall.log'
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL',
     version: MACS_VERSION
@@ -927,7 +929,7 @@ rule callpeak_macs_all_conditions_all_donors:
       --name peakcall \
       --nomodel --extsize 147 \
       --pvalue=0.5 \
-      2>&1 | tee {output.log:q}
+      2>&1 | tee {log:q}
     '''
 
 rule callpeak_macs_all_conditions_single_donor:
@@ -945,7 +947,7 @@ rule callpeak_macs_all_conditions_single_donor:
                genome_build=wildcards.genome_build)
     output:
         outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peakcall'),
-        log='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peakcall.log'
+    log: 'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peakcall.log'
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}',
     version: MACS_VERSION
@@ -962,7 +964,7 @@ rule callpeak_macs_all_conditions_single_donor:
       --bdg \
       --nomodel --extsize 147 \
       --pvalue=0.5 \
-      2>&1 | tee {output.log:q}
+      2>&1 | tee {log:q}
     '''
 
 rule callpeak_macs_single_condition_all_donors:
@@ -981,7 +983,7 @@ rule callpeak_macs_single_condition_all_donors:
                genome_build=wildcards.genome_build)
     output:
         outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peakcall'),
-        log='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peakcall.log'
+    log: 'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peakcall.log'
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL',
     version: MACS_VERSION
@@ -998,7 +1000,7 @@ rule callpeak_macs_single_condition_all_donors:
       --bdg \
       --nomodel --extsize 147 \
       --pvalue=0.5 \
-      2>&1 | tee {output.log:q}
+      2>&1 | tee {log:q}
     '''
 
 rule callpeak_macs_single_condition_single_donor:
@@ -1018,7 +1020,7 @@ rule callpeak_macs_single_condition_single_donor:
                genome_build=wildcards.genome_build)
     output:
         outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peakcall'),
-        log='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peakcall.log'
+    log: 'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peakcall.log'
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donor}',
     version: MACS_VERSION
@@ -1034,7 +1036,7 @@ rule callpeak_macs_single_condition_single_donor:
       --name peakcall \
       --nomodel --extsize 147 \
       --pvalue=0.5 \
-      2>&1 | tee {output.log:q}
+      2>&1 | tee {log:q}
     '''
 
 rule callpeak_epic_all_conditions_all_donors:
@@ -1053,26 +1055,29 @@ rule callpeak_epic_all_conditions_all_donors:
         peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.tsv',
         chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/bigwig/sum_treatment.bw',
         control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/bigwig/sum_input.bw',
-        log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall.log',
+    log: 'peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall.log',
     params:
         outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL',
     version: EPIC_VERSION
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
-    shell: '''
-    epic \
-      --treatment {input.chip_pulldown:q} \
-      --control {input.chip_input:q} \
-      --number-cores {threads:q} \
-      --genome hg38 \
-      --fragment-size 147 \
-      --keep-duplicates True \
-      --bigwig {params.outdir:q}/bigwigs \
-      >{output.peaks:q} \
-      2>{output.log:q} &
-    tail -f {output.log:q} 1>&2
-    wait
-    '''
+    run:
+        with open(output.peaks, "wb") as outfile, open(log[0], "wb") as logfile:
+            cmd = ['epic'] + \
+                  ['--treatment'] + input.chip_pulldown + \
+                  ['--control'] + input.chip_input + \
+                  [
+                      '--number-cores', threads,
+                      '--genome', 'hg38',
+                      '--fragment-size', 147,
+                      '--keep-duplicates', 'True',
+                      '--bigwig', os.path.join(params.outdir, 'bigwig'),
+                  ]
+            cmd = [str(x) for x in cmd]
+            p = Popen(cmd, stdout=outfile, stderr=PIPE)
+            for logline in p.stderr:
+                logfile.write(logline)
+                sys.stderr.write(logline.decode(sys.getdefaultencoding()))
 
 rule callpeak_epic_all_conditions_single_donor:
     input:
@@ -1091,26 +1096,29 @@ rule callpeak_epic_all_conditions_single_donor:
         peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peaks.tsv',
         chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/bigwig/sum_treatment.bw',
         control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/bigwig/sum_input.bw',
-        log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peakcall.log',
+    log: 'peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peakcall.log',
     params:
         outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}',
     version: EPIC_VERSION
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
-    shell: '''
-    epic \
-      --treatment {input.chip_pulldown:q} \
-      --control {input.chip_input:q} \
-      --number-cores {threads:q} \
-      --genome hg38 \
-      --fragment-size 147 \
-      --keep-duplicates True \
-      --bigwig {params.outdir:q}/bigwigs \
-      >{output.peaks:q} \
-      2>{output.log:q} &
-    tail -f {output.log:q} 1>&2
-    wait
-    '''
+    run:
+        with open(output.peaks, "wb") as outfile, open(log[0], "wb") as logfile:
+            cmd = ['epic'] + \
+                  ['--treatment'] + input.chip_pulldown + \
+                  ['--control'] + input.chip_input + \
+                  [
+                      '--number-cores', threads,
+                      '--genome', 'hg38',
+                      '--fragment-size', 147,
+                      '--keep-duplicates', 'True',
+                      '--bigwig', os.path.join(params.outdir, 'bigwig'),
+                  ]
+            cmd = [str(x) for x in cmd]
+            p = Popen(cmd, stdout=outfile, stderr=PIPE)
+            for logline in p.stderr:
+                logfile.write(logline)
+                sys.stderr.write(logline.decode(sys.getdefaultencoding()))
 
 rule callpeak_epic_single_condition_all_donors:
     input:
@@ -1130,26 +1138,29 @@ rule callpeak_epic_single_condition_all_donors:
         peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peaks.tsv',
         chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/bigwig/sum_treatment.bw',
         control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/bigwig/sum_input.bw',
-        log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peakcall.log',
+    log: 'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peakcall.log'
     params:
         outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL',
     version: EPIC_VERSION
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
-    shell: '''
-    epic \
-      --treatment {input.chip_pulldown:q} \
-      --control {input.chip_input:q} \
-      --number-cores {threads:q} \
-      --genome hg38 \
-      --fragment-size 147 \
-      --keep-duplicates True \
-      --bigwig {params.outdir:q}/bigwig \
-      >{output.peaks:q} \
-      2>{output.log:q} &
-    tail -f {output.log:q} 1>&2
-    wait
-    '''
+    run:
+        with open(output.peaks, "wb") as outfile, open(log[0], "wb") as logfile:
+            cmd = ['epic'] + \
+                  ['--treatment'] + input.chip_pulldown + \
+                  ['--control'] + input.chip_input + \
+                  [
+                      '--number-cores', threads,
+                      '--genome', 'hg38',
+                      '--fragment-size', 147,
+                      '--keep-duplicates', 'True',
+                      '--bigwig', os.path.join(params.outdir, 'bigwig'),
+                  ]
+            cmd = [str(x) for x in cmd]
+            p = Popen(cmd, stdout=outfile, stderr=PIPE)
+            for logline in p.stderr:
+                logfile.write(logline)
+                sys.stderr.write(logline.decode(sys.getdefaultencoding()))
 
 rule callpeak_epic_single_condition_single_donor:
     input:
@@ -1170,26 +1181,30 @@ rule callpeak_epic_single_condition_single_donor:
         peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peaks.tsv',
         chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/bigwig/sum_treatment.bw',
         control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/bigwig/sum_input.bw',
-        log='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peakcall.log',
+    log: 'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peakcall.log',
     params:
         outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donor}',
     version: EPIC_VERSION
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
-    shell: '''
-    epic \
-      --treatment {input.chip_pulldown:q} \
-      --control {input.chip_input:q} \
-      --number-cores {threads:q} \
-      --genome hg38 \
-      --fragment-size 147 \
-      --keep-duplicates True \
-      --bigwig {params.outdir:q}/bigwig \
-      >{output.peaks:q} \
-      2>{output.log:q} &
-    tail -f {output.log:q} 1>&2
-    wait
-    '''
+    run:
+        with open(output.peaks, "wb") as outfile, open(log[0], "wb") as logfile:
+            cmd = ['epic'] + \
+                  ['--treatment'] + input.chip_pulldown + \
+                  ['--control'] + input.chip_input + \
+                  [
+                      '--number-cores', threads,
+                      '--genome', 'hg38',
+                      '--fragment-size', 147,
+                      '--keep-duplicates', 'True',
+                      '--bigwig', os.path.join(params.outdir, 'bigwig'),
+                  ]
+            cmd = [str(x) for x in cmd]
+            p = Popen(cmd, stdout=outfile, stderr=PIPE)
+            for logline in p.stderr:
+                logfile.write(logline)
+                sys.stderr.write(logline.decode(sys.getdefaultencoding()))
+
 rule run_idr_macs_all_conditions:
     input:
         all_donor_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall_peaks.narrowPeak',
@@ -1197,16 +1212,17 @@ rule run_idr_macs_all_conditions:
         donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peakcall_peaks.narrowPeak',
     output:
         outfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
-        logfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
         plotfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
+    log: 'idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['idr']
+    version: IDR_VERSION
     shell: '''
     idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
       --peak-list {input.all_donor_peaks:q} \
       --input-file-type narrowPeak \
       --output-file {output.outfile:q} \
       --output-file-type narrowPeak \
-      --log-output-file {output.logfile:q} \
+      --log-output-file {log:q} \
       --plot \
       --random-seed 1986
     mv {output.outfile:q}.png {output.plotfile:q}
@@ -1219,16 +1235,17 @@ rule run_idr_macs_single_condition:
         donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peakcall_peaks.narrowPeak',
     output:
         outfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
-        logfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
         plotfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
+    log: 'idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['idr']
+    version: IDR_VERSION
     shell: '''
     idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
       --peak-list {input.all_donor_peaks:q} \
       --input-file-type narrowPeak \
       --output-file {output.outfile:q} \
       --output-file-type narrowPeak \
-      --log-output-file {output.logfile:q} \
+      --log-output-file {log:q} \
       --plot \
       --random-seed 1986
     mv {output.outfile:q}.png {output.plotfile:q}
@@ -1242,16 +1259,17 @@ rule run_idr_epic_all_conditions:
         donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peaks.tsv',
     output:
         outfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
-        logfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
         plotfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
+    log: 'idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['idr']
+    version: IDR_VERSION
     shell: '''
     idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
       --peak-list {input.all_donor_peaks:q} \
       --input-file-type narrowPeak \
       --output-file {output.outfile:q} \
       --output-file-type narrowPeak \
-      --log-output-file {output.logfile:q} \
+      --log-output-file {log:q} \
       --plot \
       --random-seed 1986
     mv {output.outfile:q}.png {output.plotfile:q}
@@ -1264,16 +1282,17 @@ rule run_idr_epic_single_condition:
         donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peaks.tsv',
     output:
         outfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
-        logfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
         plotfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
+    log: 'idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['idr']
+    version: IDR_VERSION
     shell: '''
     idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
       --peak-list {input.all_donor_peaks:q} \
       --input-file-type narrowPeak \
       --output-file {output.outfile:q} \
       --output-file-type narrowPeak \
-      --log-output-file {output.logfile:q} \
+      --log-output-file {log:q} \
       --plot \
       --random-seed 1986
     mv {output.outfile:q}.png {output.plotfile:q}
@@ -1286,4 +1305,5 @@ rule csaw_compute_ccf:
                          ext=['bam', 'bam.bai'])
     output:
         'saved_data/csaw-ccf.RDS', 'saved_data/csaw-ccf-noBL.RDS'
+    version: R_package_version('csaw')
     shell: 'Rscript scripts/csaw-compute-ccf.R'
