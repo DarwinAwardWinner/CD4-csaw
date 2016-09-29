@@ -18,7 +18,7 @@ rule all_dags:
     input:
         expand('rulegraphs/{graphtype}-{target}.{filetype}',
                graphtype=['dag',],
-               target=['all', 'all_rnaseq_counts', 'all_salmon', 'all_kallisto', 'all_chipseq_bai', 'all_macs_callpeak', 'all_epic_callpeak',],
+               target=['all', 'all_rnaseq_counts', 'all_salmon', 'all_kallisto', 'all_chipseq_bai', 'all_macs_callpeak', 'all_epic_callpeak','all_idr'],
                filetype=['pdf', 'png'])
 
 rule svg_to_png:
