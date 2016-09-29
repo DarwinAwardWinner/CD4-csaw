@@ -1,3 +1,4 @@
+import csv
 import os
 import os.path
 import rpy2.rinterface
@@ -10,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from atomicwrites import atomic_write, AtomicWriter
+from math import log10, ceil
 from itertools import product, count
 from subprocess import check_call, Popen, PIPE, CalledProcessError, list2cmdline
 from rpy2 import robjects
@@ -1053,6 +1055,7 @@ rule callpeak_epic_all_conditions_all_donors:
                genome_build=wildcards.genome_build)
     output:
         peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.tsv',
+        narrowpeak='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.narrowPeak',
         chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/bigwig/sum_treatment.bw',
         control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/bigwig/sum_input.bw',
     log: 'peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall.log',
@@ -1078,6 +1081,26 @@ rule callpeak_epic_all_conditions_all_donors:
             for logline in p.stderr:
                 logfile.write(logline)
                 sys.stderr.write(logline.decode(sys.getdefaultencoding()))
+        # Convert peaks to narrowPeak format
+        peaks = pd.DataFrame.from_csv(output.peaks, header=1, sep=" ", index_col=None)
+        ndigits = ceil(log10(peaks.shape[0]+1))
+        name_format = 'epic_peak_{{:0{}d}}'.format(ndigits)
+        tiny_float = np.finfo(float).tiny
+        narrowpeak = pd.DataFrame.from_items((
+            ('chrom', peaks['Chromosome']),
+            ('chromStart', peaks['Start']),
+            ('chromEnd', peaks['End']),
+            ('name', pd.Series(name_format.format(x) for x in range(peaks.shape[0]))),
+            ('score', peaks['Score']),
+            ('strand', '.'),
+            ('signalValue', peaks['Fold_change']),
+            ('pValue', -np.log10(peaks['P'].where(peaks['P'] > tiny_float, other=tiny_float))),
+            ('qValue', -np.log10(peaks['FDR'].where(peaks['FDR'] > tiny_float, other=tiny_float))),
+            ('peak', -1),
+        ))
+        narrowpeak.to_csv(output.narrowpeak, sep='\t',
+                          header=False, index=False,
+                          quoting=csv.QUOTE_NONE,)
 
 rule callpeak_epic_all_conditions_single_donor:
     input:
@@ -1094,6 +1117,7 @@ rule callpeak_epic_all_conditions_single_donor:
                genome_build=wildcards.genome_build)
     output:
         peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peaks.tsv',
+        narrowpeak='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peaks.narrowPeak',
         chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/bigwig/sum_treatment.bw',
         control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/bigwig/sum_input.bw',
     log: 'peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peakcall.log',
@@ -1119,6 +1143,26 @@ rule callpeak_epic_all_conditions_single_donor:
             for logline in p.stderr:
                 logfile.write(logline)
                 sys.stderr.write(logline.decode(sys.getdefaultencoding()))
+        # Convert peaks to narrowPeak format
+        peaks = pd.DataFrame.from_csv(output.peaks, header=1, sep=" ", index_col=None)
+        ndigits = ceil(log10(peaks.shape[0]+1))
+        name_format = 'epic_peak_{{:0{}d}}'.format(ndigits)
+        tiny_float = np.finfo(float).tiny
+        narrowpeak = pd.DataFrame.from_items((
+            ('chrom', peaks['Chromosome']),
+            ('chromStart', peaks['Start']),
+            ('chromEnd', peaks['End']),
+            ('name', pd.Series(name_format.format(x) for x in range(peaks.shape[0]))),
+            ('score', peaks['Score']),
+            ('strand', '.'),
+            ('signalValue', peaks['Fold_change']),
+            ('pValue', -np.log10(peaks['P'].where(peaks['P'] > tiny_float, other=tiny_float))),
+            ('qValue', -np.log10(peaks['FDR'].where(peaks['FDR'] > tiny_float, other=tiny_float))),
+            ('peak', -1),
+        ))
+        narrowpeak.to_csv(output.narrowpeak, sep='\t',
+                          header=False, index=False,
+                          quoting=csv.QUOTE_NONE,)
 
 rule callpeak_epic_single_condition_all_donors:
     input:
@@ -1136,6 +1180,7 @@ rule callpeak_epic_single_condition_all_donors:
                genome_build=wildcards.genome_build)
     output:
         peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peaks.tsv',
+        narrowpeak='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peaks.narrowPeak',
         chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/bigwig/sum_treatment.bw',
         control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/bigwig/sum_input.bw',
     log: 'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peakcall.log'
@@ -1161,6 +1206,26 @@ rule callpeak_epic_single_condition_all_donors:
             for logline in p.stderr:
                 logfile.write(logline)
                 sys.stderr.write(logline.decode(sys.getdefaultencoding()))
+        # Convert peaks to narrowPeak format
+        peaks = pd.DataFrame.from_csv(output.peaks, header=1, sep=" ", index_col=None)
+        ndigits = ceil(log10(peaks.shape[0]+1))
+        name_format = 'epic_peak_{{:0{}d}}'.format(ndigits)
+        tiny_float = np.finfo(float).tiny
+        narrowpeak = pd.DataFrame.from_items((
+            ('chrom', peaks['Chromosome']),
+            ('chromStart', peaks['Start']),
+            ('chromEnd', peaks['End']),
+            ('name', pd.Series(name_format.format(x) for x in range(peaks.shape[0]))),
+            ('score', peaks['Score']),
+            ('strand', '.'),
+            ('signalValue', peaks['Fold_change']),
+            ('pValue', -np.log10(peaks['P'].where(peaks['P'] > tiny_float, other=tiny_float))),
+            ('qValue', -np.log10(peaks['FDR'].where(peaks['FDR'] > tiny_float, other=tiny_float))),
+            ('peak', -1),
+        ))
+        narrowpeak.to_csv(output.narrowpeak, sep='\t',
+                          header=False, index=False,
+                          quoting=csv.QUOTE_NONE,)
 
 rule callpeak_epic_single_condition_single_donor:
     input:
@@ -1179,6 +1244,7 @@ rule callpeak_epic_single_condition_single_donor:
                genome_build=wildcards.genome_build)
     output:
         peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peaks.tsv',
+        narrowpeak='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peaks.narrowPeak',
         chip_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/bigwig/sum_treatment.bw',
         control_bw='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/bigwig/sum_input.bw',
     log: 'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peakcall.log',
@@ -1204,6 +1270,26 @@ rule callpeak_epic_single_condition_single_donor:
             for logline in p.stderr:
                 logfile.write(logline)
                 sys.stderr.write(logline.decode(sys.getdefaultencoding()))
+        # Convert peaks to narrowPeak format
+        peaks = pd.DataFrame.from_csv(output.peaks, header=1, sep=" ", index_col=None)
+        ndigits = ceil(log10(peaks.shape[0]+1))
+        name_format = 'epic_peak_{{:0{}d}}'.format(ndigits)
+        tiny_float = np.finfo(float).tiny
+        narrowpeak = pd.DataFrame.from_items((
+            ('chrom', peaks['Chromosome']),
+            ('chromStart', peaks['Start']),
+            ('chromEnd', peaks['End']),
+            ('name', pd.Series(name_format.format(x) for x in range(peaks.shape[0]))),
+            ('score', peaks['Score']),
+            ('strand', '.'),
+            ('signalValue', peaks['Fold_change']),
+            ('pValue', -np.log10(peaks['P'].where(peaks['P'] > tiny_float, other=tiny_float))),
+            ('qValue', -np.log10(peaks['FDR'].where(peaks['FDR'] > tiny_float, other=tiny_float))),
+            ('peak', -1),
+        ))
+        narrowpeak.to_csv(output.narrowpeak, sep='\t',
+                          header=False, index=False,
+                          quoting=csv.QUOTE_NONE,)
 
 rule run_idr_macs_all_conditions:
     input:
@@ -1251,12 +1337,11 @@ rule run_idr_macs_single_condition:
     mv {output.outfile:q}.png {output.plotfile:q}
     '''
 
-# TODO: Figure out what format Epic's peaks.tsv file is
 rule run_idr_epic_all_conditions:
     input:
-        all_donor_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.tsv',
-        donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorA}/peaks.tsv',
-        donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peaks.tsv',
+        all_donor_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.narrowPeak',
+        donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorA}/peaks.narrowPeak',
+        donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peaks.narrowPeak',
     output:
         outfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
         plotfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
@@ -1277,9 +1362,9 @@ rule run_idr_epic_all_conditions:
 
 rule run_idr_epic_single_condition:
     input:
-        all_donor_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL/peaks.tsv',
-        donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorA}/peaks.tsv',
-        donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peaks.tsv',
+        all_donor_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL/peaks.narrowPeak',
+        donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorA}/peaks.narrowPeak',
+        donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peaks.narrowPeak',
     output:
         outfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
         plotfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
