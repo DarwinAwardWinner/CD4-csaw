@@ -29,9 +29,6 @@ from snakemake.remote.FTP import RemoteProvider as FTPRemoteProvider
 HTTP = HTTPRemoteProvider()
 FTP = FTPRemoteProvider()
 
-exec(open("tool_versions.py").read())
-exec(open("mem_requirements.py").read())
-
 pandas2ri.activate()
 rpy2.rinterface.set_writeconsole_warnerror(lambda x: sys.stderr.write(x))
 
@@ -345,6 +342,8 @@ subworkflow hg38_ref:
     workdir: os.path.expanduser('~/references/hg38')
 
 include: 'rulegraph.Snakefile'
+include: 'tool_versions.py'
+include: 'mem_requirements.py'
 
 rule all:
     input:
