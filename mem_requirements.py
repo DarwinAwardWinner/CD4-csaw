@@ -5,7 +5,7 @@ MEMORY_REQUIREMENTS_GB = {
     'salmon': 5,
     'kallisto': 5,
     'bowtie2': 5,
-    'macs_callpeak': 40,
-    'epic_callpeak': 40,
+    'macs_callpeak': 30,
+    'epic_callpeak': 30,
     'idr': 10,
 }
