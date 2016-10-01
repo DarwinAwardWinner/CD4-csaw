@@ -345,6 +345,8 @@ include: 'rulegraph.Snakefile'
 include: 'tool_versions.py'
 include: 'mem_requirements.py'
 
+shell.executable('bash')
+
 rule all:
     input:
         rnaseq_counts=[
