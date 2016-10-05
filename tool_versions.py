@@ -66,36 +66,38 @@ def get_command_version_string(cmd, regexp, *, prefix="", suffix="", use_stderr=
 
 ascp_path = shutil.which("ascp") or os.path.expanduser("~/.aspera/connect/bin/ascp")
 
+SOFTWARE_VERSIONS = dict()
+
 # Determine the versions of various programs used
-ASCP_VERSION = get_command_version_string([ascp_path, '--version'], 'ascp version\\s+(?P<version>\\S+)', prefix='ascp ')
-BOWTIE2_VERSION = get_command_version_string('bowtie2 --version', 'version\\s+(?P<version>\\S+)', prefix='bowtie2 ')
-CUFFLINKS_VERSION = get_command_version_string('cufflinks --help', 'cufflinks v(?P<version>\S+)', prefix='cufflinks ')
-EPIC_VERSION = get_command_version_string('epic --version', 'epic\\s+(?P<version>\\S+)', prefix='epic ')
-FASTQ_TOOLS_VERSION = get_command_version_string('fastq-sort --version', '(?P<version>\\d+(\\.\\d+)*)', prefix='fastq-tools ')
-HISAT2_VERSION = get_command_version_string('hisat2 --version', 'version\\s+(?P<version>\\S+)', prefix='hisat2 ')
-IDR_VERSION = get_command_version_string('idr --version', '(?P<version>\\d+(\\.\\d+)*)', prefix='IDR ')
-KALLISTO_VERSION = get_command_version_string('kallisto', '^kallisto\\s+(?P<version>\\S+)', prefix='kallisto ')
-MACS_VERSION = get_command_version_string('macs2 --version', 'macs2\\s+(?P<version>\\S+)', prefix='macs2 ')
-SALMON_VERSION = get_command_version_string('salmon --version', 'version\\s+:\\s+(?P<version>\\S+)', prefix='salmon ')
-SAMTOOLS_VERSION = get_command_version_string('samtools', 'Version:\\s+(?P<version>\\S+)', prefix='samtools ')
-SRATOOLKIT_VERSION = get_command_version_string('fastq-dump --version', ':\\s+(?P<version>\\S+)', prefix='sratoolkit ')
-STAR_VERSION = get_command_version_string('STAR --version', 'STAR_(?P<version>\\S+)', prefix='STAR ')
-TOPHAT2_VERSION = get_command_version_string('tophat --version', 'TopHat v(?P<version>\\S+)', prefix='tophat ')
+SOFTWARE_VERSIONS['ASCP'] = get_command_version_string([ascp_path, '--version'], 'ascp version\\s+(?P<version>\\S+)', prefix='ascp ')
+SOFTWARE_VERSIONS['BOWTIE2'] = get_command_version_string('bowtie2 --version', 'version\\s+(?P<version>\\S+)', prefix='bowtie2 ')
+SOFTWARE_VERSIONS['CUFFLINKS'] = get_command_version_string('cufflinks --help', 'cufflinks v(?P<version>\S+)', prefix='cufflinks ')
+SOFTWARE_VERSIONS['EPIC'] = get_command_version_string('epic --version', 'epic\\s+(?P<version>\\S+)', prefix='epic ')
+SOFTWARE_VERSIONS['FASTQ_TOOLS'] = get_command_version_string('fastq-sort --version', '(?P<version>\\d+(\\.\\d+)*)', prefix='fastq-tools ')
+SOFTWARE_VERSIONS['HISAT2'] = get_command_version_string('hisat2 --version', 'version\\s+(?P<version>\\S+)', prefix='hisat2 ')
+SOFTWARE_VERSIONS['IDR'] = get_command_version_string('idr --version', '(?P<version>\\d+(\\.\\d+)*)', prefix='IDR ')
+SOFTWARE_VERSIONS['KALLISTO'] = get_command_version_string('kallisto', '^kallisto\\s+(?P<version>\\S+)', prefix='kallisto ')
+SOFTWARE_VERSIONS['MACS'] = get_command_version_string('macs2 --version', 'macs2\\s+(?P<version>\\S+)', prefix='macs2 ')
+SOFTWARE_VERSIONS['SALMON'] = get_command_version_string('salmon --version', 'version\\s+:\\s+(?P<version>\\S+)', prefix='salmon ')
+SOFTWARE_VERSIONS['SAMTOOLS'] = get_command_version_string('samtools', 'Version:\\s+(?P<version>\\S+)', prefix='samtools ')
+SOFTWARE_VERSIONS['SRATOOLKIT'] = get_command_version_string('fastq-dump --version', ':\\s+(?P<version>\\S+)', prefix='sratoolkit ')
+SOFTWARE_VERSIONS['STAR'] = get_command_version_string('STAR --version', 'STAR_(?P<version>\\S+)', prefix='STAR ')
+SOFTWARE_VERSIONS['TOPHAT2'] = get_command_version_string('tophat --version', 'TopHat v(?P<version>\\S+)', prefix='tophat ')
 
 # R, BioC, & packages
 try:
     from rpy2.robjects import r
     from rpy2.rinterface import RRuntimeError
-    R_VERSION = ''.join(r('R.version$version.string'))
+    SOFTWARE_VERSIONS['R'] = ''.join(r('R.version$version.string'))
 except RRuntimeError:
-    R_VERSION = None
+    SOFTWARE_VERSIONS['R'] = None
 
 try:
     from rpy2.robjects import r
     from rpy2.rinterface import RRuntimeError
-    BIOC_VERSION = 'Bioconductor ' + "".join(r('as.character(BiocInstaller::biocVersion())'))
+    SOFTWARE_VERSIONS['BIOC'] = 'Bioconductor ' + "".join(r('as.character(BiocInstaller::biocVersion())'))
 except RRuntimeError:
-    BIOC_VERSION = None
+    SOFTWARE_VERSIONS['BIOC'] = None
 
 def R_package_version(pkgname):
     try:

@@ -498,7 +498,7 @@ rule fetch_sra_run:
 
     '''
     output: 'sra_files/{sra_run,SRR.*}.sra'
-    version: ASCP_VERSION
+    version: SOFTWARE_VERSIONS['ASCP']
     resources: concurrent_downloads=1
     shell: 'scripts/get-sra-run-files.R {wildcards.sra_run:q}'
 
@@ -515,7 +515,7 @@ rule extract_fastq:
     output: 'fastq_files/{sra_run}.{fqext,fq(|\\.gz|\\.bz2|\\.qp)}'
     params: temp_unshuffled='fastq_files/{sra_run}_unshuffled.fq_temp',
             temp_shuffled='fastq_files/{sra_run}_shuffled.fq_temp'
-    version: (SRATOOLKIT_VERSION, FASTQ_TOOLS_VERSION)
+    version: (SOFTWARE_VERSIONS['SRATOOLKIT'], SOFTWARE_VERSIONS['FASTQ_TOOLS'])
     resources: diskio=1
     run:
         compression_cmd = fastq_compression_cmds[wildcards.fqext]['compress']
@@ -541,7 +541,7 @@ rule align_rnaseq_with_star_single_end:
             logs=[ os.path.join('aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}', fname)
                    for fname in ['Log.final.out', 'Log.out', 'Log.progress.out'] ],
     params: temp_sam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.out.sam',
-    version: STAR_VERSION
+    version: SOFTWARE_VERSIONS['STAR']
     threads: 8
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['star']
     run:
@@ -581,7 +581,7 @@ rule align_rnaseq_with_hisat2_single_end:
            chrom_mapping=hg38_ref('chrom_mapping_GRCh38_ensembl2UCSC.txt'),
     output: bam='aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/Aligned.bam',
     log: 'aligned/rnaseq_hisat2_grch38_snp_tran/{samplename}/hisat2.log'
-    version: HISAT2_VERSION
+    version: SOFTWARE_VERSIONS['HISAT2']
     threads: 8
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['hisat2']
     run:
@@ -634,7 +634,7 @@ rule bam2bed_macs_filterdup:
     input: '{basename}.bam'
     output: bed='{basename}_reads_macs_filterdup.bed',
     log: '{basename}_macs_filterdup.log'
-    version: MACS_VERSION
+    version: SOFTWARE_VERSIONS['MACS']
     shell: '''
     macs2 filterdup --ifile {input:q} --format BAM \
       --gsize hs --keep-dup auto \
@@ -657,7 +657,7 @@ rule count_rnaseq_hisat2_ensembl:
         txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v85.sqlite3'),
         genemeta=hg38_ref('genemeta.ensembl.85.RDS')
     output: sexp='saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_ensembl.{release}.RDS'
-    version: BIOC_VERSION
+    version: SOFTWARE_VERSIONS['BIOC']
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
     run:
@@ -774,7 +774,7 @@ rule quant_rnaseq_with_salmon:
         index_dir=hg38_ref('Salmon_index_{genome_build}_{transcriptome}'),
         outdir='salmon_quant/{genome_build}_{transcriptome}/{SRA_run}',
         libtype=lambda wildcards: rnaseq_sample_libtypes[wildcards.SRA_run]
-    version: SALMON_VERSION
+    version: SOFTWARE_VERSIONS['SALMON']
     threads: 16
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['salmon']
     shell: '''
@@ -813,7 +813,7 @@ rule quant_rnaseq_with_kallisto:
     params:
         outdir='kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}',
         libtype=lambda wildcards: rnaseq_sample_libtypes[wildcards.SRA_run]
-    version: KALLISTO_VERSION
+    version: SOFTWARE_VERSIONS['KALLISTO']
     threads: 16
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['kallisto']
     run:
@@ -843,7 +843,7 @@ rule align_chipseq_with_bowtie2:
         bam='aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam'
     params:
         index_basename=hg38_ref('BT2_index_{genome_build}/index')
-    version: BOWTIE2_VERSION
+    version: SOFTWARE_VERSIONS['BOWTIE2']
     threads: 8
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['bowtie2']
     shell: '''
@@ -890,7 +890,7 @@ rule macs_predictd:
             # a log file.g
             logfile='saved_data/macs_predictd/output.log'
     params: outdir='saved_data/macs_predictd'
-    version: MACS_VERSION
+    version: SOFTWARE_VERSIONS['MACS']
     run:
         output_rfile_basename = os.path.basename(output.rfile)
         shell('''
@@ -918,7 +918,7 @@ rule callpeak_macs_all_conditions_all_donors:
     log: 'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall.log'
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL',
-    version: MACS_VERSION
+    version: SOFTWARE_VERSIONS['MACS']
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['macs_callpeak']
     shell: '''
     macs2 callpeak \
@@ -952,7 +952,7 @@ rule callpeak_macs_all_conditions_single_donor:
     log: 'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peakcall.log'
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}',
-    version: MACS_VERSION
+    version: SOFTWARE_VERSIONS['MACS']
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['macs_callpeak']
     shell: '''
     macs2 callpeak \
@@ -988,7 +988,7 @@ rule callpeak_macs_single_condition_all_donors:
     log: 'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peakcall.log'
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL',
-    version: MACS_VERSION
+    version: SOFTWARE_VERSIONS['MACS']
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['macs_callpeak']
     shell: '''
     macs2 callpeak \
@@ -1025,7 +1025,7 @@ rule callpeak_macs_single_condition_single_donor:
     log: 'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peakcall.log'
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donor}',
-    version: MACS_VERSION
+    version: SOFTWARE_VERSIONS['MACS']
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['macs_callpeak']
     shell: '''
     macs2 callpeak \
@@ -1061,7 +1061,7 @@ rule callpeak_epic_all_conditions_all_donors:
     log: 'peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall.log',
     params:
         outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL',
-    version: EPIC_VERSION
+    version: SOFTWARE_VERSIONS['EPIC']
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
     run:
@@ -1123,7 +1123,7 @@ rule callpeak_epic_all_conditions_single_donor:
     log: 'peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peakcall.log',
     params:
         outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}',
-    version: EPIC_VERSION
+    version: SOFTWARE_VERSIONS['EPIC']
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
     run:
@@ -1186,7 +1186,7 @@ rule callpeak_epic_single_condition_all_donors:
     log: 'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peakcall.log'
     params:
         outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL',
-    version: EPIC_VERSION
+    version: SOFTWARE_VERSIONS['EPIC']
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
     run:
@@ -1250,7 +1250,7 @@ rule callpeak_epic_single_condition_single_donor:
     log: 'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peakcall.log',
     params:
         outdir='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donor}',
-    version: EPIC_VERSION
+    version: SOFTWARE_VERSIONS['EPIC']
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
     run:
@@ -1301,7 +1301,7 @@ rule run_idr_macs_all_conditions:
         plotfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
     log: 'idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['idr']
-    version: IDR_VERSION
+    version: SOFTWARE_VERSIONS['IDR']
     shell: '''
     idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
       --peak-list {input.all_donor_peaks:q} \
@@ -1324,7 +1324,7 @@ rule run_idr_macs_single_condition:
         plotfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
     log: 'idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['idr']
-    version: IDR_VERSION
+    version: SOFTWARE_VERSIONS['IDR']
     shell: '''
     idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
       --peak-list {input.all_donor_peaks:q} \
@@ -1347,7 +1347,7 @@ rule run_idr_epic_all_conditions:
         plotfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
     log: 'idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['idr']
-    version: IDR_VERSION
+    version: SOFTWARE_VERSIONS['IDR']
     shell: '''
     idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
       --peak-list {input.all_donor_peaks:q} \
@@ -1370,7 +1370,7 @@ rule run_idr_epic_single_condition:
         plotfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
     log: 'idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['idr']
-    version: IDR_VERSION
+    version: SOFTWARE_VERSIONS['IDR']
     shell: '''
     idr --samples {input.donorA_peaks:q} {input.donorB_peaks:q} \
       --peak-list {input.all_donor_peaks:q} \
