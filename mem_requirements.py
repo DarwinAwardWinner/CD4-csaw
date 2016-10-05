@@ -6,6 +6,6 @@ MEMORY_REQUIREMENTS_GB = {
     'kallisto': 5,
     'bowtie2': 5,
     'macs_callpeak': 30,
-    'epic_callpeak': 30,
-    'idr': 10,
+    'epic_callpeak': 20,
+    'idr': 8,
 }
