@@ -627,8 +627,7 @@ rule bam2bed:
     input: '{basename}.bam'
     output: '{basename}_reads.bed'
     shell: '''
-    picard-tools BuildBamIndex I={input:q} O={output:q} \
-        VALIDATION_STRINGENCY=LENIENT
+    bedtools bamtobed -i {input:q} > {output:q}
     '''
 
 rule bam2bed_macs_filterdup:
