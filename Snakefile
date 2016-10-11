@@ -1263,11 +1263,9 @@ rule convert_epic_to_narrowpeak:
 
 rule run_idr_macs_all_conditions:
     input:
-        all_donor_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall_peaks.narrowPeak',
         donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorA}/peakcall_peaks.narrowPeak',
         donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peakcall_peaks.narrowPeak',
     output:
-        temp_all_donor_peaks=temp('idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/all_donor_temp.narrowPeak'),
         temp_donorA_peaks=temp('idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorA_temp.narrowPeak'),
         temp_donorB_peaks=temp('idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorB_temp.narrowPeak'),
         outfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
@@ -1277,9 +1275,7 @@ rule run_idr_macs_all_conditions:
     run:
         pick_top_peaks(input.donorA_peaks, output.temp_donorA_peaks, by="pValue", number=150000)
         pick_top_peaks(input.donorB_peaks, output.temp_donorB_peaks, by="pValue", number=150000)
-        pick_top_peaks(input.all_donor_peaks, output.temp_all_donor_peaks, by="pValue", number=150000)
         shell('''idr --samples {output.temp_donorA_peaks:q} {output.temp_donorB_peaks:q} \
-          --peak-list {output.temp_all_donor_peaks:q} \
           --input-file-type narrowPeak \
           --rank p.value \
           --output-file {output.outfile:q} \
@@ -1292,11 +1288,9 @@ rule run_idr_macs_all_conditions:
 
 rule run_idr_macs_single_condition:
     input:
-        all_donor_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL/peakcall_peaks.narrowPeak',
         donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorA}/peakcall_peaks.narrowPeak',
         donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peakcall_peaks.narrowPeak',
     output:
-        temp_all_donor_peaks=temp('idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/all_donor_temp.narrowPeak'),
         temp_donorA_peaks=temp('idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorA_temp.narrowPeak'),
         temp_donorB_peaks=temp('idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorB_temp.narrowPeak'),
         outfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
@@ -1306,9 +1300,7 @@ rule run_idr_macs_single_condition:
     run:
         pick_top_peaks(input.donorA_peaks, output.temp_donorA_peaks, by="pValue", number=150000)
         pick_top_peaks(input.donorB_peaks, output.temp_donorB_peaks, by="pValue", number=150000)
-        pick_top_peaks(input.all_donor_peaks, output.temp_all_donor_peaks, by="pValue", number=150000)
         shell('''idr --samples {output.temp_donorA_peaks:q} {output.temp_donorB_peaks:q} \
-          --peak-list {output.temp_all_donor_peaks:q} \
           --input-file-type narrowPeak \
           --rank p.value \
           --output-file {output.outfile:q} \
@@ -1321,11 +1313,9 @@ rule run_idr_macs_single_condition:
 
 rule run_idr_epic_all_conditions:
     input:
-        all_donor_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.narrowPeak',
         donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorA}/peaks.narrowPeak',
         donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peaks.narrowPeak',
     output:
-        temp_all_donor_peaks=temp('idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/all_donor_temp.narrowPeak'),
         temp_donorA_peaks=temp('idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorA_temp.narrowPeak'),
         temp_donorB_peaks=temp('idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorB_temp.narrowPeak'),
         outfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
@@ -1335,9 +1325,7 @@ rule run_idr_epic_all_conditions:
     run:
         pick_top_peaks(input.donorA_peaks, output.temp_donorA_peaks, by="score", number=150000)
         pick_top_peaks(input.donorB_peaks, output.temp_donorB_peaks, by="score", number=150000)
-        pick_top_peaks(input.all_donor_peaks, output.temp_all_donor_peaks, by="score", number=150000)
         shell('''idr --samples {output.temp_donorA_peaks:q} {output.temp_donorB_peaks:q} \
-          --peak-list {output.temp_all_donor_peaks:q} \
           --input-file-type narrowPeak \
           --rank score \
           --output-file {output.outfile:q} \
@@ -1350,11 +1338,9 @@ rule run_idr_epic_all_conditions:
 
 rule run_idr_epic_single_condition:
     input:
-        all_donor_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL/peaks.narrowPeak',
         donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorA}/peaks.narrowPeak',
         donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peaks.narrowPeak',
     output:
-        temp_all_donor_peaks=temp('idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/all_donor_temp.narrowPeak'),
         temp_donorA_peaks=temp('idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorA_temp.narrowPeak'),
         temp_donorB_peaks=temp('idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorB_temp.narrowPeak'),
         outfile='idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
@@ -1364,9 +1350,7 @@ rule run_idr_epic_single_condition:
     run:
         pick_top_peaks(input.donorA_peaks, output.temp_donorA_peaks, by="score", number=150000)
         pick_top_peaks(input.donorB_peaks, output.temp_donorB_peaks, by="score", number=150000)
-        pick_top_peaks(input.all_donor_peaks, output.temp_all_donor_peaks, by="score", number=150000)
         shell('''idr --samples {output.temp_donorA_peaks:q} {output.temp_donorB_peaks:q} \
-          --peak-list {output.temp_all_donor_peaks:q} \
           --input-file-type narrowPeak \
           --rank score \
           --output-file {output.outfile:q} \
