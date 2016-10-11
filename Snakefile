@@ -1279,7 +1279,7 @@ rule run_idr_macs_all_conditions:
           --input-file-type narrowPeak \
           --rank p.value \
           --output-file {output.outfile:q} \
-          --output-file-type narrowPeak \
+          --output-file-type bed \
           --log-output-file {log:q} \
           --plot \
           --random-seed 1986
@@ -1304,7 +1304,7 @@ rule run_idr_macs_single_condition:
           --input-file-type narrowPeak \
           --rank p.value \
           --output-file {output.outfile:q} \
-          --output-file-type narrowPeak \
+          --output-file-type bed \
           --log-output-file {log:q} \
           --plot \
           --random-seed 1986
@@ -1326,10 +1326,10 @@ rule run_idr_epic_all_conditions:
         pick_top_peaks(input.donorA_peaks, output.temp_donorA_peaks, by="score", number=150000)
         pick_top_peaks(input.donorB_peaks, output.temp_donorB_peaks, by="score", number=150000)
         shell('''idr --samples {output.temp_donorA_peaks:q} {output.temp_donorB_peaks:q} \
-          --input-file-type narrowPeak \
+          --input-file-type bed \
           --rank score \
           --output-file {output.outfile:q} \
-          --output-file-type narrowPeak \
+          --output-file-type bed \
           --log-output-file {log:q} \
           --plot \
           --random-seed 1986
@@ -1351,10 +1351,10 @@ rule run_idr_epic_single_condition:
         pick_top_peaks(input.donorA_peaks, output.temp_donorA_peaks, by="score", number=150000)
         pick_top_peaks(input.donorB_peaks, output.temp_donorB_peaks, by="score", number=150000)
         shell('''idr --samples {output.temp_donorA_peaks:q} {output.temp_donorB_peaks:q} \
-          --input-file-type narrowPeak \
+          --input-file-type bed \
           --rank score \
           --output-file {output.outfile:q} \
-          --output-file-type narrowPeak \
+          --output-file-type bed \
           --log-output-file {log:q} \
           --plot \
           --random-seed 1986
