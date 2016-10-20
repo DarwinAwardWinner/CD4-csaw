@@ -88,7 +88,7 @@ nbfits <- bplapply(colnames(binned1kb), function(i) {
 names(nbfits) <- colnames(binned1kb)
 
 tsmsg("Saving NB GLM fits")
-saveRDS(nbfits, "saved_data/ChIP-Seq-input-depth-NBGLM-fits.RDS")
+saveRDS(nbfits, "saved_data/ChIPSeq-input-depth-NBGLM-fits.RDS")
 
 mu <- sapply(nbfits, . %>% coef %>% exp %>% unname)
 size <- sapply(nbfits, `[[`, "theta")
@@ -116,5 +116,5 @@ glranges <- rowRanges(binned1kb)[greylisted]
 
 tsmsg("Saving greylist")
 
-saveRDS(glranges, "saved_data/ChIP-Seq-input-greylist.RDS")
-export(glranges, "saved_data/ChIP-Seq-input-greylist.bed")
+saveRDS(glranges, "saved_data/ChIPSeq-input-greylist.RDS")
+export(glranges, "saved_data/ChIPSeq-input-greylist.bed")

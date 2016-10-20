@@ -916,10 +916,10 @@ rule generate_greylist:
                           SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
                                            chip_antibody="input")),
     output:
-        nbfit_data="saved_data/ChIP-Seq-input-depth-NBGLM-fits.RDS",
-        counts_data="saved_data/window-counts-input-unfiltered-1kb.RDS",
-        greylist_data="saved_data/ChIP-Seq-input-greylist.RDS",
-        greylist_bed="saved_data/ChIP-Seq-input-greylist.bed",
+        nbfit_data='saved_data/ChIPSeq-input-depth-NBGLM-fits.RDS',
+        counts_data='saved_data/window-counts-input-unfiltered-1kb.RDS',
+        greylist_data='saved_data/ChIPSeq-input-greylist.RDS',
+        greylist_bed='saved_data/ChIPSeq-input-greylist.bed',
     version: SOFTWARE_VERSIONS['BIOC']
     threads: 8
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['greylist']
