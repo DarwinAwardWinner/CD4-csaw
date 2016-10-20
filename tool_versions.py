@@ -70,6 +70,7 @@ SOFTWARE_VERSIONS = dict()
 
 # Determine the versions of various programs used
 SOFTWARE_VERSIONS['ASCP'] = get_command_version_string([ascp_path, '--version'], 'ascp version\\s+(?P<version>\\S+)', prefix='ascp ')
+SOFTWARE_VERSIONS['BEDTOOLS'] = get_command_version_string('bedtools --version', 'bedtools\\s+(?P<version>\\S+)', prefix='bedtools ')
 SOFTWARE_VERSIONS['BOWTIE2'] = get_command_version_string('bowtie2 --version', 'version\\s+(?P<version>\\S+)', prefix='bowtie2 ')
 SOFTWARE_VERSIONS['CUFFLINKS'] = get_command_version_string('cufflinks --help', 'cufflinks v(?P<version>\S+)', prefix='cufflinks ')
 SOFTWARE_VERSIONS['EPIC'] = get_command_version_string('epic --version', 'epic\\s+(?P<version>\\S+)', prefix='epic ')

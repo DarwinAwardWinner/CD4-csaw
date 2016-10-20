@@ -883,31 +883,28 @@ rule align_chipseq_with_bowtie2:
 
 rule get_liftover_chain:
     input: FTP.remote('hgdownload.cse.ucsc.edu/goldenPath/{src_genome}/liftOver/{src_genome}ToHg38.over.chain.gz', static=True)
-    output: 'saved_data/{src_genome}ToHg38.over.chain.gz'
-    shell: 'mv {input:q} {output:q}'
+    output: 'saved_data/{src_genome}ToHg38.over.chain'
+    shell: 'zcat {input:q} > {output:q}'
 
 # Temp rule
 rule all_blacklists:
     input:
         ## Remember to cite: https://sites.google.com/site/anshulkundaje/projects/blacklists
-        'saved_data/wgEncodeDacMapabilityConsensusExcludable.bed.gz',
+        'saved_data/wgEncodeDacMapabilityConsensusExcludable.bed',
         ## Cite: http://www.ncbi.nlm.nih.gov/pubmed/15499007
-        'saved_data/wgEncodeDukeMapabilityRegionsExcludable.bed.gz',
+        'saved_data/wgEncodeDukeMapabilityRegionsExcludable.bed',
 
 # http://genome.ucsc.edu/cgi-bin/hgFileUi?db=hg19&g=wgEncodeMapability
 rule get_blacklist_regions:
     input: FTP.remote('hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeMapability/{track_name}.bed.gz', static=True)
-    output: 'saved_data/{track_name}_hg19.bed.gz'
-    shell: 'mv {input:q} {output:q}'
+    output: 'saved_data/{track_name}_hg19.bed'
+    shell: '''zcat {input:q} > {output:q}'''
 
 rule liftover_blacklist_regions:
-    input: bed='saved_data/{track_name}_hg19.bed.gz',
-           chain='saved_data/hg19ToHg38.over.chain.gz',
-    output: bed='saved_data/{track_name,[^_]+}.bed.gz'
-    shell: '''
-    liftOver {input.bed:q} {input.chain:q} /dev/stdout /dev/null | \
-      gzip -c - > {output.bed:q}
-    '''
+    input: bed='saved_data/{track_name}_hg19.bed',
+           chain='saved_data/hg19ToHg38.over.chain',
+    output: bed='saved_data/{track_name,[^_]+}.bed'
+    shell: '''liftOver {input.bed:q} {input.chain:q} {output.bed:q} /dev/null'''
 
 rule generate_greylist:
     input:
@@ -924,6 +921,15 @@ rule generate_greylist:
     threads: 8
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['greylist']
     shell: '''MC_CORES={threads:q} scripts/generate-greylists.R'''
+
+rule merge_blacklists:
+    input:
+        'saved_data/wgEncodeDacMapabilityConsensusExcludable.bed',
+        'saved_data/wgEncodeDukeMapabilityRegionsExcludable.bed',
+        'saved_data/ChIPSeq-input-greylist.bed',
+    output:
+        'saved_data/ChIPSeq-merged-blacklist.bed'
+    shell: '''cat {input:q} > {output:q}'''
 
 rule macs_predictd:
     input: bam_files=aligned_chipseq_bam_files,
@@ -1277,10 +1283,24 @@ rule convert_epic_to_narrowpeak:
                           header=False, index=False,
                           quoting=csv.QUOTE_NONE,)
 
+rule filter_blacklisted_peaks:
+    input:
+        peaks='peak_calls/{dirname}/{basename}peaks.narrowPeak',
+        blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
+    output:
+        peaks='peak_calls/{dirname}/{basename}peaks_noBL.narrowPeak',
+    version: SOFTWARE_VERSIONS['BEDTOOLS']
+    shell: '''
+    bedtools subtract -A -a {input.peaks:q} -b {input.blacklist:q} > {output.peaks:q}
+    if [ ! -s {output.peaks:q} ]; then
+      rm -f {output.peaks:q}
+    fi
+    '''
+
 rule run_idr_macs_all_conditions:
     input:
-        donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorA}/peakcall_peaks.narrowPeak',
-        donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peakcall_peaks.narrowPeak',
+        donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorA}/peakcall_peaks_noBL.narrowPeak',
+        donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peakcall_peaks_noBL.narrowPeak',
     output:
         temp_donorA_peaks=temp('idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorA_temp.narrowPeak'),
         temp_donorB_peaks=temp('idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorB_temp.narrowPeak'),
@@ -1304,8 +1324,8 @@ rule run_idr_macs_all_conditions:
 
 rule run_idr_macs_single_condition:
     input:
-        donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorA}/peakcall_peaks.narrowPeak',
-        donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peakcall_peaks.narrowPeak',
+        donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorA}/peakcall_peaks_noBL.narrowPeak',
+        donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peakcall_peaks_noBL.narrowPeak',
     output:
         temp_donorA_peaks=temp('idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorA_temp.narrowPeak'),
         temp_donorB_peaks=temp('idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorB_temp.narrowPeak'),
@@ -1329,8 +1349,8 @@ rule run_idr_macs_single_condition:
 
 rule run_idr_epic_all_conditions:
     input:
-        donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorA}/peaks.narrowPeak',
-        donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peaks.narrowPeak',
+        donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorA}/peaks_noBL.narrowPeak',
+        donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peaks_noBL.narrowPeak',
     output:
         temp_donorA_peaks=temp('idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorA_temp.narrowPeak'),
         temp_donorB_peaks=temp('idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorB_temp.narrowPeak'),
@@ -1354,8 +1374,8 @@ rule run_idr_epic_all_conditions:
 
 rule run_idr_epic_single_condition:
     input:
-        donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorA}/peaks.narrowPeak',
-        donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peaks.narrowPeak',
+        donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorA}/peaks_noBL.narrowPeak',
+        donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peaks_noBL.narrowPeak',
     output:
         temp_donorA_peaks=temp('idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorA_temp.narrowPeak'),
         temp_donorB_peaks=temp('idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorB_temp.narrowPeak'),
