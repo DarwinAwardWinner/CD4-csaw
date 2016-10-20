@@ -261,14 +261,14 @@ def list_macs_callpeak_output_files(basename):
     return [ basename + ext for ext in ext_list ]
 
 def read_narrowpeak(infile):
-    peaks = pd.DataFrame.from_csv(infile, header=None, sep="\t", index_col=None)
-    peaks.columns = ("chr", "start", "end", "name", "score", "strand", "signalValue", "pValue", "qValue", "summit")
+    peaks = pd.DataFrame.from_csv(infile, header=None, sep='\t', index_col=None)
+    peaks.columns = ('chr', 'start', 'end', 'name', 'score', 'strand', 'signalValue', 'pValue', 'qValue', 'summit')
     return peaks
 
 def write_narrowpeak(peaks, outfile):
-    peaks.to_csv(outfile, sep="\t", header=False, index=False, quoting=csv.QUOTE_NONE)
+    peaks.to_csv(outfile, sep='\t', header=False, index=False, quoting=csv.QUOTE_NONE)
 
-def pick_top_peaks(infile, outfile, by="score", ascending=False, number=150000, *args, **kwargs):
+def pick_top_peaks(infile, outfile, by='score', ascending=False, number=150000, *args, **kwargs):
     '''Copy the top N peaks from infile to outfile.
 
     Peaks are read from 'infile', sorted, and then the top 'number'
@@ -308,8 +308,8 @@ except Exception:
     rnaseq_samplemeta = read_R_dataframe('saved_data/samplemeta-RNASeq.RDS')
     chipseq_samplemeta = read_R_dataframe('saved_data/samplemeta-ChIPSeq.RDS')
 
-rnaseq_samplemeta['time_point'] = rnaseq_samplemeta['days_after_activation'].apply(lambda x: "Day{:.0f}".format(x))
-chipseq_samplemeta['time_point'] = chipseq_samplemeta['days_after_activation'].apply(lambda x: "Day{:.0f}".format(x))
+rnaseq_samplemeta['time_point'] = rnaseq_samplemeta['days_after_activation'].apply(lambda x: 'Day{:.0f}'.format(x))
+chipseq_samplemeta['time_point'] = chipseq_samplemeta['days_after_activation'].apply(lambda x: 'Day{:.0f}'.format(x))
 
 rnaseq_sample_libtypes = dict(zip(rnaseq_samplemeta['SRA_run'], rnaseq_samplemeta['libType']))
 
@@ -911,7 +911,7 @@ rule generate_greylist:
         samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
         chip_input=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam',
                           SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
-                                           chip_antibody="input")),
+                                           chip_antibody='input')),
     output:
         nbfit_data='saved_data/ChIPSeq-input-depth-NBGLM-fits.RDS',
         counts_data='saved_data/window-counts-input-unfiltered-1kb.RDS',
@@ -955,7 +955,7 @@ rule callpeak_macs_all_conditions_all_donors:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
                SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
-                                chip_antibody="input"),
+                                chip_antibody='input'),
                genome_build=wildcards.genome_build),
         chip_pulldown=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
@@ -988,7 +988,7 @@ rule callpeak_macs_all_conditions_single_donor:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
                SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
-                                chip_antibody="input"),
+                                chip_antibody='input'),
                genome_build=wildcards.genome_build),
         chip_pulldown=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
@@ -1023,7 +1023,7 @@ rule callpeak_macs_single_condition_all_donors:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
                SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
-                                chip_antibody="input"),
+                                chip_antibody='input'),
                genome_build=wildcards.genome_build),
         chip_pulldown=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
@@ -1059,7 +1059,7 @@ rule callpeak_macs_single_condition_single_donor:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
                SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
-                                chip_antibody="input"),
+                                chip_antibody='input'),
                genome_build=wildcards.genome_build),
         chip_pulldown=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
@@ -1095,7 +1095,7 @@ rule callpeak_epic_all_conditions_all_donors:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
                SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
-                                chip_antibody="input"),
+                                chip_antibody='input'),
                genome_build=wildcards.genome_build),
         chip_pulldown=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
@@ -1113,7 +1113,7 @@ rule callpeak_epic_all_conditions_all_donors:
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
     run:
-        with open(output.peaks, "wb") as outfile, open(log[0], "wb") as logfile:
+        with open(output.peaks, 'wb') as outfile, open(log[0], 'wb') as logfile:
             cmd = ['epic'] + \
                   ['--treatment'] + input.chip_pulldown + \
                   ['--control'] + input.chip_input + \
@@ -1135,7 +1135,7 @@ rule callpeak_epic_all_conditions_single_donor:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
                SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
-                                chip_antibody="input"),
+                                chip_antibody='input'),
                genome_build=wildcards.genome_build),
         chip_pulldown=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
@@ -1154,7 +1154,7 @@ rule callpeak_epic_all_conditions_single_donor:
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
     run:
-        with open(output.peaks, "wb") as outfile, open(log[0], "wb") as logfile:
+        with open(output.peaks, 'wb') as outfile, open(log[0], 'wb') as logfile:
             cmd = ['epic'] + \
                   ['--treatment'] + input.chip_pulldown + \
                   ['--control'] + input.chip_input + \
@@ -1176,7 +1176,7 @@ rule callpeak_epic_single_condition_all_donors:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
                SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
-                                chip_antibody="input"),
+                                chip_antibody='input'),
                genome_build=wildcards.genome_build),
         chip_pulldown=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
@@ -1196,7 +1196,7 @@ rule callpeak_epic_single_condition_all_donors:
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
     run:
-        with open(output.peaks, "wb") as outfile, open(log[0], "wb") as logfile:
+        with open(output.peaks, 'wb') as outfile, open(log[0], 'wb') as logfile:
             cmd = ['epic'] + \
                   ['--treatment'] + input.chip_pulldown + \
                   ['--control'] + input.chip_input + \
@@ -1218,7 +1218,7 @@ rule callpeak_epic_single_condition_single_donor:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
                SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
-                                chip_antibody="input"),
+                                chip_antibody='input'),
                genome_build=wildcards.genome_build),
         chip_pulldown=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
@@ -1239,7 +1239,7 @@ rule callpeak_epic_single_condition_single_donor:
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['epic_callpeak']
     run:
-        with open(output.peaks, "wb") as outfile, open(log[0], "wb") as logfile:
+        with open(output.peaks, 'wb') as outfile, open(log[0], 'wb') as logfile:
             cmd = ['epic'] + \
                   ['--treatment'] + input.chip_pulldown + \
                   ['--control'] + input.chip_input + \
@@ -1262,7 +1262,7 @@ rule convert_epic_to_narrowpeak:
     output:
         '{dir}/peaks.narrowPeak'
     run:
-        peaks = pd.DataFrame.from_csv(input[0], header=1, sep=" ", index_col=None)
+        peaks = pd.DataFrame.from_csv(input[0], header=1, sep=' ', index_col=None)
         ndigits = ceil(log10(peaks.shape[0]+1))
         name_format = 'epic_peak_{{:0{}d}}'.format(ndigits)
         tiny_float = np.finfo(float).tiny
@@ -1309,9 +1309,10 @@ rule run_idr_macs_all_conditions:
     log: 'idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
     version: SOFTWARE_VERSIONS['IDR']
     run:
-        pick_top_peaks(input.donorA_peaks, output.temp_donorA_peaks, by="pValue", number=150000)
-        pick_top_peaks(input.donorB_peaks, output.temp_donorB_peaks, by="pValue", number=150000)
-        shell('''idr --samples {output.temp_donorA_peaks:q} {output.temp_donorB_peaks:q} \
+        pick_top_peaks(input.donorA_peaks, output.temp_donorA_peaks, by='pValue', number=150000)
+        pick_top_peaks(input.donorB_peaks, output.temp_donorB_peaks, by='pValue', number=150000)
+        shell('''
+        idr --samples {output.temp_donorA_peaks:q} {output.temp_donorB_peaks:q} \
           --input-file-type narrowPeak \
           --rank p.value \
           --output-file {output.outfile:q} \
@@ -1334,9 +1335,10 @@ rule run_idr_macs_single_condition:
     log: 'idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
     version: SOFTWARE_VERSIONS['IDR']
     run:
-        pick_top_peaks(input.donorA_peaks, output.temp_donorA_peaks, by="pValue", number=150000)
-        pick_top_peaks(input.donorB_peaks, output.temp_donorB_peaks, by="pValue", number=150000)
-        shell('''idr --samples {output.temp_donorA_peaks:q} {output.temp_donorB_peaks:q} \
+        pick_top_peaks(input.donorA_peaks, output.temp_donorA_peaks, by='pValue', number=150000)
+        pick_top_peaks(input.donorB_peaks, output.temp_donorB_peaks, by='pValue', number=150000)
+        shell('''
+        idr --samples {output.temp_donorA_peaks:q} {output.temp_donorB_peaks:q} \
           --input-file-type narrowPeak \
           --rank p.value \
           --output-file {output.outfile:q} \
@@ -1359,9 +1361,10 @@ rule run_idr_epic_all_conditions:
     log: 'idr_analysis/epic_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
     version: SOFTWARE_VERSIONS['IDR']
     run:
-        pick_top_peaks(input.donorA_peaks, output.temp_donorA_peaks, by="score", number=150000)
-        pick_top_peaks(input.donorB_peaks, output.temp_donorB_peaks, by="score", number=150000)
-        shell('''idr --samples {output.temp_donorA_peaks:q} {output.temp_donorB_peaks:q} \
+        pick_top_peaks(input.donorA_peaks, output.temp_donorA_peaks, by='score', number=150000)
+        pick_top_peaks(input.donorB_peaks, output.temp_donorB_peaks, by='score', number=150000)
+        shell('''
+        idr --samples {output.temp_donorA_peaks:q} {output.temp_donorB_peaks:q} \
           --input-file-type bed \
           --rank score \
           --output-file {output.outfile:q} \
@@ -1384,9 +1387,10 @@ rule run_idr_epic_single_condition:
     log: 'idr_analysis/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
     version: SOFTWARE_VERSIONS['IDR']
     run:
-        pick_top_peaks(input.donorA_peaks, output.temp_donorA_peaks, by="score", number=150000)
-        pick_top_peaks(input.donorB_peaks, output.temp_donorB_peaks, by="score", number=150000)
-        shell('''idr --samples {output.temp_donorA_peaks:q} {output.temp_donorB_peaks:q} \
+        pick_top_peaks(input.donorA_peaks, output.temp_donorA_peaks, by='score', number=150000)
+        pick_top_peaks(input.donorB_peaks, output.temp_donorB_peaks, by='score', number=150000)
+        shell('''
+        idr --samples {output.temp_donorA_peaks:q} {output.temp_donorB_peaks:q} \
           --input-file-type bed \
           --rank score \
           --output-file {output.outfile:q} \
@@ -1399,7 +1403,7 @@ rule run_idr_epic_single_condition:
 
 rule csaw_compute_ccf:
     input:
-        bam_files=expand("aligned/chipseq_bowtie2_hg38.analysisSet/{sra_run}/Aligned.{ext}",
+        bam_files=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{sra_run}/Aligned.{ext}',
                          sra_run=chipseq_samplemeta['SRA_run'],
                          ext=['bam', 'bam.bai'])
     output:
