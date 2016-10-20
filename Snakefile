@@ -1405,7 +1405,8 @@ rule csaw_compute_ccf:
     input:
         bam_files=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{sra_run}/Aligned.{ext}',
                          sra_run=chipseq_samplemeta['SRA_run'],
-                         ext=['bam', 'bam.bai'])
+                         ext=['bam', 'bam.bai']),
+        blacklist='saved_data/ChIPSeq-merged-blacklist.bed'
     output:
         'saved_data/csaw-ccf.RDS', 'saved_data/csaw-ccf-noBL.RDS'
     version: R_package_version('csaw')

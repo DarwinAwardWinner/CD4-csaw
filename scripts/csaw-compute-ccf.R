@@ -50,7 +50,7 @@ sample.table <- readRDS("saved_data/samplemeta-ChIPSeq.RDS") %>%
 stopifnot(all(file.exists(sample.table$bam_file)))
 
 tsmsg("Loading blacklist regions")
-blacklist <- import("saved_data/wgEncodeDacMapabilityConsensusExcludable.bed.gz", format="bed")
+blacklist <- import("saved_data/ChIPSeq-merged-blacklist.bed", format="bed")
 
 ## Standard nuclear chromosomes only. (chrM is excluded because it is
 ## not located in the nucleus and is thus not subject to histone
