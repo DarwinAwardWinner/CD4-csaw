@@ -1410,4 +1410,5 @@ rule csaw_compute_ccf:
     output:
         'saved_data/csaw-ccf.RDS', 'saved_data/csaw-ccf-noBL.RDS'
     version: R_package_version('csaw')
-    shell: 'Rscript scripts/csaw-compute-ccf.R'
+    threads: 8
+    shell: 'MC_CORES={threads:q} scripts/csaw-compute-ccf.R'

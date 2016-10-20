@@ -22,11 +22,6 @@ library(openxlsx)
 library(annotate)
 library(BSgenome.Hsapiens.UCSC.hg38)
 library(org.Hs.eg.db)
-library(doParallel)
-options(mc.cores=parallel::detectCores())
-registerDoParallel(cores=parallel::detectCores())
-library(BiocParallel)
-register(MulticoreParam(parallel::detectCores()))
 library(GenomicRanges)
 library(rtracklayer)
 library(SummarizedExperiment)
@@ -35,6 +30,16 @@ library(reshape2)
 library(purrr)
 library(csaw)
 library(Matrix)
+
+library(parallel)
+options(mc.preschedule=FALSE)
+ncores <- getOption("mc.cores", default=1)
+library(BiocParallel)
+if (ncores > 1) {
+    register(MulticoreParam(workers=ncores))
+} else {
+    register(SerialParam())
+}
 
 tsmsg("Loading sample data")
 
@@ -65,15 +70,16 @@ param.dedup.on.no.blacklist <- reform(param.dedup.on, discard=GRanges())
 ## Determine fragment length using cross-correlation function, see
 ## csaw UG 2.4.1
 sample.ccf.noBL <-
-    lapply(sample.table$bam_file,
-           . %T>% tsmsg("Computing no-blacklist CCF for ", .) %>%
-           correlateReads(max.dist=1000, cross=TRUE,
-                          param=param.dedup.on.no.blacklist))
+    bplapply(sample.table$bam_file,
+             . %T>% tsmsg("Computing no-blacklist CCF for ", .) %>%
+             correlateReads(max.dist=1000, cross=TRUE,
+                            param=param.dedup.on.no.blacklist))
 sample.ccf <-
-    lapply(sample.table$bam_file,
-           . %T>% tsmsg("Computing CCF for ", .) %>%
-           correlateReads(max.dist=1000, cross=TRUE,
-                          param=param.dedup.on))
+    bplapply(sample.table$bam_file,
+             . %T>% tsmsg("Computing CCF for ", .) %>%
+             correlateReads(max.dist=1000, cross=TRUE,
+                            param=param.dedup.on))
+
 names(sample.ccf.noBL) <- names(sample.ccf) <- sample.table$SampleName
 saveRDS(sample.ccf, "saved_data/csaw-ccf.RDS")
 saveRDS(sample.ccf.noBL, "saved_data/csaw-ccf-noBL.RDS")
