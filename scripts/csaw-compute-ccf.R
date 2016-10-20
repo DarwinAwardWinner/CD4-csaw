@@ -65,20 +65,28 @@ blacklist <- import("saved_data/ChIPSeq-merged-blacklist.bed", format="bed")
 std.chr <- extractSeqlevels("Homo sapiens", "UCSC") %>% setdiff("chrM")
 param <- readParam(restrict=std.chr, discard=blacklist)
 param.dedup.on <- reform(param, dedup=TRUE)
-param.dedup.on.no.blacklist <- reform(param.dedup.on, discard=GRanges())
+param.dedup.on.noBL <- reform(param.dedup.on, discard=GRanges())
 
 ## Determine fragment length using cross-correlation function, see
 ## csaw UG 2.4.1
+
+tsmsg("Beginning CCF computation")
+
 sample.ccf.noBL <-
-    bplapply(sample.table$bam_file,
-             . %T>% tsmsg("Computing no-blacklist CCF for ", .) %>%
-             correlateReads(max.dist=1000, cross=TRUE,
-                            param=param.dedup.on.no.blacklist))
+    bplapply(sample.table$bam_file, function(bam) {
+        tsmsg("Computing no-blacklist CCF for ", bam)
+        correlateReads(bam, max.dist=1000, cross=TRUE,
+                       param=param.dedup.on.noBL)
+
+    })
+
 sample.ccf <-
-    bplapply(sample.table$bam_file,
-             . %T>% tsmsg("Computing CCF for ", .) %>%
-             correlateReads(max.dist=1000, cross=TRUE,
-                            param=param.dedup.on))
+    bplapply(sample.table$bam_file, function(bam) {
+        tsmsg("Computing no-blacklist CCF for ", bam)
+        correlateReads(bam, max.dist=1000, cross=TRUE,
+                       param=param.dedup.on)
+
+    })
 
 names(sample.ccf.noBL) <- names(sample.ccf) <- sample.table$SampleName
 saveRDS(sample.ccf, "saved_data/csaw-ccf.RDS")
