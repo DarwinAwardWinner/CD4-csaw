@@ -414,7 +414,8 @@ rule all:
                    zip_longest_recycled,
                    **dict(idr_sample_pairs.iteritems())),
             peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet')),
-        ccf_data_files=['saved_data/csaw-ccf.RDS', 'saved_data/csaw-ccf-noBL.RDS'],
+        ccf_plots=expand("plots/csaw/CCF-plots{suffix}.pdf",
+                         suffix=("", "-relative", '-noBL', 'relative-noBL'))
 
 rule all_rnaseq_counts:
     input:
@@ -1412,3 +1413,11 @@ rule csaw_compute_ccf:
     version: R_package_version('csaw')
     threads: 8
     shell: 'MC_CORES={threads:q} scripts/csaw-compute-ccf.R'
+
+rule csaw_plot_ccf:
+    input: 'saved_data/csaw-ccf.RDS', 'saved_data/csaw-ccf-noBL.RDS',
+    output:
+        expand("plots/csaw/CCF-plots{suffix}.pdf",
+               suffix=("", "-relative", '-noBL', 'relative-noBL')),
+    version: R_package_version('csaw')
+    shell: 'scripts/csaw-plot-ccf.R'
