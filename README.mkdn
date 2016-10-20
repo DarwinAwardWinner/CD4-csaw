@@ -24,12 +24,18 @@ before I learned the value of reproducible research.)
 
 ### Completed components
 
-* RNA-seq mapping (STAR & HISAT2)
-* RNA-seq counting
-* RNA-seq alignment-free quantification using Salmon & Kallisto
-* ChIP-seq mapping with bowtie2
-* ChIP-seq peak calling with MACS2 and Epic
-* Computation of cross-correlation function for ChIP-Seq samples
+* ChIP-seq
+  * Mapping with bowtie2
+  * Peak calling with MACS2 and Epic
+  * Fetching of blacklists from UCSC
+  * Generation of greylists from ChIP-Seq input samples
+  * IDR analysis of blacklist-filtered peak calls
+  * Computation of cross-correlation function for ChIP-Seq samples,
+    excluding blacklisted regions
+* RNA-seq
+  * Mapping with STAR & HISAT2
+  * Counting reads aligned to genes
+  * Alignment-free bias-corrected transcript quantification using Salmon & Kallisto
 
 ### Testing components
 
@@ -38,7 +44,6 @@ before I learned the value of reproducible research.)
 * RNA-seq differential gene expression
 * RNA-seq differential gene/transcript/exon/whatever expression from
   Salmon quantification
-* ChIP-seq peak IDR pipeline
 * csaw analysis of ChIP-seq
 
 ## TODO Other
@@ -57,9 +62,14 @@ before I learned the value of reproducible research.)
 * Python + many packages
 * Snakemake for running the workflow
 * STAR, HISAT2, and Bowtie2 aligners
+* Salmon & Kallisto
+* Sleuth R package
 * Picard tools
 * SRA toolkit for extracting reads from SRA files
 * UCSC command-line tools (e.g. liftOver)
+* Bedtools
+* Macs2 and Epic peak callers
+* IDR python script
 
 # Old workflow
 
