@@ -909,6 +909,22 @@ rule liftover_blacklist_regions:
       gzip -c - > {output.bed:q}
     '''
 
+rule generate_greylist:
+    input:
+        samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
+        chip_input=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam',
+                          SRA_run=dfselect(chipseq_samplemeta, 'SRA_run',
+                                           chip_antibody="input")),
+    output:
+        nbfit_data="saved_data/ChIP-Seq-input-depth-NBGLM-fits.RDS",
+        counts_data="saved_data/window-counts-input-unfiltered-1kb.RDS",
+        greylist_data="saved_data/ChIP-Seq-input-greylist.RDS",
+        greylist_bed="saved_data/ChIP-Seq-input-greylist.bed",
+    version: SOFTWARE_VERSIONS['BIOC']
+    threads: 8
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['greylist']
+    shell: '''MC_CORES={threads:q} scripts/generate-greylists.R'''
+
 rule macs_predictd:
     input: bam_files=aligned_chipseq_bam_files,
     output: rfile='saved_data/macs_predictd/predictd',
