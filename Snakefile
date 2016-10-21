@@ -1397,5 +1397,6 @@ rule csaw_plot_ccf:
     output:
         expand("plots/csaw/CCF-plots{suffix}.pdf",
                suffix=("", "-relative", '-noBL', '-relative-noBL')),
+        'plots/csaw/CCF-max-plot.pdf'
     version: R_package_version('csaw')
     shell: 'scripts/csaw-plot-ccf.R'
