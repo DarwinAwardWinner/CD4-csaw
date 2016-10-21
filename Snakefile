@@ -415,7 +415,7 @@ rule all:
                    **dict(idr_sample_pairs.iteritems())),
             peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet')),
         ccf_plots=expand("plots/csaw/CCF-plots{suffix}.pdf",
-                         suffix=("", "-relative", '-noBL', 'relative-noBL'))
+                         suffix=("", "-relative", '-noBL', '-relative-noBL'))
 
 rule all_rnaseq_counts:
     input:
@@ -1418,6 +1418,6 @@ rule csaw_plot_ccf:
     input: 'saved_data/csaw-ccf.RDS', 'saved_data/csaw-ccf-noBL.RDS',
     output:
         expand("plots/csaw/CCF-plots{suffix}.pdf",
-               suffix=("", "-relative", '-noBL', 'relative-noBL')),
+               suffix=("", "-relative", '-noBL', '-relative-noBL')),
     version: R_package_version('csaw')
     shell: 'scripts/csaw-plot-ccf.R'
