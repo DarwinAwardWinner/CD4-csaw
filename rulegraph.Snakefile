@@ -7,18 +7,20 @@ def get_rule(name):
 def is_target_rule(name):
     return not get_rule(name).has_wildcards()
 
+targets = ['all', 'all_rnaseq_counts', 'all_rnaseq_quant', 'all_macs_callpeak', 'all_epic_callpeak', 'all_idr']
+
 rule all_rulegraphs:
     input:
         expand('rulegraphs/{graphtype}-{target}.{filetype}',
                graphtype=['rulegraph',],
-               target=['all', 'all_rnaseq_counts', 'all_salmon', 'all_kallisto', 'all_chipseq_bai', 'all_macs_callpeak', 'all_epic_callpeak',],
+               target=targets,
                filetype=['pdf', 'png'])
 
 rule all_dags:
     input:
         expand('rulegraphs/{graphtype}-{target}.{filetype}',
                graphtype=['dag',],
-               target=['all', 'all_rnaseq_counts', 'all_salmon', 'all_kallisto', 'all_chipseq_bai', 'all_macs_callpeak', 'all_epic_callpeak','all_idr'],
+               target=targets,
                filetype=['pdf', 'png'])
 
 rule svg_to_png:

@@ -426,37 +426,15 @@ rule all_rnaseq_counts:
             'saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_knownGene.RDS',
         ],
 
-# Temp rule
-rule all_salmon:
+rule all_rnaseq_quant:
     input:
-        salmon_quant=expand(
-            'salmon_quant/{genome_build}_{transcriptome}/{SRA_run}/{filename}',
+        expand(
+            '{program}_quant/{genome_build}_{transcriptome}/{SRA_run}/abundance.h5',
+            program=['salmon', 'kallisto'],
             genome_build='hg38.analysisSet',
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run'],
-            filename=[
-                'cmd_info.json', 'abundance.h5',
-                # Don't need the bootstraps in text format, we can
-                # already get them through the HDF5 file.
-                # 'aux_info/bootstrap/quant_bootstraps.tsv',
-            ]),
-
-rule all_kallisto:
-    input:
-        kallisto_quant=expand(
-            'kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}/run_info.json',
-            genome_build='hg38.analysisSet',
-            transcriptome=['knownGene', 'ensembl.85'],
-            SRA_run=rnaseq_samplemeta['SRA_run']),
-
-# Temp rule
-rule all_chipseq_bai:
-    input:
-        chipseq_bai=expand(
-            'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam.bai',
-            genome_build='hg38.analysisSet',
-            SRA_run=chipseq_samplemeta['SRA_run'],
-        ),
+        )
 
 rule all_macs_callpeak:
     input:
