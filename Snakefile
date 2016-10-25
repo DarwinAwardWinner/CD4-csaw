@@ -414,8 +414,8 @@ rule all:
                    zip_longest_recycled,
                    **dict(idr_sample_pairs.iteritems())),
             peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet')),
-        ccf_plots=expand("plots/csaw/CCF-plots{suffix}.pdf",
-                         suffix=("", "-relative", '-noBL', '-relative-noBL')),
+        ccf_plots=expand('plots/csaw/CCF-plots{suffix}.pdf',
+                         suffix=('', '-relative', '-noBL', '-relative-noBL')),
         csaw_counts_150bp=expand('saved_data/csaw-window-counts-{chip}-150bp.RDS',
                                  chip=set(chipseq_samplemeta['chip_antibody'])),
         csaw_counts_10kb=expand('saved_data/csaw-bigbin-counts-{chip}-10kb.RDS',
@@ -1386,6 +1386,7 @@ rule run_idr_epic_single_condition:
 
 rule csaw_compute_ccf:
     input:
+        samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
         bam_files=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{sra_run}/Aligned.{ext}',
                          sra_run=chipseq_samplemeta['SRA_run'],
                          ext=['bam', 'bam.bai']),
@@ -1397,7 +1398,10 @@ rule csaw_compute_ccf:
     shell: 'MC_CORES={threads:q} scripts/csaw-compute-ccf.R'
 
 rule csaw_plot_ccf:
-    input: 'saved_data/csaw-ccf.RDS', 'saved_data/csaw-ccf-noBL.RDS',
+    input:
+        samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
+        ccf_data='saved_data/csaw-ccf.RDS',
+        ccf_noBL_data='saved_data/csaw-ccf-noBL.RDS',
     output:
         expand("plots/csaw/CCF-plots{suffix}.pdf",
                suffix=("", "-relative", '-noBL', '-relative-noBL')),
@@ -1408,8 +1412,9 @@ rule csaw_plot_ccf:
 rule csaw_count_150bp:
     input:
         samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
-        bamfiles=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam',
-                        SRA_run=chipseq_samplemeta['SRA_run']),
+        bam_files=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{sra_run}/Aligned.{ext}',
+                         sra_run=chipseq_samplemeta['SRA_run'],
+                         ext=['bam', 'bam.bai']),
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
     output:
         'saved_data/csaw-window-counts-150bp.RDS'
@@ -1420,8 +1425,9 @@ rule csaw_count_150bp:
 rule csaw_count_10kb:
     input:
         samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
-        bamfiles=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam',
-                        SRA_run=chipseq_samplemeta['SRA_run']),
+        bam_files=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{sra_run}/Aligned.{ext}',
+                         sra_run=chipseq_samplemeta['SRA_run'],
+                         ext=['bam', 'bam.bai']),
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
     output:
         'saved_data/csaw-bigbin-counts-10kb.RDS'
