@@ -415,7 +415,11 @@ rule all:
                    **dict(idr_sample_pairs.iteritems())),
             peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet')),
         ccf_plots=expand("plots/csaw/CCF-plots{suffix}.pdf",
-                         suffix=("", "-relative", '-noBL', '-relative-noBL'))
+                         suffix=("", "-relative", '-noBL', '-relative-noBL')),
+        csaw_counts_150bp=expand('saved_data/csaw-window-counts-{chip}-150bp.RDS',
+                                 chip=set(chipseq_samplemeta['chip_antibody'])),
+        csaw_counts_10kb=expand('saved_data/csaw-bigbin-counts-{chip}-10kb.RDS',
+                                chip=set(chipseq_samplemeta['chip_antibody'])),
 
 rule all_rnaseq_counts:
     input:
@@ -1398,5 +1402,42 @@ rule csaw_plot_ccf:
         expand("plots/csaw/CCF-plots{suffix}.pdf",
                suffix=("", "-relative", '-noBL', '-relative-noBL')),
         'plots/csaw/CCF-max-plot.pdf'
-    version: R_package_version('csaw')
+    version: SOFTWARE_VERSIONS['R']
     shell: 'scripts/csaw-plot-ccf.R'
+
+rule csaw_count_150bp:
+    input:
+        samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
+        bamfiles=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam',
+                        SRA_run=chipseq_samplemeta['SRA_run']),
+        blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
+    output:
+        'saved_data/csaw-window-counts-150bp.RDS'
+    version: R_package_version('csaw')
+    resources: mem_gb=60
+    shell: 'scripts/csaw-count-150bp.R'
+
+rule csaw_count_10kb:
+    input:
+        samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
+        bamfiles=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam',
+                        SRA_run=chipseq_samplemeta['SRA_run']),
+        blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
+    output:
+        'saved_data/csaw-bigbin-counts-10kb.RDS'
+    version: R_package_version('csaw')
+    threads: 8
+    resources: mem_gb=20
+    shell: 'MC_CORES={threads:q} scripts/csaw-count-10kb.R'
+
+rule split_csaw_counts:
+    input:
+        'saved_data/csaw-window-counts-150bp.RDS',
+        'saved_data/csaw-bigbin-counts-10kb.RDS',
+    output:
+        expand('saved_data/csaw-window-counts-{chip}-150bp.RDS',
+               chip=set(chipseq_samplemeta['chip_antibody'])),
+        expand('saved_data/csaw-bigbin-counts-{chip}-10kb.RDS',
+               chip=set(chipseq_samplemeta['chip_antibody'])),
+    version: SOFTWARE_VERSIONS['BIOC']
+    shell: 'scripts/csaw-split.R'
