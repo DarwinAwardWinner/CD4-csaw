@@ -416,6 +416,7 @@ rule all:
             peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet')),
         ccf_plots=expand('plots/csaw/CCF-plots{suffix}.pdf',
                          suffix=('', '-relative', '-noBL', '-relative-noBL')),
+        site_profile_plot='plots/csaw/site-profile-plots.pdf',
         csaw_counts_150bp=expand('saved_data/csaw-window-counts-{chip}-150bp.RDS',
                                  chip=set(chipseq_samplemeta['chip_antibody'])),
         csaw_counts_10kb=expand('saved_data/csaw-bigbin-counts-{chip}-10kb.RDS',
@@ -1408,6 +1409,20 @@ rule csaw_plot_ccf:
         'plots/csaw/CCF-max-plot.pdf'
     version: SOFTWARE_VERSIONS['R']
     shell: 'scripts/csaw-plot-ccf.R'
+
+rule csaw_profile_sites:
+    input:
+        samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
+        bam_files=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{sra_run}/Aligned.{ext}',
+                         sra_run=chipseq_samplemeta['SRA_run'],
+                         ext=['bam', 'bam.bai']),
+        blacklist='saved_data/ChIPSeq-merged-blacklist.bed'
+    output:
+        "saved_data/csaw-siteprof.RDS",
+        "plots/csaw/site-profile-plots.pdf"
+    version: R_package_version('csaw')
+    threads: 8
+    shell: 'MC_CORES={threads:q} scripts/csaw-profile-sites.R'
 
 rule csaw_count_150bp:
     input:

@@ -32,6 +32,7 @@ before I learned the value of reproducible research.)
   * IDR analysis of blacklist-filtered peak calls
   * Computation of cross-correlation function for ChIP-Seq samples,
     excluding blacklisted regions
+  * Counting in windows across the genome
 * RNA-seq
   * Mapping with STAR & HISAT2
   * Counting reads aligned to genes
