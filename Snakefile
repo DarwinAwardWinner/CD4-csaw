@@ -404,16 +404,16 @@ rule all:
             SRA_run=chipseq_samplemeta['SRA_run'],
         ),
         macs_predictd='saved_data/macs_predictd/output.log',
-        idr_single_cond=expand(
-            expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.{cell_type}.{time_point}_{donorA}vs{donorB}/idrValues.txt',
-                   zip_longest_recycled,
-                   **dict(idr_sample_pairs.iteritems())),
-            peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet'),
-        idr_all_cond=set(expand(
-            expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.ALL_{donorA}vs{donorB}/idrValues.txt',
-                   zip_longest_recycled,
-                   **dict(idr_sample_pairs.iteritems())),
-            peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet')),
+        idr_single_cond=expand(expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.{cell_type}.{time_point}_{donorA}vs{donorB}/{{basename}}',
+                                      zip_longest_recycled,
+                                      **dict(idr_sample_pairs.iteritems())),
+                               peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet',
+                               basename=['idrValues.txt', 'idrplots.pdf']),
+        idr_all_cond=set(expand(expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.ALL_{donorA}vs{donorB}/{{basename}}',
+                                       zip_longest_recycled,
+                                       **dict(idr_sample_pairs.iteritems())),
+                                peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet',
+                                basename=['idrValues.txt', 'idrplots.pdf'])),
         ccf_plots=expand('plots/csaw/CCF-plots{suffix}.pdf',
                          suffix=('', '-relative', '-noBL', '-relative-noBL')),
         site_profile_plot='plots/csaw/site-profile-plots.pdf',
@@ -493,14 +493,16 @@ rule all_epic_callpeak:
 
 rule all_idr:
     input:
-        SingleCondition=expand(expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.{cell_type}.{time_point}_{donorA}vs{donorB}/idrValues.txt',
+        SingleCondition=expand(expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.{cell_type}.{time_point}_{donorA}vs{donorB}/{{basename}}',
                                       zip_longest_recycled,
                                       **dict(idr_sample_pairs.iteritems())),
-                               peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet'),
-        AllCondition=set(expand(expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.ALL_{donorA}vs{donorB}/idrValues.txt',
+                               peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet',
+                               basename=['idrValues.txt', 'idrplots.pdf']),
+        AllCondition=set(expand(expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.ALL_{donorA}vs{donorB}/{{basename}}',
                                       zip_longest_recycled,
                                       **dict(idr_sample_pairs.iteritems())),
-                                peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet'))
+                                peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet',
+                                basename=['idrValues.txt', 'idrplots.pdf']))
 
 rule fetch_sra_run:
     '''Script to fetch the .sra file for an SRA run
@@ -1384,6 +1386,22 @@ rule run_idr_epic_single_condition:
           --random-seed 1986
         mv {output.outfile:q}.png {output.plotfile:q}
         ''')
+
+rule plot_idr:
+    input:
+        'idr_analysis/{peak_caller}_{genome_build}/{chip_antibody}_condition.{condition}_{donorA}vs{donorB}/idrValues.txt'
+    output:
+        'idr_analysis/{peak_caller}_{genome_build}/{chip_antibody}_condition.{condition}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrplots.pdf'
+    params:
+        sampleA='{chip_antibody}-{condition}-{donorA}',
+        sampleB='{chip_antibody}-{condition}-{donorB}',
+        common_prefix='{chip_antibody}-{condition}',
+    version: SOFTWARE_VERSIONS['R']
+    shell: '''
+    scripts/plot-idr.R -i {input:q} -o {output:q} \
+      -A {params.sampleA:q} -B {params.sampleB:q} \
+      -P {params.common_prefix:q}
+    '''
 
 rule csaw_compute_ccf:
     input:
