@@ -1483,8 +1483,9 @@ rule csaw_profile_sites:
                          ext=['bam', 'bam.bai']),
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed'
     output:
-        "saved_data/csaw-siteprof.RDS",
-        "plots/csaw/site-profile-plots.pdf"
+        'saved_data/csaw-sample-maxima.RDS',
+        'saved_data/csaw-siteprof.RDS',
+        'plots/csaw/site-profile-plots.pdf'
     version: R_package_version('csaw')
     threads: 8
     shell: 'MC_CORES={threads:q} scripts/csaw-profile-sites.R'

@@ -37,7 +37,8 @@ options(mc.preschedule=FALSE)
 ncores <- getOption("mc.cores", default=1)
 library(BiocParallel)
 if (ncores > 1) {
-    register(MulticoreParam(workers=ncores))
+    register(MulticoreParam(workers=ncores, tasks=100,
+                            progressbar = TRUE))
 } else {
     register(SerialParam())
 }
@@ -78,22 +79,38 @@ param.dedup.on <- reform(param, dedup=TRUE)
 ## Determining window size using findMaxima & profileSites, see csaw
 ## UG 2.5
 
-sample.site.profiles <- bplapply(sample.table$bam_file, function(bam) {
-    tsmsg("Profiling maxima for ", bam)
+tsmsg("Finding maxima")
+sample.maxima <- bplapply(sample.table$bam_file, function(bam) {
     windowed <- windowCounts(bam, spacing=50, width=50, ext=147, param=param.dedup.on, filter=20)
     rwsms <- rowSums(assay(windowed))
     maxed <- findMaxima(rowRanges(windowed), range=5000, metric=rwsms)
-    profileSites(bam, rowRanges(windowed)[maxed], range=10000, param=param.dedup.on, weight=1/rwsms[maxed])
+    maxwindowed <- windowed[maxed,]
+    maxranges <- rowRanges(maxwindowed)
+    maxranges$Count <- rwsms
+    maxranges
 })
-names(sample.site.profiles) <- sample.table$SampleName
-saveRDS(sample.site.profiles, "saved_data/csaw-siteprof.RDS")
+names(sample.maxima) <- sample.table$SampleName
+saveRDS(sample.maxima, "saved_data/csaw-sample-maxima.RDS")
 
-profile.table <- sample.site.profiles %>%
-    lapply(function(x) data.frame(Distance=as.numeric(names(x)), RelativeCoverage=x)) %>%
-    melt(id.vars="Distance") %>%
+weights <- lapply(sample.maxima, . %$% {1/Count})
+
+tsmsg("Profiling maxima")
+sample.mean.profiles <- bpmapply(
+    profileSites,
+    bam.files=sample.table$bam_file,
+    regions=sample.maxima,
+    weight=weights,
+    MoreArgs = list(
+        average = TRUE,
+        ext=147,
+        range=10000,
+        param=param.dedup.on))
+colnames(sample.mean.profiles) <- sample.table$SampleName
+saveRDS(sample.mean.profiles, "saved_data/csaw-siteprof.RDS")
+
+profile.table <- sample.mean.profiles %>%
+    melt(varnames=c("Distance", "SampleName"), value.name="RelativeCoverage") %>%
     mutate(Distance=Distance-25) %>%
-    rename(SampleName=L1) %>%
-    dcast(SampleName + Distance ~ variable) %>%
     inner_join(sample.table, by="SampleName") %>%
     group_by(SampleName)
 
