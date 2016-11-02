@@ -10,34 +10,6 @@ tsmsg <- function(...) {
     message(date(), ": ", ...)
 }
 
-match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg))
-{
-    if (missing(choices)) {
-        formal.args <- formals(sys.function(sys.parent()))
-        choices <- eval(formal.args[[as.character(substitute(arg))]])
-    }
-    if (is.null(arg))
-        return(choices[1L])
-    else if (!is.character(arg))
-        stop(sprintf("%s must be NULL or a character vector", deparse(argname)))
-    if (!several.ok) {
-        if (identical(arg, choices))
-            return(arg[1L])
-        if (length(arg) > 1L)
-            stop(sprintf("%s must be of length 1", deparse(argname)))
-    }
-    else if (length(arg) == 0L)
-        stop(sprintf("%s must be of length >= 1", deparse(argname)))
-    i <- pmatch(arg, choices, nomatch = 0L, duplicates.ok = TRUE)
-    if (all(i == 0L))
-        stop(gettextf("%s should be one of %s", deparse(argname), paste(dQuote(choices),
-            collapse = ", ")), domain = NA)
-    i <- i[i > 0L]
-    if (!several.ok && length(i) > 1)
-        stop("there is more than one match in 'match.arg'")
-    choices[i]
-}
-
 get.options <- function(opts) {
 
     ## Do argument parsing early so the script exits quickly if arguments are invalid
