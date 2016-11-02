@@ -250,15 +250,15 @@ def list_kallisto_output_files(outdir):
     ]
     return [ os.path.join(outdir, f) for f in file_list ]
 
-def list_macs_callpeak_output_files(basename):
-    ext_list = [
-        '_peaks.narrowPeak',
-        '_peaks.xls',
-        '_summits.bed',
-        # '_control_lambda.bdg',
-        # '_treat_pileup.bdg',
+def list_macs_callpeak_output_files(dirname):
+    file_list = [
+        'peaks.narrowPeak',
+        'peaks.xls',
+        'summits.bed',
+        # 'control_lambda.bdg',
+        # 'treat_pileup.bdg',
     ]
-    return [ basename + ext for ext in ext_list ]
+    return [ os.path.join(dirname, fname) for fname in file_list ]
 
 def read_narrowpeak(infile):
     peaks = pd.DataFrame.from_csv(infile, header=None, sep='\t', index_col=None)
@@ -414,6 +414,18 @@ rule all:
                                        **dict(idr_sample_pairs.iteritems())),
                                 peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet',
                                 basename=['idrValues.txt', 'idrplots.pdf'])),
+        idr_peaks_epic=expand(
+            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
+            condition = list(chipseq_samplemeta_noinput\
+                             .apply(lambda x: "%s.%s" % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL']),
+        idr_peaks_macs=expand(
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
+            condition = list(chipseq_samplemeta_noinput\
+                             .apply(lambda x: "%s.%s" % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL']),
         ccf_plots=expand('plots/csaw/CCF-plots{suffix}.pdf',
                          suffix=('', '-relative', '-noBL', '-relative-noBL')),
         site_profile_plot='plots/csaw/site-profile-plots.pdf',
@@ -444,22 +456,22 @@ rule all_rnaseq_quant:
 rule all_macs_callpeak:
     input:
         ac_ad=set(expand(
-            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall_peaks.narrowPeak', zip_longest_recycled,
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.narrowPeak', zip_longest_recycled,
             genome_build='hg38.analysisSet',
             chip_antibody=chipseq_samplemeta_noinput['chip_antibody'])),
         ac_sd=set(expand(
-            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}/peakcall_peaks.narrowPeak', zip_longest_recycled,
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}/peaks.narrowPeak', zip_longest_recycled,
             genome_build='hg38.analysisSet',
             chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
             donor=chipseq_samplemeta_noinput['donor_id'])),
         sc_ad=set(expand(
-            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL/peakcall_peaks.narrowPeak', zip_longest_recycled,
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL/peaks.narrowPeak', zip_longest_recycled,
             genome_build='hg38.analysisSet',
             chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
             cell_type=chipseq_samplemeta_noinput['cell_type'],
             time_point=chipseq_samplemeta_noinput['time_point'])),
         sc_sd=set(expand(
-            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donor}/peakcall_peaks.narrowPeak', zip_longest_recycled,
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donor}/peaks.narrowPeak', zip_longest_recycled,
             genome_build='hg38.analysisSet',
             chip_antibody=chipseq_samplemeta_noinput['chip_antibody'],
             cell_type=chipseq_samplemeta_noinput['cell_type'],
@@ -503,6 +515,17 @@ rule all_idr:
                                       **dict(idr_sample_pairs.iteritems())),
                                 peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet',
                                 basename=['idrValues.txt', 'idrplots.pdf']))
+
+rule all_idr_filtered_peaks:
+    input:
+        epic=expand('peak_calls/epic_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
+                    genome_build='hg38.analysisSet',
+                    chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
+                    condition = list(chipseq_samplemeta_noinput.apply(lambda x: "%s.%s" % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL']),
+        macs=expand('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
+                    genome_build='hg38.analysisSet',
+                    chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
+                    condition = list(chipseq_samplemeta_noinput.apply(lambda x: "%s.%s" % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL'])
 
 rule fetch_sra_run:
     '''Script to fetch the .sra file for an SRA run
@@ -872,14 +895,6 @@ rule get_liftover_chain:
     output: 'saved_data/{src_genome}ToHg38.over.chain'
     shell: 'zcat {input:q} > {output:q}'
 
-# Temp rule
-rule all_blacklists:
-    input:
-        ## Remember to cite: https://sites.google.com/site/anshulkundaje/projects/blacklists
-        'saved_data/wgEncodeDacMapabilityConsensusExcludable.bed',
-        ## Cite: http://www.ncbi.nlm.nih.gov/pubmed/15499007
-        'saved_data/wgEncodeDukeMapabilityRegionsExcludable.bed',
-
 # http://genome.ucsc.edu/cgi-bin/hgFileUi?db=hg19&g=wgEncodeMapability
 rule get_blacklist_regions:
     input: FTP.remote('hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeMapability/{track_name}.bed.gz', static=True)
@@ -949,7 +964,7 @@ rule callpeak_macs_all_conditions_all_donors:
                                 chip_antibody=wildcards.chip_antibody),
                genome_build=wildcards.genome_build)
     output:
-        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall'),
+        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL'),
     log: 'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peakcall.log'
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL',
@@ -966,7 +981,8 @@ rule callpeak_macs_all_conditions_all_donors:
       --name peakcall \
       --nomodel --extsize 147 \
       --pvalue=0.5 \
-      2>&1 | tee {log:q}
+      2>&1 | tee {log:q};
+    prename 's/peakcall_//' {params.outdir:q}/*
     '''
 
 rule callpeak_macs_all_conditions_single_donor:
@@ -983,7 +999,7 @@ rule callpeak_macs_all_conditions_single_donor:
                                 donor_id=wildcards.donor),
                genome_build=wildcards.genome_build)
     output:
-        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peakcall'),
+        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}'),
     log: 'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor,D[0-9]+}/peakcall.log'
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donor}',
@@ -1002,6 +1018,7 @@ rule callpeak_macs_all_conditions_single_donor:
       --nomodel --extsize 147 \
       --pvalue=0.5 \
       2>&1 | tee {log:q}
+    prename 's/peakcall_//' {params.outdir:q}/*
     '''
 
 rule callpeak_macs_single_condition_all_donors:
@@ -1019,7 +1036,7 @@ rule callpeak_macs_single_condition_all_donors:
                                 time_point=wildcards.time_point),
                genome_build=wildcards.genome_build)
     output:
-        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peakcall'),
+        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL'),
     log: 'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.ALL/peakcall.log'
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL',
@@ -1038,6 +1055,7 @@ rule callpeak_macs_single_condition_all_donors:
       --nomodel --extsize 147 \
       --pvalue=0.5 \
       2>&1 | tee {log:q}
+    prename 's/peakcall_//' {params.outdir:q}/*
     '''
 
 rule callpeak_macs_single_condition_single_donor:
@@ -1056,7 +1074,7 @@ rule callpeak_macs_single_condition_single_donor:
                                 time_point=wildcards.time_point),
                genome_build=wildcards.genome_build)
     output:
-        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peakcall'),
+        outfiles=list_macs_callpeak_output_files('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}'),
     log: 'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_donor.{donor,D[0-9]+}/peakcall.log'
     params:
         outdir='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donor}',
@@ -1074,6 +1092,7 @@ rule callpeak_macs_single_condition_single_donor:
       --nomodel --extsize 147 \
       --pvalue=0.5 \
       2>&1 | tee {log:q}
+    prename 's/peakcall_//' {params.outdir:q}/*
     '''
 
 rule callpeak_epic_all_conditions_all_donors:
@@ -1244,9 +1263,9 @@ rule callpeak_epic_single_condition_single_donor:
 
 rule convert_epic_to_narrowpeak:
     input:
-        '{dir}/peaks.tsv'
+        'peak_calls/{dir}/peaks.tsv'
     output:
-        '{dir}/peaks.narrowPeak'
+        'peak_calls/{dir,^epic_.*}/peaks.narrowPeak'
     run:
         peaks = pd.DataFrame.from_csv(input[0], header=1, sep=' ', index_col=None)
         ndigits = ceil(log10(peaks.shape[0]+1))
@@ -1271,10 +1290,10 @@ rule convert_epic_to_narrowpeak:
 
 rule filter_blacklisted_peaks:
     input:
-        peaks='peak_calls/{dirname}/{basename}peaks.narrowPeak',
+        peaks='peak_calls/{dirname}/peaks.narrowPeak',
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
     output:
-        peaks='peak_calls/{dirname}/{basename}peaks_noBL.narrowPeak',
+        peaks='peak_calls/{dirname}/peaks_noBL.narrowPeak',
     version: SOFTWARE_VERSIONS['BEDTOOLS']
     shell: '''
     bedtools subtract -A -a {input.peaks:q} -b {input.blacklist:q} > {output.peaks:q}
@@ -1285,13 +1304,14 @@ rule filter_blacklisted_peaks:
 
 rule run_idr_macs_all_conditions:
     input:
-        donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorA}/peakcall_peaks_noBL.narrowPeak',
-        donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peakcall_peaks_noBL.narrowPeak',
+        donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorA}/peaks_noBL.narrowPeak',
+        donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peaks_noBL.narrowPeak',
     output:
         temp_donorA_peaks=temp('idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorA_temp.narrowPeak'),
         temp_donorB_peaks=temp('idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorB_temp.narrowPeak'),
         outfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.txt',
         plotfile='idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrValues.png',
+
     log: 'idr_analysis/macs_{genome_build}/{chip_antibody}_condition.ALL_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idr.log',
     version: SOFTWARE_VERSIONS['IDR']
     run:
@@ -1311,8 +1331,8 @@ rule run_idr_macs_all_conditions:
 
 rule run_idr_macs_single_condition:
     input:
-        donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorA}/peakcall_peaks_noBL.narrowPeak',
-        donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peakcall_peaks_noBL.narrowPeak',
+        donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorA}/peaks_noBL.narrowPeak',
+        donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peaks_noBL.narrowPeak',
     output:
         temp_donorA_peaks=temp('idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorA_temp.narrowPeak'),
         temp_donorB_peaks=temp('idr_analysis/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point,Day[0-9]+}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/donorB_temp.narrowPeak'),
@@ -1402,6 +1422,33 @@ rule plot_idr:
       -A {params.sampleA:q} -B {params.sampleB:q} \
       -P {params.common_prefix:q}
     '''
+
+rule idr_filter_peaks_one_condition:
+    input:
+        combined_peaks='peak_calls/{peak_caller}_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL/peaks_noBL.narrowPeak',
+        idr_results_files=lambda wildcards:
+        expand('idr_analysis/{peak_caller}_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_{donorPair}/idrValues.txt',
+               **wildcards,
+               donorPair=dfselect(idr_sample_pairs, chip_antibody=wildcards.chip_antibody,
+                                  cell_type=wildcards.cell_type, time_point=wildcards.time_point) \
+               .apply(lambda x: "%svs%s" % (x['donorA'], x['donorB']), axis=1))
+    output:
+        filtered_peaks='peak_calls/{peak_caller}_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL/peaks_noBL_IDR.narrowPeak',
+    run:
+        idr_results = ','.join(input.idr_results_files)
+        shell('''scripts/filter-by-idr.R -p {input.combined_peaks:q} -o {output.filtered_peaks:q} -i {idr_results:q} -r''')
+
+rule idr_filter_peaks_all_conditions:
+    input:
+        combined_peaks='peak_calls/{peak_caller}_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL.narrowPeak',
+        idr_results_files=lambda wildcards:
+        expand('idr_analysis/{peak_caller}_{genome_build}/{chip_antibody}_condition.ALL_{donorPair}/idrValues.txt',
+               **wildcards, donorPair=dfselect(idr_sample_pairs, chip_antibody=wildcards.chip_antibody).apply(lambda x: "%svs%s" % (x['donorA'], x['donorB']), axis=1).unique())
+    output:
+        filtered_peaks='peak_calls/{peak_caller}_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
+    run:
+        idr_results = ','.join(input.idr_results_files)
+        shell('''scripts/filter-by-idr.R -p {input.combined_peaks:q} -o {output.filtered_peaks:q} -i {idr_results:q} -r''')
 
 rule csaw_compute_ccf:
     input:

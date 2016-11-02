@@ -7,7 +7,7 @@ def get_rule(name):
 def is_target_rule(name):
     return not get_rule(name).has_wildcards()
 
-targets = ['all', 'all_rnaseq_counts', 'all_rnaseq_quant', 'all_macs_callpeak', 'all_epic_callpeak', 'all_idr']
+targets = ['all', 'all_rnaseq_counts', 'all_rnaseq_quant', 'all_macs_callpeak', 'all_epic_callpeak', 'all_idr', 'all_idr_filtered_peaks']
 
 rule all_rulegraphs:
     input:
@@ -47,7 +47,6 @@ rule dag_svg:
         else:
             real_targets = [params.target_path]
         shell('''
-        set -o pipefail;
         snakemake --nolock -f --dag {real_targets:q} | \
         dot -Grankdir=LR -Tsvg > {output:q}
         ''')
@@ -66,7 +65,6 @@ rule rulegraph_svg:
         else:
             real_targets = [params.target_path]
         shell('''
-        set -o pipefail;
         snakemake --nolock -f --rulegraph {real_targets:q} | \
         dot -Grankdir=LR -Tsvg > {output:q}
         ''')
