@@ -654,7 +654,7 @@ rule align_rnaseq_with_hisat2_single_end:
 rule index_bam_rnaseq:
     '''Create .bai file for a bam file.'''
     input: '{basename}.bam'
-    output: '{basename,^aligned/rnaseq_.*}.bam.bai'
+    output: '{basename,aligned/rnaseq_.*}.bam.bai'
     shell: '''
     picard-tools BuildBamIndex I={input:q} O={output:q} \
         VALIDATION_STRINGENCY=LENIENT
@@ -663,7 +663,7 @@ rule index_bam_rnaseq:
 rule index_bam_chipseq:
     '''Create .bai file for a bam file.'''
     input: '{basename}.bam'
-    output: '{basename,^aligned/chipseq_.*}.bam.bai'
+    output: '{basename,aligned/chipseq_.*}.bam.bai'
     shell: '''
     picard-tools BuildBamIndex I={input:q} O={output:q} \
         VALIDATION_STRINGENCY=LENIENT
@@ -1276,7 +1276,7 @@ rule convert_epic_to_narrowpeak:
     input:
         'peak_calls/{dir}/peaks.tsv'
     output:
-        'peak_calls/{dir,^epic_.*}/peaks.narrowPeak'
+        'peak_calls/{dir,epic_.*}/peaks.narrowPeak'
     run:
         peaks = pd.DataFrame.from_csv(input[0], header=1, sep=' ', index_col=None)
         ndigits = ceil(log10(peaks.shape[0]+1))
