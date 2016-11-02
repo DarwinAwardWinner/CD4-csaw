@@ -419,13 +419,13 @@ rule all:
             genome_build='hg38.analysisSet',
             chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
             condition = list(chipseq_samplemeta_noinput\
-                             .apply(lambda x: "%s.%s" % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL']),
+                             .apply(lambda x: '%s.%s' % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL']),
         idr_peaks_macs=expand(
             'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
             genome_build='hg38.analysisSet',
             chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
             condition = list(chipseq_samplemeta_noinput\
-                             .apply(lambda x: "%s.%s" % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL']),
+                             .apply(lambda x: '%s.%s' % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL']),
         ccf_plots=expand('plots/csaw/CCF-plots{suffix}.pdf',
                          suffix=('', '-relative', '-noBL', '-relative-noBL')),
         site_profile_plot='plots/csaw/site-profile-plots.pdf',
@@ -521,11 +521,11 @@ rule all_idr_filtered_peaks:
         epic=expand('peak_calls/epic_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
                     genome_build='hg38.analysisSet',
                     chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
-                    condition = list(chipseq_samplemeta_noinput.apply(lambda x: "%s.%s" % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL']),
+                    condition = list(chipseq_samplemeta_noinput.apply(lambda x: '%s.%s' % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL']),
         macs=expand('peak_calls/macs_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
                     genome_build='hg38.analysisSet',
                     chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
-                    condition = list(chipseq_samplemeta_noinput.apply(lambda x: "%s.%s" % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL'])
+                    condition = list(chipseq_samplemeta_noinput.apply(lambda x: '%s.%s' % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL'])
 
 rule fetch_sra_run:
     '''Script to fetch the .sra file for an SRA run
@@ -1431,7 +1431,7 @@ rule idr_filter_peaks_one_condition:
                **wildcards,
                donorPair=dfselect(idr_sample_pairs, chip_antibody=wildcards.chip_antibody,
                                   cell_type=wildcards.cell_type, time_point=wildcards.time_point) \
-               .apply(lambda x: "%svs%s" % (x['donorA'], x['donorB']), axis=1))
+               .apply(lambda x: '%svs%s' % (x['donorA'], x['donorB']), axis=1))
     output:
         filtered_peaks='peak_calls/{peak_caller}_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL/peaks_noBL_IDR.narrowPeak',
     run:
@@ -1443,7 +1443,7 @@ rule idr_filter_peaks_all_conditions:
         combined_peaks='peak_calls/{peak_caller}_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL.narrowPeak',
         idr_results_files=lambda wildcards:
         expand('idr_analysis/{peak_caller}_{genome_build}/{chip_antibody}_condition.ALL_{donorPair}/idrValues.txt',
-               **wildcards, donorPair=dfselect(idr_sample_pairs, chip_antibody=wildcards.chip_antibody).apply(lambda x: "%svs%s" % (x['donorA'], x['donorB']), axis=1).unique())
+               **wildcards, donorPair=dfselect(idr_sample_pairs, chip_antibody=wildcards.chip_antibody).apply(lambda x: '%svs%s' % (x['donorA'], x['donorB']), axis=1).unique())
     output:
         filtered_peaks='peak_calls/{peak_caller}_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
     run:
@@ -1469,8 +1469,8 @@ rule csaw_plot_ccf:
         ccf_data='saved_data/csaw-ccf.RDS',
         ccf_noBL_data='saved_data/csaw-ccf-noBL.RDS',
     output:
-        expand("plots/csaw/CCF-plots{suffix}.pdf",
-               suffix=("", "-relative", '-noBL', '-relative-noBL')),
+        expand('plots/csaw/CCF-plots{suffix}.pdf',
+               suffix=('', '-relative', '-noBL', '-relative-noBL')),
         'plots/csaw/CCF-max-plot.pdf'
     version: SOFTWARE_VERSIONS['R']
     shell: 'scripts/csaw-plot-ccf.R'
