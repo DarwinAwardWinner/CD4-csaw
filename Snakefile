@@ -649,10 +649,21 @@ rule align_rnaseq_with_hisat2_single_end:
             pipeline = Popen_pipeline(cmds, stdout=outfile, stderr=logfile)
             wait_for_subprocs(pipeline)
 
-rule index_bam:
+# There are multiple index_bam rules each restricted to a subset of
+# bam files in order to improve the rulegraph appearance.
+rule index_bam_rnaseq:
     '''Create .bai file for a bam file.'''
     input: '{basename}.bam'
-    output: '{basename}.bam.bai'
+    output: '{basename,^aligned/rnaseq_.*}.bam.bai'
+    shell: '''
+    picard-tools BuildBamIndex I={input:q} O={output:q} \
+        VALIDATION_STRINGENCY=LENIENT
+    '''
+
+rule index_bam_chipseq:
+    '''Create .bai file for a bam file.'''
+    input: '{basename}.bam'
+    output: '{basename,^aligned/chipseq_.*}.bam.bai'
     shell: '''
     picard-tools BuildBamIndex I={input:q} O={output:q} \
         VALIDATION_STRINGENCY=LENIENT
