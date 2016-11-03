@@ -403,7 +403,6 @@ rule all:
             genome_build='hg38.analysisSet',
             SRA_run=chipseq_samplemeta['SRA_run'],
         ),
-        macs_predictd='saved_data/macs_predictd/output.log',
         idr_single_cond=expand(expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.{cell_type}.{time_point}_{donorA}vs{donorB}/{{basename}}',
                                       zip_longest_recycled,
                                       **dict(idr_sample_pairs.iteritems())),
@@ -414,6 +413,7 @@ rule all:
                                        **dict(idr_sample_pairs.iteritems())),
                                 peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet',
                                 basename=['idrValues.txt', 'idrplots.pdf'])),
+        macs_predictd='results/macs_predictd/output.log',
         idr_peaks_epic=expand(
             'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
             genome_build='hg38.analysisSet',
@@ -945,21 +945,22 @@ rule merge_blacklists:
 
 rule macs_predictd:
     input: bam_files=aligned_chipseq_bam_files,
-    output: rfile='saved_data/macs_predictd/predictd',
-            pdf='saved_data/macs_predictd/predictd_model.pdf',
-            # This is actually the desired output file, despite being
-            # a log file.g
-            logfile='saved_data/macs_predictd/output.log'
-    params: outdir='saved_data/macs_predictd'
+    output:
+        rfile='results/macs_predictd/predictd',
+        pdf='plots/predictd_model.pdf',
+        # This is actually the desired output file, despite being
+        # a log file, so it is listed in the output files instead of declaring it as a log file
+        logfile='results/macs_predictd/output.log'
     version: SOFTWARE_VERSIONS['MACS']
     run:
-        output_rfile_basename = os.path.basename(output.rfile)
+        rfile_basename = os.path.basename(output.rfile)
+        rfile_dirname = os.path.dirname(output.rfile)
         shell('''
         macs2 predictd -i {input.bam_files:q} -f BAM -g hs \
-          --outdir {params.outdir:q} --rfile {output_rfile_basename:q} \
-          &>{output.logfile:q}
-        cd {params.outdir:q}
-        Rscript {output_rfile_basename:q}
+          --outdir {rfile_dirname:q} --rfile {rfile_basename:q} \
+          &>{output.log:q}
+        cd plots
+        Rscript ../{rfile_dirname:q}/{rfile_basename:q}
         ''')
 
 rule callpeak_macs_all_conditions_all_donors:
