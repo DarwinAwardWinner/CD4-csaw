@@ -393,26 +393,6 @@ rule all:
             genome_build='hg38.analysisSet',
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run']),
-        chipseq_bam=expand(
-            'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
-            genome_build='hg38.analysisSet',
-            SRA_run=chipseq_samplemeta['SRA_run'],
-        ),
-        chipseq_bai=expand(
-            'aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam.bai',
-            genome_build='hg38.analysisSet',
-            SRA_run=chipseq_samplemeta['SRA_run'],
-        ),
-        idr_single_cond=expand(expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.{cell_type}.{time_point}_{donorA}vs{donorB}/{{basename}}',
-                                      zip_longest_recycled,
-                                      **dict(idr_sample_pairs.iteritems())),
-                               peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet',
-                               basename=['idrValues.txt', 'idrplots.pdf']),
-        idr_all_cond=set(expand(expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.ALL_{donorA}vs{donorB}/{{basename}}',
-                                       zip_longest_recycled,
-                                       **dict(idr_sample_pairs.iteritems())),
-                                peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet',
-                                basename=['idrValues.txt', 'idrplots.pdf'])),
         macs_predictd='results/macs_predictd/output.log',
         idr_peaks_epic=expand(
             'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
@@ -429,10 +409,8 @@ rule all:
         ccf_plots=expand('plots/csaw/CCF-plots{suffix}.pdf',
                          suffix=('', '-relative', '-noBL', '-relative-noBL')),
         site_profile_plot='plots/csaw/site-profile-plots.pdf',
-        csaw_counts_150bp=expand('saved_data/csaw-window-counts-{chip}-150bp.RDS',
-                                 chip=set(chipseq_samplemeta['chip_antibody'])),
-        csaw_counts_10kb=expand('saved_data/csaw-bigbin-counts-{chip}-10kb.RDS',
-                                chip=set(chipseq_samplemeta['chip_antibody'])),
+        csaw_dgelists=expand('saved_data/csaw-DGEList-{chip}.RDS',
+                             chip=set(chipseq_samplemeta_noinput['chip_antibody']))
 
 rule all_rnaseq_counts:
     input:
@@ -1542,3 +1520,18 @@ rule split_csaw_counts:
                chip=set(chipseq_samplemeta['chip_antibody'])),
     version: SOFTWARE_VERSIONS['BIOC']
     shell: 'scripts/csaw-split.R'
+
+rule csaw_qc:
+    input:
+        window_counts='saved_data/csaw-window-counts-{chip}-150bp.RDS',
+        bigbin_counts='saved_data/csaw-bigbin-counts-{chip}-10kb.RDS',
+        peaks='peak_calls/epic_hg38.analysisSet/{chip}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
+    output:
+        normfactor_test_table='results/csaw/{chip}-normfactor-tests.xlsx',
+        DGEList='saved_data/csaw-DGEList-{chip}.RDS',
+        rdata_file='saved_data/csaw-qc-{chip}.rda',
+        plots=['plots/csaw/{chip}-window-abundance-vs-peaks.pdf'
+               'plots/csaw/{chip}-normfactors.pdf',
+               'plots/csaw/{chip} Selected Sample MA Plots.pdf',
+               'plots/csaw/{chip} Selected Sample 10KB Bin MA Plots.pdf',],
+    shell: 'scripts/csaw-qc.R {chip:q}'
