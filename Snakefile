@@ -1455,7 +1455,9 @@ rule idr_filter_peaks_all_conditions:
         combined_peaks='peak_calls/{peak_caller}_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL.narrowPeak',
         idr_results_files=lambda wildcards:
         expand('idr_analysis/{peak_caller}_{genome_build}/{chip_antibody}_condition.ALL_{donorPair}/idrValues.txt',
-               **wildcards, donorPair=dfselect(idr_sample_pairs, chip_antibody=wildcards.chip_antibody).apply(lambda x: '%svs%s' % (x['donorA'], x['donorB']), axis=1).unique())
+               **wildcards,
+               donorPair=dfselect(idr_sample_pairs, chip_antibody=wildcards.chip_antibody) \
+               .apply(lambda x: '%svs%s' % (x['donorA'], x['donorB']), axis=1).unique())
     output:
         filtered_peaks='peak_calls/{peak_caller}_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
     run:
