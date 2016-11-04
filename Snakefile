@@ -410,7 +410,13 @@ rule all:
                          suffix=('', '-relative', '-noBL', '-relative-noBL')),
         site_profile_plot='plots/csaw/site-profile-plots.pdf',
         csaw_dgelists=expand('saved_data/csaw-DGEList-{chip}.RDS',
-                             chip=set(chipseq_samplemeta_noinput['chip_antibody']))
+                             chip=set(chipseq_samplemeta_noinput['chip_antibody'])),
+        csaw_qc_plots=expand('plots/csaw/{chip}{plot}.pdf',
+                             chip=set(chipseq_samplemeta_noinput['chip_antibody']),
+                             plot=('-window-abundance-vs-peaks', '-normfactors',
+                                   ' Selected Sample MA Plots',
+                                   ' Selected Sample 10KB Bin MA Plots',
+                                   ' Selected Sample Peak-Overlap MA Plots'))
 
 rule all_rnaseq_counts:
     input:
@@ -1530,8 +1536,10 @@ rule csaw_qc:
         normfactor_test_table='results/csaw/{chip}-normfactor-tests.xlsx',
         DGEList='saved_data/csaw-DGEList-{chip}.RDS',
         rdata_file='saved_data/csaw-qc-{chip}.rda',
-        plots=['plots/csaw/{chip}-window-abundance-vs-peaks.pdf'
+        plots=['plots/csaw/{chip}-window-abundance-vs-peaks.pdf',
                'plots/csaw/{chip}-normfactors.pdf',
                'plots/csaw/{chip} Selected Sample MA Plots.pdf',
-               'plots/csaw/{chip} Selected Sample 10KB Bin MA Plots.pdf',],
-    shell: 'scripts/csaw-qc.R {chip:q}'
+               'plots/csaw/{chip} Selected Sample 10KB Bin MA Plots.pdf',
+               'plots/csaw/{chip} Selected Sample Peak-Overlap MA Plots.pdf',],
+    resources: mem_gb=20
+    shell: 'scripts/csaw-qc.R {wildcards.chip:q}'

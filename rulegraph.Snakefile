@@ -23,14 +23,14 @@ rule all_dags:
                target=targets,
                filetype=['pdf', 'png'])
 
-rule svg_to_png:
-    input: '{filename}.svg'
-    output: '{filename}.png'
+rule rulegraph_svg_to_png:
+    input: 'rulegraphs/{filename}.svg'
+    output: 'rulegraphs/{filename}.png'
     shell: '''inkscape {input:q} --export-png={output:q} --export-dpi=300'''
 
-rule svg_to_pdf:
-    input: '{filename}.svg'
-    output: '{filename}.pdf'
+rule rulegraph_svg_to_pdf:
+    input: 'rulegraphs/{filename}.svg'
+    output: 'rulegraphs/{filename}.pdf'
     shell: '''inkscape {input:q} --export-pdf={output:q} --export-dpi=300'''
 
 rule dag_svg:

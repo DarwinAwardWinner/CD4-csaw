@@ -260,6 +260,7 @@ pn.higher.samples <- rev(cn.higher.samples)
 tsmsg("Computing logCPM")
 logcpm <- cpm(dge, log=TRUE)
 bigbin.logcpm <- cpm(asDGEList(bigbin.counts), log=TRUE)
+peak.logcpm <- logcpm[peak.overlap,]
 
 doMAPlot <- function(logcpm.matrix, s1, s2) {
     pointdata <- data.frame(S1=logcpm.matrix[,s1], S2=logcpm.matrix[,s2]) %>%
@@ -326,6 +327,16 @@ p2 <- seq_len(floor(length(cn.higher.samples) / 2)) %>%
         withGC(doMAPlot(bigbin.logcpm, s1, s2) +
                ggtitle(title))
     })
+p3 <- seq_len(floor(length(cn.higher.samples) / 2)) %>%
+    lapply(function(i) {
+        s1 <- cn.higher.samples[i]
+        s2 <- cn.higher.samples[length(cn.higher.samples) - i + 1]
+        title <- sprintf("MA Plot of Bins Overlapping Peaks for %s vs %s",
+                         colnames(dge)[s1], colnames(dge)[s2])
+        tsmsg("Making ", title)
+        withGC(doMAPlot(peak.logcpm, s1, s2) +
+               ggtitle(title))
+    })
 
 {
     tsmsg("Printing MA plots")
@@ -334,6 +345,9 @@ p2 <- seq_len(floor(length(cn.higher.samples) / 2)) %>%
     dev.off()
     pdf(sprintf("plots/csaw/%s Selected Sample 10KB Bin MA Plots.pdf", chip), width=10, height=10)
     withGC(print(p2))
+    dev.off()
+    pdf(sprintf("plots/csaw/%s Selected Sample Peak-Overlap MA Plots.pdf", chip), width=10, height=10)
+    withGC(print(p3))
     dev.off()
 }
 
