@@ -1541,5 +1541,5 @@ rule csaw_qc:
                'plots/csaw/{chip} Selected Sample MA Plots.pdf',
                'plots/csaw/{chip} Selected Sample 10KB Bin MA Plots.pdf',
                'plots/csaw/{chip} Selected Sample Peak-Overlap MA Plots.pdf',],
-    resources: mem_gb=20
+    resources: mem_gb=30
     shell: 'scripts/csaw-qc.R {wildcards.chip:q}'
