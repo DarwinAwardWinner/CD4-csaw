@@ -23,10 +23,8 @@ from snakemake.io import expand
 from snakemake.utils import min_version
 min_version('3.7.1')
 
-from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
 from snakemake.remote.FTP import RemoteProvider as FTPRemoteProvider
 
-HTTP = HTTPRemoteProvider()
 FTP = FTPRemoteProvider()
 
 pandas2ri.activate()
@@ -51,13 +49,6 @@ fastq_compression_cmds = {
         'decompress': ['cat'],
     },
 }
-
-def ensure_dir(path):
-    os.makedirs(path, exist_ok=True)
-def ensure_empty_dir(path):
-    if os.path.exists(path):
-        shutil.rmtree(path)
-    ensure_dir(path)
 
 def Popen_pipeline(cmds, stdin=None, stdout=None, *args, **kwargs):
     '''Popen a pipeline of several commands.
@@ -819,15 +810,6 @@ rule quant_rnaseq_with_salmon:
       --output {params.outdir:q} \
       --auxDir aux_info \
       --numGibbsSamples 100
-    '''
-
-rule convert_salmon_bootstraps_to_tsv:
-    input: '{salmon_quant_dir}/aux_info/bootstrap/bootstraps.gz'
-    output: '{salmon_quant_dir}/aux_info/bootstrap/quant_bootstraps.tsv'
-    shell: '''
-    scripts/ConvertBootstrapsToTSV.py \
-      {wildcards.salmon_quant_dir:q} \
-      {wildcards.salmon_quant_dir:q}/aux_info/bootstrap/
     '''
 
 rule convert_salmon_to_hdf5:
