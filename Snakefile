@@ -30,6 +30,8 @@ FTP = FTPRemoteProvider()
 pandas2ri.activate()
 rpy2.rinterface.set_writeconsole_warnerror(lambda x: sys.stderr.write(x))
 
+# Commands to compress and decompress a variety of fastq compression
+# methods
 fastq_compression_cmds = {
     'fq.gz': {
         'compress': ['gzip', '-c'],
@@ -58,8 +60,8 @@ def Popen_pipeline(cmds, stdin=None, stdout=None, *args, **kwargs):
     Each command's stdout becomes the next command's stdin. The stdin
     argument becomes the stdin of the first command, while the stdout
     argument becomes the stdout of the last command. All other
-    arguments are passed to every invocation of Popen, so ensure that
-    they make sense in that context.
+    arguments are passed to every invocation of Popen(), so ensure
+    that they make sense in that context.
 
     '''
     cmds = list(cmds)
@@ -369,6 +371,7 @@ subworkflow hg38_ref:
     workdir: os.path.expanduser(HG38_REF_PATH)
 
 rule all:
+    '''This rule aggregates all the final outputs of the pipeline.'''
     input:
         rnaseq_counts=[
             'saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_ensembl.85.RDS',
@@ -506,9 +509,11 @@ rule all_idr_filtered_peaks:
                     condition = list(chipseq_samplemeta_noinput.apply(lambda x: '%s.%s' % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL'])
 
 rule fetch_sra_run:
-    '''Script to fetch the .sra file for an SRA run
+    '''Script to fetch the .sra file for an SRA run.
 
     (An SRA run identifier starts with SRR.)
+
+    https://www.ncbi.nlm.nih.gov/sra
 
     '''
     output: 'sra_files/{sra_run,SRR.*}.sra'
@@ -519,34 +524,45 @@ rule fetch_sra_run:
 rule extract_fastq:
     '''Extract FASTQ from SRA files.
 
-    During extraction, the reads are also shuffled deterministically
-    (i.e. using a fixed seed). This ensures that downstream tools
-    expecting the reads in random order with respect to their mapping
-    position (e.g. Salmon) will be satisfied.
+    Because the SRA files were originally generated from
+    coordinate-sorted BAM files, the reads in the SRA files are likely
+    also sorted. Hence, during extraction, the reads are also shuffled
+    deterministically (i.e. using a fixed seed). This ensures that
+    downstream tools expecting the reads in random order with respect
+    to their mapping position (e.g. Salmon) will be satisfied.
+
+    https://ncbi.github.io/sra-tools/
+
+    http://homes.cs.washington.edu/~dcjones/fastq-tools/
 
     '''
     input: 'sra_files/{sra_run}.sra'
-    output: 'fastq_files/{sra_run}.{fqext,fq(|\\.gz|\\.bz2|\\.qp)}'
-    params: temp_unshuffled='fastq_files/{sra_run}_unshuffled.fq_temp',
-            temp_shuffled='fastq_files/{sra_run}_shuffled.fq_temp'
+    output:
+        fqfile='fastq_files/{sra_run}.{fqext,fq(|\\.gz|\\.bz2|\\.qp)}',
+        temp_unshuffled=temp('fastq_files/{sra_run}_unshuffled.fq_temp'),
+        temp_shuffled=temp('fastq_files/{sra_run}_shuffled.fq_temp'),
     version: (SOFTWARE_VERSIONS['SRATOOLKIT'], SOFTWARE_VERSIONS['FASTQ_TOOLS'])
     resources: diskio=1
-    run:
-        compression_cmd = fastq_compression_cmds[wildcards.fqext]['compress']
-        shell('''
-        echo "Dumping fastq for {wildcards.sra_run:q}..."
-        fastq-dump --stdout {input:q} | \
-          scripts/fill-in-empty-fastq-qual.py \
-          > {params.temp_unshuffled:q}
-        echo "Shuffling fastq for {wildcards.sra_run:q}..."
-        fastq-sort --random --seed=1986 {params.temp_unshuffled:q} > {params.temp_shuffled:q}
-        echo "Compressing fastq for {wildcards.sra_run:q}..."
-        {compression_cmd} < {params.temp_shuffled:q} > {output:q}
-        rm -f {params.temp_unshuffled:q} {params.temp_shuffled:q}
-        ''')
+    params:
+        compress_cmd = lambda wildcards: fastq_compression_cmds[wildcards.fqext]['compress']
+    shell:'''
+    echo "Dumping fastq for {wildcards.sra_run:q}..."
+    fastq-dump --stdout {input:q} | \
+      scripts/fill-in-empty-fastq-qual.py \
+      > {output.temp_unshuffled:q}
+    echo "Shuffling fastq for {wildcards.sra_run:q}..."
+    fastq-sort --random --seed=1986 {output.temp_unshuffled:q} > {output.temp_shuffled:q}
+    echo "Compressing fastq for {wildcards.sra_run:q}..."
+    {compression_cmd} < {output.temp_shuffled:q} > {output:q}
+    rm -f {output.temp_unshuffled:q} {output.temp_shuffled:q}
+    '''
 
 rule align_rnaseq_with_star_single_end:
-    '''Align fastq file with star'''
+    '''Align fastq file with STAR.
+
+    https://github.com/alexdobin/STAR
+
+    '''
     input: fastq='fastq_files/{samplename}.fq.gz',
            index_sa=hg38_ref('STAR_index_{genome_build}_{transcriptome}/SA'),
            transcriptome_gff=hg38_ref('{transcriptome}.gff3'),
@@ -588,7 +604,11 @@ rule align_rnaseq_with_star_single_end:
         os.remove(params.temp_sam)
 
 rule align_rnaseq_with_hisat2_single_end:
-    '''Align fastq file with HISAT2'''
+    '''Align fastq file with HISAT2.
+
+    https://ccb.jhu.edu/software/hisat2/index.shtml
+
+    '''
     input: fastq='fastq_files/{samplename}.fq.gz',
            index_f1=hg38_ref('HISAT2_index_grch38_snp_tran/index.1.ht2'),
            transcriptome_gff=hg38_ref('knownGene.gff3'),
@@ -630,7 +650,15 @@ rule align_rnaseq_with_hisat2_single_end:
 # There are multiple index_bam rules each restricted to a subset of
 # bam files in order to improve the rulegraph appearance.
 rule index_bam_rnaseq:
-    '''Create .bai file for a bam file.'''
+    '''Create .bai file for a bam file.
+
+    This rule is identical to index_bam_chipseq. They are only
+    separated in order to yield a less-confusing rule graph
+    visualization.
+
+    https://broadinstitute.github.io/picard/
+
+    '''
     input: '{basename}.bam'
     output: '{basename,aligned/rnaseq_.*}.bam.bai'
     shell: '''
@@ -639,7 +667,15 @@ rule index_bam_rnaseq:
     '''
 
 rule index_bam_chipseq:
-    '''Create .bai file for a bam file.'''
+    '''Create .bai file for a bam file.
+
+    This rule is identical to index_bam_rnaseq. They are only
+    separated in order to yield a less-confusing rule graph
+    visualization.
+
+    https://broadinstitute.github.io/picard/
+
+    '''
     input: '{basename}.bam'
     output: '{basename,aligned/chipseq_.*}.bam.bai'
     shell: '''
@@ -648,14 +684,31 @@ rule index_bam_chipseq:
     '''
 
 rule bam2bed:
-    '''Create .bai file for a bam file.'''
+    '''Convert a bam file to bed using bedtools.
+
+    http://bedtools.readthedocs.io/en/latest/
+
+    '''
     input: '{basename}.bam'
     output: '{basename}_reads.bed'
+    version: SOFTWARE_VERSIONS['BEDTOOLS']
     shell: '''
     bedtools bamtobed -i {input:q} > {output:q}
     '''
 
 rule bam2bed_macs_filterdup:
+    '''Convert a bam file to bed, filtering duplicates.
+
+    This rule uses the 'macs2 filterdup' command to remove excess
+    duplicate reads while converting to bed format. Note that this
+    command does not necessarily remove all duplicates, only those in
+    excess of what would be expected by chance. The log file reports
+    the maximum number of duplicates allowed at each locus for a given
+    sample.
+
+    https://github.com/taoliu/MACS
+
+    '''
     input: '{basename}.bam'
     output: bed='{basename}_reads_macs_filterdup.bed',
     log: '{basename}_macs_filterdup.log'
@@ -671,6 +724,11 @@ rule bam2bed_macs_filterdup:
 # they used to build the prebuilt index. Hopefully it doesn't matter
 # too much.
 rule count_rnaseq_hisat2_ensembl:
+    '''Assign & count reads reads aligned to Ensembl genes by HISAT2.
+
+    https://bioconductor.org/packages/release/bioc/html/Rsubread.html
+
+    '''
     input:
         samplemeta='saved_data/samplemeta-RNASeq.RDS',
         bam_files=expand(
@@ -700,6 +758,11 @@ rule count_rnaseq_hisat2_ensembl:
         check_call(cmd)
 
 rule count_rnaseq_hisat2_knownGene:
+    '''Assign & count reads reads aligned to UCSC known genes by HISAT2.
+
+    https://bioconductor.org/packages/release/bioc/html/Rsubread.html
+
+    '''
     input:
         samplemeta='saved_data/samplemeta-RNASeq.RDS',
         bam_files=expand(
@@ -728,6 +791,11 @@ rule count_rnaseq_hisat2_knownGene:
         check_call(cmd)
 
 rule count_rnaseq_star_ensembl:
+    '''Assign & count reads reads aligned to Ensembl genes by STAR.
+
+    https://bioconductor.org/packages/release/bioc/html/Rsubread.html
+
+    '''
     input:
         samplemeta='saved_data/samplemeta-RNASeq.RDS',
         bam_files=expand(
@@ -761,6 +829,11 @@ rule count_rnaseq_star_ensembl:
         check_call(cmd)
 
 rule count_rnaseq_star_knownGene:
+    '''Assign & count reads reads aligned to UCSC known genes by STAR.
+
+    https://bioconductor.org/packages/release/bioc/html/Rsubread.html
+
+    '''
     input:
         samplemeta='saved_data/samplemeta-RNASeq.RDS',
         bam_files=expand(
@@ -789,6 +862,11 @@ rule count_rnaseq_star_knownGene:
         check_call(cmd)
 
 rule quant_rnaseq_with_salmon:
+    '''Quantify genes from reads using Salmon.
+
+    https://combine-lab.github.io/salmon/
+
+    '''
     input:
         salmon_index=hg38_ref('Salmon_index_{genome_build}_{transcriptome}/sa.bin'),
         genemap_file=hg38_ref('Salmon_index_{genome_build}_{transcriptome}/genemap.txt'),
@@ -816,11 +894,21 @@ rule quant_rnaseq_with_salmon:
     '''
 
 rule convert_salmon_to_hdf5:
+    '''Produce abundance.h5 file for Salmon using wasabi.
+
+    https://github.com/COMBINE-lab/wasabi
+
+    '''
     input: list_salmon_output_files('{salmon_quant_dir}')
     output: '{salmon_quant_dir}/abundance.h5'
     shell: ''' scripts/convert-salmon-to-hdf5.R {wildcards.salmon_quant_dir:q} '''
 
 rule quant_rnaseq_with_kallisto:
+    '''Quantify genes from reads using Kallisto.
+
+    https://pachterlab.github.io/kallisto/about
+
+    '''
     input:
         kallisto_index=hg38_ref('Kallisto_index_{genome_build}_{transcriptome}'),
         fastq='fastq_files/{SRA_run}.fq.gz',
@@ -852,6 +940,11 @@ rule quant_rnaseq_with_kallisto:
 # RDS file, and write a rule for it.
 
 rule align_chipseq_with_bowtie2:
+    '''Align ChIP-seq reads to genome using bowtie2.
+
+    http://bowtie-bio.sourceforge.net/bowtie2/index.shtml
+
+    '''
     input:
         fastq='fastq_files/{SRA_run}.fq.gz',
         index_file=hg38_ref('BT2_index_{genome_build}/index.1.bt2l')
@@ -871,23 +964,47 @@ rule align_chipseq_with_bowtie2:
     '''
 
 rule get_liftover_chain:
+    '''Download LiftOver chain file from UCSC.
+
+    http://hgdownload.cse.ucsc.edu/goldenPath/hg38/liftOver/
+
+    '''
     input: FTP.remote('hgdownload.cse.ucsc.edu/goldenPath/{src_genome}/liftOver/{src_genome}ToHg38.over.chain.gz', static=True)
     output: 'saved_data/{src_genome}ToHg38.over.chain'
     shell: 'zcat {input:q} > {output:q}'
 
 # http://genome.ucsc.edu/cgi-bin/hgFileUi?db=hg19&g=wgEncodeMapability
 rule get_blacklist_regions:
+    '''Download UCSC "consensus excludable regions" tracks.
+
+    http://genome.ucsc.edu/cgi-bin/hgFileUi?db=hg19&g=wgEncodeMapability
+
+    '''
     input: FTP.remote('hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeMapability/{track_name}.bed.gz', static=True)
     output: 'saved_data/{track_name}_hg19.bed'
     shell: '''zcat {input:q} > {output:q}'''
 
 rule liftover_blacklist_regions:
+    '''Use LiftOver to translate blacklists to hg38 coordinates.
+
+    http://hgdownload.cse.ucsc.edu/goldenPath/hg38/liftOver/
+
+    '''
     input: bed='saved_data/{track_name}_hg19.bed',
            chain='saved_data/hg19ToHg38.over.chain',
     output: bed='saved_data/{track_name,[^_]+}.bed'
     shell: '''liftOver {input.bed:q} {input.chain:q} {output.bed:q} /dev/null'''
 
 rule generate_greylist:
+    '''Generate greylist regions from ChIP-Seq input files.
+
+    This uses the methodology from the GreyListChIP Bioconductor
+    package, but uses a custom implementation rather than using the
+    package itself.
+
+    http://bioconductor.org/packages/release/bioc/html/GreyListChIP.html
+
+    '''
     input:
         samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
         chip_input=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam',
@@ -904,6 +1021,7 @@ rule generate_greylist:
     shell: '''MC_CORES={threads:q} scripts/generate-greylists.R'''
 
 rule merge_blacklists:
+    '''Merge ChIP-Seq blacklists from multiple sources into a single file.'''
     input:
         'saved_data/wgEncodeDacMapabilityConsensusExcludable.bed',
         'saved_data/wgEncodeDukeMapabilityRegionsExcludable.bed',
@@ -913,6 +1031,11 @@ rule merge_blacklists:
     shell: '''cat {input:q} > {output:q}'''
 
 rule macs_predictd:
+    '''Determine ChIP-Seq fragment length using 'macs2 predictd'.
+
+    https://github.com/taoliu/MACS
+
+    '''
     input: bam_files=aligned_chipseq_bam_files,
     output:
         rfile='results/macs_predictd/predictd',
@@ -933,6 +1056,11 @@ rule macs_predictd:
         ''')
 
 rule callpeak_macs_all_conditions_all_donors:
+    '''Call peaks using macs on all samples.
+
+    https://github.com/taoliu/MACS
+
+    '''
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
@@ -967,6 +1095,11 @@ rule callpeak_macs_all_conditions_all_donors:
     '''
 
 rule callpeak_macs_all_conditions_single_donor:
+    '''Call peaks using macs on all samples from a single donor.
+
+    https://github.com/taoliu/MACS
+
+    '''
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
@@ -1003,6 +1136,11 @@ rule callpeak_macs_all_conditions_single_donor:
     '''
 
 rule callpeak_macs_single_condition_all_donors:
+    '''Call peaks using macs on all samples from a single condition.
+
+    https://github.com/taoliu/MACS
+
+    '''
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
@@ -1040,6 +1178,11 @@ rule callpeak_macs_single_condition_all_donors:
     '''
 
 rule callpeak_macs_single_condition_single_donor:
+    '''Call peaks using macs on a single sample.
+
+    https://github.com/taoliu/MACS
+
+    '''
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned.bam',
@@ -1077,6 +1220,11 @@ rule callpeak_macs_single_condition_single_donor:
     '''
 
 rule callpeak_epic_all_conditions_all_donors:
+    '''Call peaks using epic on all samples.
+
+    https://github.com/endrebak/epic/
+
+    '''
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
@@ -1117,6 +1265,11 @@ rule callpeak_epic_all_conditions_all_donors:
                 sys.stderr.write(logline.decode(sys.getdefaultencoding()))
 
 rule callpeak_epic_all_conditions_single_donor:
+    '''Call peaks using epic on all samples from a single donor.
+
+    https://github.com/endrebak/epic/
+
+    '''
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
@@ -1158,6 +1311,11 @@ rule callpeak_epic_all_conditions_single_donor:
                 sys.stderr.write(logline.decode(sys.getdefaultencoding()))
 
 rule callpeak_epic_single_condition_all_donors:
+    '''Call peaks using epic on all samples from a single condition.
+
+    https://github.com/endrebak/epic/
+
+    '''
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
@@ -1200,6 +1358,11 @@ rule callpeak_epic_single_condition_all_donors:
                 sys.stderr.write(logline.decode(sys.getdefaultencoding()))
 
 rule callpeak_epic_single_condition_single_donor:
+    '''Call peaks using epic on a single sample.
+
+    https://github.com/endrebak/epic/
+
+    '''
     input:
         chip_input=lambda wildcards:
         expand('aligned/chipseq_bowtie2_{genome_build}/{SRA_run}/Aligned_reads_macs_filterdup.bed',
@@ -1243,6 +1406,12 @@ rule callpeak_epic_single_condition_single_donor:
                 sys.stderr.write(logline.decode(sys.getdefaultencoding()))
 
 rule convert_epic_to_narrowpeak:
+    '''Convert epic results to narrowPeak format.
+
+    This is important so that peak calls from both macs and epic are
+    in the same format.
+
+    '''
     input:
         'peak_calls/{dir}/peaks.tsv'
     output:
@@ -1270,6 +1439,7 @@ rule convert_epic_to_narrowpeak:
                           quoting=csv.QUOTE_NONE,)
 
 rule filter_blacklisted_peaks:
+    '''Remove any peaks that overlap blacklisted regions.'''
     input:
         peaks='peak_calls/{dirname}/peaks.narrowPeak',
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
@@ -1284,6 +1454,11 @@ rule filter_blacklisted_peaks:
     '''
 
 rule run_idr_macs_all_conditions:
+    '''Run IDR on macs all-condition peak calls.
+
+    https://github.com/nboley/idr
+
+    '''
     input:
         donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorA}/peaks_noBL.narrowPeak',
         donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peaks_noBL.narrowPeak',
@@ -1311,6 +1486,11 @@ rule run_idr_macs_all_conditions:
         ''')
 
 rule run_idr_macs_single_condition:
+    '''Run IDR on macs single-condition peak calls.
+
+    https://github.com/nboley/idr
+
+    '''
     input:
         donorA_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorA}/peaks_noBL.narrowPeak',
         donorB_peaks='peak_calls/macs_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peaks_noBL.narrowPeak',
@@ -1337,6 +1517,11 @@ rule run_idr_macs_single_condition:
         ''')
 
 rule run_idr_epic_all_conditions:
+    '''Run IDR on epic all-condition peak calls.
+
+    https://github.com/nboley/idr
+
+    '''
     input:
         donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorA}/peaks_noBL.narrowPeak',
         donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.ALL_donor.{donorB}/peaks_noBL.narrowPeak',
@@ -1363,6 +1548,11 @@ rule run_idr_epic_all_conditions:
         ''')
 
 rule run_idr_epic_single_condition:
+    '''Run IDR on epic single-condition peak calls.
+
+    https://github.com/nboley/idr
+
+    '''
     input:
         donorA_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorA}/peaks_noBL.narrowPeak',
         donorB_peaks='peak_calls/epic_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.{donorB}/peaks_noBL.narrowPeak',
@@ -1389,6 +1579,7 @@ rule run_idr_epic_single_condition:
         ''')
 
 rule plot_idr:
+    '''Reproduce IDR pots using ggplot2.'''
     input:
         'idr_analysis/{peak_caller}_{genome_build}/{chip_antibody}_condition.{condition}_{donorA}vs{donorB}/idrValues.txt'
     output:
@@ -1405,6 +1596,7 @@ rule plot_idr:
     '''
 
 rule idr_filter_peaks_one_condition:
+    '''Annotate single-condition peak calls with IDR threshold.'''
     input:
         combined_peaks='peak_calls/{peak_caller}_{genome_build}/{chip_antibody}_condition.{cell_type}.{time_point}_donor.ALL/peaks_noBL.narrowPeak',
         idr_results_files=lambda wildcards:
@@ -1420,6 +1612,7 @@ rule idr_filter_peaks_one_condition:
         shell('''scripts/filter-by-idr.R -p {input.combined_peaks:q} -o {output.filtered_peaks:q} -i {idr_results:q} -r''')
 
 rule idr_filter_peaks_all_conditions:
+    '''Annotate all-condition peak calls with IDR threshold.'''
     input:
         combined_peaks='peak_calls/{peak_caller}_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL.narrowPeak',
         idr_results_files=lambda wildcards:
@@ -1434,6 +1627,11 @@ rule idr_filter_peaks_all_conditions:
         shell('''scripts/filter-by-idr.R -p {input.combined_peaks:q} -o {output.filtered_peaks:q} -i {idr_results:q} -r''')
 
 rule csaw_compute_ccf:
+    '''Compute cross-strand correlation values for ChIP-Seq samples.
+
+    https://bioconductor.org/packages/release/bioc/html/csaw.html
+
+    '''
     input:
         samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
         bam_files=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{sra_run}/Aligned.{ext}',
@@ -1447,6 +1645,11 @@ rule csaw_compute_ccf:
     shell: 'MC_CORES={threads:q} scripts/csaw-compute-ccf.R'
 
 rule csaw_plot_ccf:
+    '''Plot cross-strand correlation values for all ChIP-Seq samples.
+
+    https://bioconductor.org/packages/release/bioc/html/csaw.html
+
+    '''
     input:
         samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
         ccf_data='saved_data/csaw-ccf.RDS',
@@ -1459,6 +1662,11 @@ rule csaw_plot_ccf:
     shell: 'scripts/csaw-plot-ccf.R'
 
 rule csaw_profile_sites:
+    '''Profile read coverage around local coverage maxima in ChIP-Seq samples.
+
+    https://bioconductor.org/packages/release/bioc/html/csaw.html
+
+    '''
     input:
         samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
         bam_files=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{sra_run}/Aligned.{ext}',
@@ -1474,6 +1682,11 @@ rule csaw_profile_sites:
     shell: 'MC_CORES={threads:q} scripts/csaw-profile-sites.R'
 
 rule csaw_count_150bp:
+    '''Count ChIP-Seq reads overlapping 150bp windows in each sample.
+
+    https://bioconductor.org/packages/release/bioc/html/csaw.html
+
+    '''
     input:
         samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
         bam_files=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{sra_run}/Aligned.{ext}',
@@ -1487,6 +1700,11 @@ rule csaw_count_150bp:
     shell: 'scripts/csaw-count-150bp.R'
 
 rule csaw_count_10kb:
+    '''Count ChIP-Seq reads in 10kb bins in each sample.
+
+    https://bioconductor.org/packages/release/bioc/html/csaw.html
+
+    '''
     input:
         samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
         bam_files=expand('aligned/chipseq_bowtie2_hg38.analysisSet/{sra_run}/Aligned.{ext}',
@@ -1501,6 +1719,11 @@ rule csaw_count_10kb:
     shell: 'MC_CORES={threads:q} scripts/csaw-count-10kb.R'
 
 rule split_csaw_counts:
+    '''Split csaw count data by histone mark.
+
+    https://bioconductor.org/packages/release/bioc/html/csaw.html
+
+    '''
     input:
         'saved_data/csaw-window-counts-150bp.RDS',
         'saved_data/csaw-bigbin-counts-10kb.RDS',
@@ -1513,6 +1736,11 @@ rule split_csaw_counts:
     shell: 'scripts/csaw-split.R'
 
 rule csaw_qc:
+    '''Generate several QC plots for ChIP-Seq data.
+
+    https://bioconductor.org/packages/release/bioc/html/csaw.html
+
+    '''
     input:
         window_counts='saved_data/csaw-window-counts-{chip}-150bp.RDS',
         bigbin_counts='saved_data/csaw-bigbin-counts-{chip}-10kb.RDS',
