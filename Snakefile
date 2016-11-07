@@ -356,14 +356,17 @@ aligned_chipseq_bam_files = expand(
     'aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam',
     SRA_run=list(chipseq_samplemeta['SRA_run'][chipseq_samplemeta['chip_antibody'] != 'input']))
 
-subworkflow hg38_ref:
-    workdir: os.path.expanduser('~/references/hg38')
-
 include: 'rulegraph.Snakefile'
 include: 'tool_versions.py'
 include: 'mem_requirements.py'
 
 shell.executable('bash')
+
+# TODO: Put this in a config file
+HG38_REF_PATH='~/references/hg38'
+
+subworkflow hg38_ref:
+    workdir: os.path.expanduser(HG38_REF_PATH)
 
 rule all:
     input:
