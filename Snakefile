@@ -539,8 +539,8 @@ rule extract_fastq:
     input: 'sra_files/{sra_run}.sra'
     output:
         fqfile='fastq_files/{sra_run}.{fqext,fq(|\\.gz|\\.bz2|\\.qp)}',
-        temp_unshuffled=temp('fastq_files/{sra_run}_unshuffled.fq_temp'),
-        temp_shuffled=temp('fastq_files/{sra_run}_shuffled.fq_temp'),
+        temp_unshuffled=temp('fastq_files/{sra_run}_unshuffled.{fqext,fq(|\\.gz|\\.bz2|\\.qp)}_temp'),
+        temp_shuffled=temp('fastq_files/{sra_run}_shuffled.{fqext,fq(|\\.gz|\\.bz2|\\.qp)}_temp'),
     version: (SOFTWARE_VERSIONS['SRATOOLKIT'], SOFTWARE_VERSIONS['FASTQ_TOOLS'])
     resources: diskio=1
     params:
