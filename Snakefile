@@ -403,6 +403,16 @@ rule all:
             chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
             condition = list(chipseq_samplemeta_noinput\
                              .apply(lambda x: '%s.%s' % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL']),
+        idr_plots_one_cond=set(expand(
+            expand('plots/IDR/{{peak_caller}}_{{genome_build}}/{chip_antibody}/condition.{cell_type}.{time_point}/{donorA}vs{donorB}_idrplots.pdf',
+                   zip_longest_recycled,
+                   **dict(idr_sample_pairs.iteritems())),
+            peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet')),
+        idr_plots_all_cond=set(expand(
+            expand('plots/IDR/{{peak_caller}}_{{genome_build}}/{chip_antibody}/condition.ALL/{donorA}vs{donorB}_idrplots.pdf',
+                   zip_longest_recycled,
+                   **dict(idr_sample_pairs.iteritems())),
+            peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet')),
         ccf_plots=expand('plots/csaw/CCF-plots{suffix}.pdf',
                          suffix=('', '-relative', '-noBL', '-relative-noBL')),
         site_profile_plot='plots/csaw/site-profile-plots.pdf',
