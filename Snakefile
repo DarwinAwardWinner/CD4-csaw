@@ -486,16 +486,16 @@ rule all_epic_callpeak:
 
 rule all_idr:
     input:
-        SingleCondition=expand(expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.{cell_type}.{time_point}_{donorA}vs{donorB}/{{basename}}',
-                                      zip_longest_recycled,
-                                      **dict(idr_sample_pairs.iteritems())),
-                               peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet',
-                               basename=['idrValues.txt', 'idrplots.pdf']),
-        AllCondition=set(expand(expand('idr_analysis/{{peak_caller}}_{{genome_build}}/{chip_antibody}_condition.ALL_{donorA}vs{donorB}/{{basename}}',
-                                      zip_longest_recycled,
-                                      **dict(idr_sample_pairs.iteritems())),
-                                peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet',
-                                basename=['idrValues.txt', 'idrplots.pdf']))
+        one_cond=set(expand(
+            expand('plots/IDR/{{peak_caller}}_{{genome_build}}/{chip_antibody}/condition.{cell_type}.{time_point}/{donorA}vs{donorB}_idrplots.pdf',
+                   zip_longest_recycled,
+                   **dict(idr_sample_pairs.iteritems())),
+            peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet')),
+        all_cond=set(expand(
+            expand('plots/IDR/{{peak_caller}}_{{genome_build}}/{chip_antibody}/condition.ALL/{donorA}vs{donorB}_idrplots.pdf',
+                   zip_longest_recycled,
+                   **dict(idr_sample_pairs.iteritems())),
+            peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet')),
 
 rule all_idr_filtered_peaks:
     input:
@@ -1583,7 +1583,7 @@ rule plot_idr:
     input:
         'idr_analysis/{peak_caller}_{genome_build}/{chip_antibody}_condition.{condition}_{donorA}vs{donorB}/idrValues.txt'
     output:
-        'idr_analysis/{peak_caller}_{genome_build}/{chip_antibody}_condition.{condition}_{donorA,D[0-9]+}vs{donorB,D[0-9]+}/idrplots.pdf'
+        'plots/IDR/{peak_caller}_{genome_build}/{chip_antibody}/condition.{condition}/{donorA,D[0-9]+}vs{donorB,D[0-9]+}_idrplots.pdf'
     params:
         sampleA='{chip_antibody}-{condition}-{donorA}',
         sampleB='{chip_antibody}-{condition}-{donorB}',
