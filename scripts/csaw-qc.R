@@ -311,31 +311,34 @@ p <- seq_len(floor(length(cn.higher.samples) / 2)) %>%
     lapply(function(i) {
         s1 <- cn.higher.samples[i]
         s2 <- cn.higher.samples[length(cn.higher.samples) - i + 1]
-        title <- sprintf("MA Plot for %s vs %s",
+        title <- sprintf("MA Plot of 150bp Windows for \n %s vs %s",
                          colnames(dge)[s1], colnames(dge)[s2])
         tsmsg("Making ", title)
         withGC(doMAPlot(logcpm, s1, s2) +
-               ggtitle(title))
+               ggtitle(title) +
+               theme(plot.title = element_text(hjust = 0.5)))
     })
 p2 <- seq_len(floor(length(cn.higher.samples) / 2)) %>%
     lapply(function(i) {
         s1 <- cn.higher.samples[i]
         s2 <- cn.higher.samples[length(cn.higher.samples) - i + 1]
-        title <- sprintf("10KB Bin MA Plot for %s vs %s",
+        title <- sprintf("10KB Bin MA Plot for \n %s vs %s",
                          colnames(dge)[s1], colnames(dge)[s2])
         tsmsg("Making ", title)
         withGC(doMAPlot(bigbin.logcpm, s1, s2) +
-               ggtitle(title))
+               ggtitle(title) +
+               theme(plot.title = element_text(hjust = 0.5)))
     })
 p3 <- seq_len(floor(length(cn.higher.samples) / 2)) %>%
     lapply(function(i) {
         s1 <- cn.higher.samples[i]
         s2 <- cn.higher.samples[length(cn.higher.samples) - i + 1]
-        title <- sprintf("MA Plot of Bins Overlapping Peaks for %s vs %s",
+        title <- sprintf("MA Plot of 150bp Windows Overlapping Peaks for \n %s vs %s",
                          colnames(dge)[s1], colnames(dge)[s2])
         tsmsg("Making ", title)
         withGC(doMAPlot(peak.logcpm, s1, s2) +
-               ggtitle(title))
+               ggtitle(title) +
+               theme(plot.title = element_text(hjust = 0.5)))
     })
 
 {
