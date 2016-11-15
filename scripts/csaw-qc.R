@@ -192,7 +192,6 @@ dge$samples %<>% cbind(colData(window.counts)) %>% as.data.frame %>%
     mutate(group=interaction(cell_type, str_replace(time_point, "Day", "D"), sep=""))
 dge$samples$nf.logratio <- dge$samples %$% log2(PeakNormFactors / CompNormFactors)
 colnames(dge) <- rownames(dge$samples) <- dge$samples$SampleName
-saveRDS(dge, sprintf("saved_data/csaw-DGEList-%s.RDS", chip))
 
 {
     tsmsg("Testing norm factors for association with experimental factors")
@@ -280,7 +279,6 @@ pn.higher.samples <- rev(cn.higher.samples)
 
 tsmsg("Computing logCPM")
 logcpm <- cpm(dge, log=TRUE)
-logcpm.withOffset <- cpmWithOffset(dge, log=TRUE)
 bigbin.logcpm <- cpm(asDGEList(bigbin.counts), log=TRUE)
 peak.logcpm <- logcpm[peak.overlap,]
 
@@ -408,6 +406,3 @@ p4 <- seq_len(floor(length(cn.higher.samples) / 2)) %>%
     withGC(print(p4))
     dev.off()
 }
-
-tsmsg("Saving image")
-save.image(sprintf("saved_data/csaw-qc-%s.rda", chip))

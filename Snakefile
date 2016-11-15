@@ -416,8 +416,6 @@ rule all:
         ccf_plots=expand('plots/csaw/CCF-plots{suffix}.pdf',
                          suffix=('', '-relative', '-noBL', '-relative-noBL')),
         site_profile_plot='plots/csaw/site-profile-plots.pdf',
-        csaw_dgelists=expand('saved_data/csaw-DGEList-{chip}.RDS',
-                             chip=set(chipseq_samplemeta_noinput['chip_antibody'])),
         csaw_qc_plots=expand('plots/csaw/{chip}{plot}.pdf',
                              chip=set(chipseq_samplemeta_noinput['chip_antibody']),
                              plot=('-window-abundance-vs-peaks', '-normfactors',
@@ -1758,8 +1756,6 @@ rule csaw_qc:
         peaks='peak_calls/epic_hg38.analysisSet/{chip}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
     output:
         normfactor_test_table='results/csaw/{chip}-normfactor-tests.xlsx',
-        DGEList='saved_data/csaw-DGEList-{chip}.RDS',
-        rdata_file='saved_data/csaw-qc-{chip}.rda',
         plots=[
             'plots/csaw/{chip}-window-abundance-vs-peaks.pdf',
             'plots/csaw/{chip}-normfactors.pdf',
