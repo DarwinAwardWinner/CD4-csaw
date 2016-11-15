@@ -69,6 +69,21 @@ asDGEList <- function(...) {
     dge
 }
 
+## Version of cpm that uses an offset matrix instead of lib sizes
+cpmWithOffset <- function(dge, offset=expandAsMatrix(getOffset(dge), dim(dge)),
+                          log = FALSE, prior.count = 0.25, ...) {
+    x <- dge$counts
+    effective.lib.size <- exp(offset)
+    if (log) {
+        prior.count.scaled <- effective.lib.size/mean(effective.lib.size) * prior.count
+        effective.lib.size <- effective.lib.size + 2 * prior.count.scaled
+    }
+    effective.lib.size <- 1e-06 * effective.lib.size
+    if (log)
+        log2((x + prior.count.scaled) / effective.lib.size)
+    else x / effective.lib.size
+}
+
 withGC <- function(expr) {
     on.exit(gc())
     return(expr)
@@ -78,10 +93,13 @@ chip <- positional_args("chip")
 
 tsmsg("Reading data for ", chip)
 bigbin.counts <- readRDS(sprintf("saved_data/csaw-bigbin-counts-%s-10kb.RDS", chip))
+colnames(bigbin.counts) <- colData(bigbin.counts)$SampleName
 window.counts <- readRDS(sprintf("saved_data/csaw-window-counts-%s-150bp.RDS", chip))
+colnames(window.counts) <- colData(window.counts)$SampleName
+
 chip.peaks <- import.narrowPeak(
-    sprintf(fmt="peak_calls/epic_hg38.analysisSet/%s_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak", chip))
-chip.peaks %<>% .[.$log10qValue >= -log10(0.05)]
+    sprintf(fmt="peak_calls/epic_hg38.analysisSet/%s_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak", chip)) %>%
+    .[.$log10qValue >= -log10(0.05)]
 
 tsmsg("Computing fraction of reads in peaks (FRiP)")
 ## (Frag length - 1) / (bin width) + 1, assuming non-overlapping,
@@ -161,6 +179,9 @@ tsmsg("Computing efficiency normalization from peak windows")
 pnf <- normOffsets(peak.window.counts, type="scaling")
 colData(window.counts)$PeakNormFactors <- pnf
 colData(peak.window.counts)$PeakNormFactors <- pnf
+
+offsets <- normOffsets(peak.window.counts, type="loess")
+dimnames(offsets) <- dimnames(peak.window.counts)
 
 ## Create DGEList and populate $genes and $samples
 dge <- asDGEList(window.counts)
@@ -259,10 +280,29 @@ pn.higher.samples <- rev(cn.higher.samples)
 
 tsmsg("Computing logCPM")
 logcpm <- cpm(dge, log=TRUE)
+logcpm.withOffset <- cpmWithOffset(dge, log=TRUE)
 bigbin.logcpm <- cpm(asDGEList(bigbin.counts), log=TRUE)
 peak.logcpm <- logcpm[peak.overlap,]
 
-doMAPlot <- function(logcpm.matrix, s1, s2) {
+peak.logcpm.loess <- cpmWithOffset(dge[peak.overlap,], offset=offsets + getOffset(dge[peak.overlap,]), log=TRUE)
+
+getLineData <- function(s1, s2) {
+    c(Comp="CompNormFactors",
+      Peaks="PeakNormFactors",
+      HiAb="HANormFactors") %>%
+        sapply(. %>% dge$samples[[.]] %>% log2 %>% {.[s2] - .[s1]}) %>%
+        data.frame(NormFactor=., NormType=names(.))
+}
+
+getOffsetLineData <- function(s1, s2, n=1000) {
+    x <- data.frame(A=dge$genes$Abundance[peak.overlap],
+                    Offset=(offsets[,s2] - offsets[,s1]) / log(2))
+    f <- splinefun(x$A, x$Offset)
+    data.frame(A=seq(from=min(x$A), to=max(x$A), length.out = n)) %>%
+        mutate(Offset=f(A))
+}
+
+doMAPlot <- function(logcpm.matrix, s1, s2, linedata=getLineData(s1, s2)) {
     pointdata <- data.frame(S1=logcpm.matrix[,s1], S2=logcpm.matrix[,s2]) %>%
         transmute(A=(S1+S2)/2, M=S2-S1) %>%
         filter(A >= -2)
@@ -282,32 +322,32 @@ doMAPlot <- function(logcpm.matrix, s1, s2) {
             ## Part of a hack to make the alpha look less bad
             AlphaDens=value %>% pmax(1e-15))
 
-    linedata <- c(Comp="CompNormFactors",
-                  Peaks="PeakNormFactors",
-                  HiAb="HANormFactors") %>%
-        sapply(. %>% dge$samples[[.]] %>% log2 %>% {.[s2] - .[s1]}) %>%
-        data.frame(NormFactor=., NormType=names(.))
-
-    ggplot(densdata) +
+    p <- ggplot(pointdata) +
         ## MA Plot density
         geom_raster(aes(x=A, y=M, fill=Density, alpha=AlphaDens),
+                    data=densdata,
                     interpolate=TRUE) +
         scale_fill_gradientn(colors=suppressWarnings(brewer.pal(Inf, "Blues")),
                              trans=power_trans(1/8),
                              name="Density") +
-        scale_alpha_continuous(trans=power_trans(1/40), guide=FALSE) +
-        ## Normalization lines
-        geom_hline(data=linedata, aes(yintercept=NormFactor, color=NormType)) +
-        scale_color_discrete(name="Norm Type") +
-        ## Lowess curve
-        geom_smooth(data=pointdata, aes(x=A, y=M), fill=NA, color="black") +
+        scale_alpha_continuous(trans=power_trans(1/40), guide=FALSE)
+    if (!is.null(linedata) && nrow(linedata) > 0) {
+        p <- p +
+            ## Normalization lines
+            geom_hline(data=linedata, aes(yintercept=NormFactor, color=NormType)) +
+            scale_color_discrete(name="Norm Type")
+    }
+    p <- p +
+        ## Loess curve
+        geom_smooth(aes(x=A, y=M), span=0.3, fill=NA, color="black") +
         ## Scales
         scale_x_continuous(name="log2(CPM)", expand=c(0,0)) +
         scale_y_continuous(name="log2(FC)", expand=c(0,0)) +
         coord_fixed(0.5)
+    p
 }
 
-p <- seq_len(floor(length(cn.higher.samples) / 2)) %>%
+p1 <- seq_len(floor(length(cn.higher.samples) / 2)) %>%
     lapply(function(i) {
         s1 <- cn.higher.samples[i]
         s2 <- cn.higher.samples[length(cn.higher.samples) - i + 1]
@@ -340,17 +380,32 @@ p3 <- seq_len(floor(length(cn.higher.samples) / 2)) %>%
                ggtitle(title) +
                theme(plot.title = element_text(hjust = 0.5)))
     })
+p4 <- seq_len(floor(length(cn.higher.samples) / 2)) %>%
+    lapply(function(i) {
+        s1 <- cn.higher.samples[i]
+        s2 <- cn.higher.samples[length(cn.higher.samples) - i + 1]
+        linedata <- getOffsetLineData(s1, s2)
+        title <- sprintf("Loess-Normalized MA Plot of 150bp Windows Overlapping Peaks for \n %s vs %s",
+                         colnames(dge)[s1], colnames(dge)[s2])
+        tsmsg("Making ", title)
+        withGC(doMAPlot(peak.logcpm.loess, s1, s2, linedata=NULL) +
+               ggtitle(title) +
+               theme(plot.title = element_text(hjust = 0.5)))
+    })
 
 {
     tsmsg("Printing MA plots")
     pdf(sprintf("plots/csaw/%s Selected Sample MA Plots.pdf", chip), width=10, height=10)
-    withGC(print(p))
+    withGC(print(p1))
     dev.off()
     pdf(sprintf("plots/csaw/%s Selected Sample 10KB Bin MA Plots.pdf", chip), width=10, height=10)
     withGC(print(p2))
     dev.off()
     pdf(sprintf("plots/csaw/%s Selected Sample Peak-Overlap MA Plots.pdf", chip), width=10, height=10)
     withGC(print(p3))
+    dev.off()
+    pdf(sprintf("plots/csaw/%s Selected Sample Peak-Overlap Normalized MA Plots.pdf", chip), width=10, height=10)
+    withGC(print(p4))
     dev.off()
 }
 

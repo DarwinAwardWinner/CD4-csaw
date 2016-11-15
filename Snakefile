@@ -423,7 +423,8 @@ rule all:
                              plot=('-window-abundance-vs-peaks', '-normfactors',
                                    ' Selected Sample MA Plots',
                                    ' Selected Sample 10KB Bin MA Plots',
-                                   ' Selected Sample Peak-Overlap MA Plots'))
+                                   ' Selected Sample Peak-Overlap MA Plots',
+                                   ' Selected Sample Peak-Overlap Normalized MA Plots'))
 
 rule all_rnaseq_counts:
     input:
@@ -1759,10 +1760,13 @@ rule csaw_qc:
         normfactor_test_table='results/csaw/{chip}-normfactor-tests.xlsx',
         DGEList='saved_data/csaw-DGEList-{chip}.RDS',
         rdata_file='saved_data/csaw-qc-{chip}.rda',
-        plots=['plots/csaw/{chip}-window-abundance-vs-peaks.pdf',
-               'plots/csaw/{chip}-normfactors.pdf',
-               'plots/csaw/{chip} Selected Sample MA Plots.pdf',
-               'plots/csaw/{chip} Selected Sample 10KB Bin MA Plots.pdf',
-               'plots/csaw/{chip} Selected Sample Peak-Overlap MA Plots.pdf',],
+        plots=[
+            'plots/csaw/{chip}-window-abundance-vs-peaks.pdf',
+            'plots/csaw/{chip}-normfactors.pdf',
+            'plots/csaw/{chip} Selected Sample MA Plots.pdf',
+            'plots/csaw/{chip} Selected Sample 10KB Bin MA Plots.pdf',
+            'plots/csaw/{chip} Selected Sample Peak-Overlap MA Plots.pdf',
+            'plots/csaw/{chip} Selected Sample Peak-Overlap Normalized MA Plots.pdf',
+        ],
     resources: mem_gb=30
     shell: 'scripts/csaw-qc.R {wildcards.chip:q}'
