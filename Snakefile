@@ -422,7 +422,8 @@ rule all:
                                    ' Selected Sample MA Plots',
                                    ' Selected Sample 10KB Bin MA Plots',
                                    ' Selected Sample Peak-Overlap MA Plots',
-                                   ' Selected Sample Peak-Overlap Normalized MA Plots'))
+                                   ' Selected Sample Peak-Overlap Normalized MA Plots',
+                                   '-norm-eval'))
 
 rule all_rnaseq_counts:
     input:
@@ -1766,3 +1767,17 @@ rule csaw_qc:
         ],
     resources: mem_gb=30
     shell: 'scripts/csaw-qc.R {wildcards.chip:q}'
+
+rule csaw_norm_eval:
+    '''Generate several QC plots for ChIP-Seq data.
+
+    https://bioconductor.org/packages/release/bioc/html/csaw.html
+
+    '''
+    input:
+        window_counts='saved_data/csaw-window-counts-{chip}-150bp.RDS',
+        bigbin_counts='saved_data/csaw-bigbin-counts-{chip}-10kb.RDS',
+        peaks='peak_calls/epic_hg38.analysisSet/{chip}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
+    output: 'plots/csaw/{chip}-norm-eval.pdf',
+    resources: mem_gb=20
+    shell: 'scripts/csaw-norm-eval.R {wildcards.chip:q}'

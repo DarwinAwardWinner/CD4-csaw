@@ -1,19 +1,30 @@
 #!/usr/bin/env Rscript
 
+tsmsg <- function(...) {
+    message(date(), ": ", ...)
+}
+
 getScriptPath <- function() {
     argv <-commandArgs()
     dir <- na.omit(stringr::str_match(argv, "^--file=(.*)$")[,2])[1]
     if (!is.na(dir) && !is.null(dir))
         return(dir)
 }
-setwd(file.path(dirname(getScriptPath()), ".."))
+tryCatch(setwd(file.path(dirname(getScriptPath()), "..")),
+         error=function(...) tsmsg("WARNING: Could not determine script path. Ensure that you are already in the correct directory."))
+
+positional_args <- function(argnames, args=commandArgs(trailingOnly = TRUE)) {
+    argnames <- as.character(argnames)
+    if (length(args) != length(argnames)) {
+        stop(sprintf("Got %s arguments, but expected %s arguments: %s",
+                     length(args), length(argnames), paste(argnames, collapse=", ")))
+    }
+    setNames(args, argnames)
+}
 
 library(stringr)
 library(magrittr)
 library(openxlsx)
-library(doParallel)
-options(mc.cores=parallel::detectCores())
-registerDoParallel(cores=parallel::detectCores())
 library(SummarizedExperiment)
 library(readr)
 library(edgeR)
@@ -28,189 +39,11 @@ library(parallel)
 library(ks)
 library(dplyr)
 
-## Ensure output directory exists
-dir.create("results/csaw", FALSE, TRUE)
-
-tsmsg <- function(...) {
-    message(date(), ": ", ...)
-}
-
 suppressPlot <- function(arg) {
     png("/dev/null")
     on.exit(dev.off())
     result <- arg
     result
-}
-
-add.numbered.colnames <- function(x, prefix="C") {
-    x %>% set_colnames(sprintf("%s%i", prefix, seq(from=1, length.out=ncol(x))))
-}
-
-## Version of cpm that uses an offset matrix instead of lib sizes
-cpmWithOffset <- function(dge, offset=expandAsMatrix(getOffset(dge), dim(dge)),
-                          log = FALSE, prior.count = 0.25, ...) {
-    x <- dge$counts
-    effective.lib.size <- exp(offset)
-    if (log) {
-        prior.count.scaled <- effective.lib.size/mean(effective.lib.size) * prior.count
-        effective.lib.size <- effective.lib.size + 2 * prior.count.scaled
-    }
-    effective.lib.size <- 1e-06 * effective.lib.size
-    if (log)
-        log2((x + prior.count.scaled) / effective.lib.size)
-    else x / effective.lib.size
-}
-
-## Like limma's removeBatchEffect, but for DGEList. Modifies the
-## offsets instead of the data.
-offsetBatchEffect <- function (dge, batch = NULL, batch2 = NULL, covariates = NULL,
-                               design = matrix(1, ncol(dge), 1), ...) {
-    if (is.null(batch) && is.null(batch2) && is.null(covariates))
-        return(dge)
-    if (!is.null(batch)) {
-        batch <- as.factor(batch)
-        contrasts(batch) <- contr.sum(levels(batch))
-        batch <- model.matrix(~batch)[, -1, drop = FALSE]
-    }
-    if (!is.null(batch2)) {
-        batch2 <- as.factor(batch2)
-        contrasts(batch2) <- contr.sum(levels(batch2))
-        batch2 <- model.matrix(~batch2)[, -1, drop = FALSE]
-    }
-    if (!is.null(covariates))
-        covariates <- as.matrix(covariates)
-    X.batch <- cbind(batch, batch2, covariates)
-    fit <- glmFit(dge, cbind(design, X.batch), ..., priot.count = 0)
-    beta <- fit$coefficients[, -(1:ncol(design)), drop = FALSE]
-    beta[is.na(beta)] <- 0
-    dge$offset <- fit$offset + beta %*% t(X.batch)
-    dge
-}
-
-## Version of voom that uses an offset matrix instead of lib sizes
-voomWithOffset <- function (dge, design = NULL, offset=expandAsMatrix(getOffset(dge), dim(dge)),
-                            normalize.method = "none", plot = FALSE, span = 0.5, ...)
-{
-    out <- list()
-    out$genes <- dge$genes
-    out$targets <- dge$samples
-    if (is.null(design) && diff(range(as.numeric(counts$sample$group))) >
-        0)
-        design <- model.matrix(~group, data = counts$samples)
-    counts <- dge$counts
-    if (is.null(design)) {
-        design <- matrix(1, ncol(counts), 1)
-        rownames(design) <- colnames(counts)
-        colnames(design) <- "GrandMean"
-    }
-
-    effective.lib.size <- exp(offset)
-
-    y <- log2((counts + 0.5)/(effective.lib.size + 1) * 1e+06)
-    y <- normalizeBetweenArrays(y, method = normalize.method)
-    fit <- lmFit(y, design, ...)
-    if (is.null(fit$Amean))
-        fit$Amean <- rowMeans(y, na.rm = TRUE)
-    sx <- fit$Amean + mean(log2(effective.lib.size + 1)) - log2(1e+06)
-    sy <- sqrt(fit$sigma)
-    allzero <- rowSums(counts) == 0
-    if (any(allzero)) {
-        sx <- sx[!allzero]
-        sy <- sy[!allzero]
-    }
-    l <- lowess(sx, sy, f = span)
-    if (plot) {
-        plot(sx, sy, xlab = "log2( count size + 0.5 )", ylab = "Sqrt( standard deviation )",
-            pch = 16, cex = 0.25)
-        title("voom: Mean-variance trend")
-        lines(l, col = "red")
-    }
-    f <- approxfun(l, rule = 2)
-    if (fit$rank < ncol(design)) {
-        j <- fit$pivot[1:fit$rank]
-        fitted.values <- fit$coef[, j, drop = FALSE] %*% t(fit$design[,
-            j, drop = FALSE])
-    }
-    else {
-        fitted.values <- fit$coef %*% t(fit$design)
-    }
-    fitted.cpm <- 2^fitted.values
-    ## fitted.count <- 1e-06 * t(t(fitted.cpm) * (lib.size + 1))
-    fitted.count <- 1e-06 * fitted.cpm * (effective.lib.size + 1)
-    fitted.logcount <- log2(fitted.count)
-    w <- 1/f(fitted.logcount)^4
-    dim(w) <- dim(fitted.logcount)
-    out$E <- y
-    out$weights <- w
-    out$design <- design
-    out$effective.lib.size <- effective.lib.size
-    if (is.null(out$targets))
-        out$targets <- data.frame(lib.size = exp(colMeans(offset)))
-    else out$targets$lib.size <- exp(colMeans(offset))
-    new("EList", out)
-}
-
-## Version of voom that uses an offset matrix instead of lib sizes
-voomWithQualityWeightsAndOffset <-
-    function (dge, design = NULL,
-              offset=expandAsMatrix(getOffset(dge), dim(dge)),
-              normalize.method = "none",
-              plot = FALSE, span = 0.5, var.design = NULL, method = "genebygene",
-              maxiter = 50, tol = 1e-10, trace = FALSE, replace.weights = TRUE,
-              col = NULL, ...)
-{
-    counts <- dge$counts
-    if (plot) {
-        oldpar <- par(mfrow = c(1, 2))
-        on.exit(par(oldpar))
-    }
-    v <- voomWithOffset(dge, design = design, offset = offset, normalize.method = normalize.method,
-        plot = FALSE, span = span, ...)
-    aw <- arrayWeights(v, design = design, method = method, maxiter = maxiter,
-        tol = tol, var.design = var.design)
-    v <- voomWithOffset(dge, design = design, weights = aw, offset = offset,
-        normalize.method = normalize.method, plot = plot, span = span,
-        ...)
-    aw <- arrayWeights(v, design = design, method = method, maxiter = maxiter,
-        tol = tol, trace = trace, var.design = var.design)
-    wts <- asMatrixWeights(aw, dim(v)) * v$weights
-    attr(wts, "arrayweights") <- NULL
-    if (plot) {
-        barplot(aw, names = 1:length(aw), main = "Sample-specific weights",
-            ylab = "Weight", xlab = "Sample", col = col)
-        abline(h = 1, col = 2, lty = 2)
-    }
-    if (replace.weights) {
-        v$weights <- wts
-        v$sample.weights <- aw
-        return(v)
-    }
-    else {
-        return(wts)
-    }
-}
-
-estimateDispByGroup <- function(dge, group=as.factor(dge$samples$group), batch, ...) {
-    stopifnot(nlevels(group) > 1)
-    stopifnot(length(group) == ncol(dge))
-    if (!is.list(batch)) {
-        batch <- list(batch=batch)
-    }
-    batch <- as.data.frame(batch)
-    stopifnot(nrow(batch) == ncol(dge))
-    colnames(batch) %>% make.names(unique=TRUE)
-    igroup <- seq_len(ncol(dge)) %>% split(group)
-    lapply(igroup, function(i) {
-        group.dge <- dge[,i]
-        group.batch <- droplevels(batch[i,, drop=FALSE])
-        group.batch <- group.batch[sapply(group.batch, . %>% unique %>% length %>% is_greater_than(1))]
-        group.vars <- names(group.batch)
-        if (length(group.vars) == 0)
-            group.vars <- "1"
-        group.batch.formula <- as.formula(str_c("~", str_c(group.vars, collapse="+")))
-        des <- model.matrix(group.batch.formula, group.batch)
-        estimateDisp(group.dge, des, ...)
-    })
 }
 
 power_trans <- function(pow) {
@@ -236,114 +69,208 @@ import.narrowPeak <- function(...) {
     import(..., format="BED", extraCols=extraCols_narrowPeak)
 }
 
+asDGEList <- function(...) {
+    dge <- csaw::asDGEList(...)
+    ## This seems to save a lot of memory
+    rownames(dge$counts) <- NULL
+    dge
+}
+
+## Version of cpm that uses an offset matrix instead of lib sizes
+cpmWithOffset <- function(dge, offset=expandAsMatrix(getOffset(dge), dim(dge)),
+                          log = FALSE, prior.count = 0.25, ...) {
+    x <- dge$counts
+    effective.lib.size <- exp(offset)
+    if (log) {
+        prior.count.scaled <- effective.lib.size/mean(effective.lib.size) * prior.count
+        effective.lib.size <- effective.lib.size + 2 * prior.count.scaled
+    }
+    effective.lib.size <- 1e-06 * effective.lib.size
+    if (log)
+        log2((x + prior.count.scaled) / effective.lib.size)
+    else x / effective.lib.size
+}
+
 withGC <- function(expr) {
     on.exit(gc())
     return(expr)
 }
 
-## Eval expression in forked process in the foreground (not in
-## parallel). This can be useful if the expression makes problematic
-## irreversible changes to the environment, or causes memory usage to
-## balloon irreversibly.
-in.forked.process <- function(expr) {
-  result <- mccollect(mcparallel(expr))
-  if (length(result) == 0) {
-    NULL
-  } else {
-    result <- result[[1]]
-    if (is(result, "try-error")) {
-      stop(result)
-    } else {
-      result
+autoFactorize <- function(df) {
+    for (i in colnames(df)) {
+        if (is.character(df[[i]]) && anyDuplicated(df[[i]])) {
+            df[[i]] %<>% factor
+        }
     }
-  }
+    df
 }
 
-chips <- c("H3K4me3", "H3K4me2", "H3K27me3")
+chip <- positional_args("chip")
 
+tsmsg("Reading data for ", chip)
+bigbin.counts <- readRDS(sprintf("saved_data/csaw-bigbin-counts-%s-10kb.RDS", chip))
+colnames(bigbin.counts) <- colData(bigbin.counts)$SampleName
+window.counts <- readRDS(sprintf("saved_data/csaw-window-counts-%s-150bp.RDS", chip))
+colnames(window.counts) <- colData(window.counts)$SampleName
+
+chip.peaks <- import.narrowPeak(
+    sprintf(fmt="peak_calls/epic_hg38.analysisSet/%s_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak", chip)) %>%
+    .[.$log10qValue >= -log10(0.05)]
+
+tsmsg("Filtering low-count bins")
+## Filter to windows with at least 10 counts total
+keep <- rowSums(assay(window.counts)) >= 10
+window.counts %<>% .[keep,]
+invisible(gc())
+
+## Compute background normalization from big bins
+tsmsg("Computing composition normalization from background")
+colData(window.counts)$CompNormFactors <- normOffsets(bigbin.counts, type="scaling")
+
+tsmsg("Computing average window abundances")
+abundances <- withGC(aveLogCPM(asDGEList(window.counts)))
+
+tsmsg("Computing window filter statistic")
+## Compute enirchment of windows above average global background
+filter.stat <- filterWindows(window.counts, bigbin.counts, type="global")
+
+filter.stat$global.bg <- filter.stat %$% {abundances - filter} %>% mean
+filter.stat.df <- filter.stat %$% {
+    rbind(
+        data.frame(BinType="ChIP", Abundance=abundances %>% quantile(seq(0, 1, length.out=1e6))),
+        data.frame(BinType="BG", Abundance=back.abundances))
+}
+filter.stat.thresholds <- data.frame(Line=c("Background", "Threshold"),
+                                     Abundance=filter.stat$global.bg + c(0, log2(3)))
+
+## Pick a "high-abundance" threshold
+filter.threshold <- filter.stat$global.bg + log2(3)
+
+tsmsg("Computing efficiency normalization from high-abundance windows")
+high.ab.window.counts <- window.counts[abundances >= filter.threshold,]
+colData(window.counts)$HANormFactors <- normOffsets(high.ab.window.counts, type="scaling")
+
+peak.overlap <- overlapsAny(window.counts, chip.peaks)
+peak.window.counts <- window.counts[peak.overlap,]
+tsmsg("Computing efficiency normalization from peak windows")
+pnf <- normOffsets(peak.window.counts, type="scaling")
+colData(window.counts)$PeakNormFactors <- pnf
+colData(peak.window.counts)$PeakNormFactors <- pnf
+
+withGC({
+    rm(window.counts)
+    rm(bigbin.counts)
+})
+
+## Create DGEList and populate $genes and $samples
+dge <- asDGEList(peak.window.counts)
+dge$genes <- rowRanges(peak.window.counts) %>% as.data.frame %>% lapply(Rle) %>% DataFrame
+dge$samples %<>% cbind(colData(peak.window.counts)) %>% as.data.frame %>%
+    autoFactorize %>%
+    mutate(group = interaction(cell_type, str_replace(time_point, "Day", "D"), sep=""),
+           nf.logratio = log2(PeakNormFactors / CompNormFactors))
+colnames(dge) <- rownames(dge$samples) <- dge$samples$SampleName
+dge$offset <- offsets
+
+tsmsg("Filtering")
 ave.count.threshold <- 5
+thresh <- aveLogCPM(ave.count.threshold, lib.size=mean(dge$samples$totals))
+ab <- aveLogCPM(dge)
+present <- ab >= thresh
 
-for (chip in chips) { in.forked.process({
-    datafile <- sprintf("saved_data/csaw-norm-eval-%s.rda", chip)
-    if (file.exists(datafile)) {
-        tsmsg("Loading saved data for ", chip)
-        load(datafile)
-    } else {
-        tsmsg("Reading data for ", chip)
-        ## Let's avoid re-doing all the normalization and filtering by
-        ## loading the saved data from csaw-qc.R
-        dge <- readRDS(sprintf("saved_data/csaw-DGEList-%s.RDS", chip))
-        dge <- dge[,dge$samples %$% order(ChIP, Celltype, Day, Donor, Sample)]
-        chip.peaks <- import.narrowPeak(
-            sprintf(fmt="data_files/ChIP-Seq/%s_peaks_IDR_filtered.bed", chip))
+dge <- dge[present,]
+dge$offset <- normOffsets(dge$counts, lib.sizes=dge$samples$lib.size, type="loess")
 
-        tsmsg("Filtering")
-        ab <- dge$genes$Abundance
-        thresh <- aveLogCPM(5, lib.size=mean(dge$samples$totals))
-        present <- ab >= thresh
-        dge <- dge[present,]
+## Try both normalizations
+dge.comp <- dge
+dge.eff <- dge
+dge.loess <- dge
 
-        ## Try both normalizations
-        dge.comp <- dge
-        dge.eff <- dge
+dge.comp$samples %<>% mutate(norm.factors=CompNormFactors)
+dge.comp$offset <- NULL
+dge.eff$samples %<>% mutate(norm.factors=PeakNormFactors)
+dge.eff$offset <- NULL
+dge.loess$samples %<>% mutate(norm.factors=1)
 
-        dge.comp$samples %<>% mutate(norm.factors=CompNormFactors)
-        dge.eff$samples %<>% mutate(norm.factors=PeakNormFactors)
+tsmsg("Creating MDS plots")
+mdsdist.comp <- suppressPlot(plotMDS(dge.comp, top=15000)) %$% distance.matrix %>% as.dist
+mdsdims.comp <- suppressWarnings(cmdscale(mdsdist.comp, k=ncol(dge.comp)-1)) %>%
+    set_colnames(str_c("PC", seq_len(ncol(.)))) %>%
+    data.frame %>%
+    cbind(dge.comp$samples, .) %>%
+    arrange(cell_type, time_point, donor_id)
+pc.cols <- str_detect(colnames(mdsdims.comp),"PC[0-9]+")
+flipsign <- mdsdims.comp %>% filter(time_point=="Day0") %>%
+    .[pc.cols] %>% colMeans %>% sign %>% multiply_by(-1)
+mdsdims.comp[names(flipsign)] %<>% scale(center=FALSE, scale=flipsign)
+mdsplot.comp <- ggplot(mdsdims.comp) +
+    aes(x=PC1, y=PC2, shape=cell_type, color=time_point, group=donor_id:cell_type, linetype=donor_id) +
+    geom_point(size=5) +
+    geom_path(aes(color=NA)) +
+    coord_fixed() +
+    ggtitle("MDS Plot, Composition Normalized")
 
-        tsmsg("Creating MDS plots")
-        mdsdist.comp <- suppressPlot(plotMDS(dge.comp, top=15000)) %$% distance.matrix %>% as.dist
-        mdsdims.comp <- suppressWarnings(cmdscale(mdsdist.comp, k=ncol(dge.comp)-1)) %>%
-            set_colnames(str_c("PC", seq_len(ncol(.)))) %>%
-            data.frame %>%
-            cbind(., dge.comp$samples)
-        mdsplot.comp <- ggplot(mdsdims.comp) +
-            aes(x=PC1, y=PC2, shape=Celltype, color=Day, group=Donor:Celltype, linetype=Donor) +
-            geom_point(size=5) +
-            geom_path(aes(color=NA)) +
-            coord_fixed() +
-            ggtitle("MDS Plot, Composition Normalized")
+mdsdist.eff <- suppressPlot(plotMDS(dge.eff, top=15000)) %$% distance.matrix %>% as.dist
+mdsdims.eff <- suppressWarnings(cmdscale(mdsdist.eff, k=ncol(dge.eff)-1)) %>%
+    set_colnames(str_c("PC", seq_len(ncol(.)))) %>%
+    data.frame %>%
+    cbind(., dge.eff$samples) %>%
+    arrange(cell_type, time_point, donor_id)
+pc.cols <- str_detect(colnames(mdsdims.eff),"PC[0-9]+")
+flipsign <- mdsdims.eff %>% filter(time_point=="Day0") %>%
+    .[pc.cols] %>% colMeans %>% sign %>% multiply_by(-1)
+mdsdims.eff[names(flipsign)] %<>% scale(center=FALSE, scale=flipsign)
+mdsplot.eff <- ggplot(mdsdims.eff) +
+    aes(x=PC1, y=PC2, shape=cell_type, color=time_point, group=donor_id:cell_type, linetype=donor_id) +
+    geom_point(size=5) +
+    geom_path(aes(color=NA)) +
+    coord_fixed() +
+    ggtitle("MDS Plot, Efficiency Normalized")
 
-        mdsdist.eff <- suppressPlot(plotMDS(dge.eff, top=15000)) %$% distance.matrix %>% as.dist
-        mdsdims.eff <- suppressWarnings(cmdscale(mdsdist.eff, k=ncol(dge.eff)-1)) %>%
-            set_colnames(str_c("PC", seq_len(ncol(.)))) %>%
-            data.frame %>%
-            cbind(., dge.eff$samples)
-        mdsplot.eff <- ggplot(mdsdims.eff) +
-            aes(x=PC1, y=PC2, shape=Celltype, color=Day, group=Donor:Celltype, linetype=Donor) +
-            geom_point(size=5) +
-            geom_path(aes(color=NA)) +
-            coord_fixed() +
-            ggtitle("MDS Plot, Efficiency Normalized")
+yoffset <- cpmWithOffset(dge.loess, prior.count=2)
+mdsdist.loess <- suppressPlot(plotMDS(yoffset, top=15000)) %$% distance.matrix %>% as.dist
+mdsdims.loess <- suppressWarnings(cmdscale(mdsdist.loess, k=ncol(dge.loess)-1)) %>%
+    set_colnames(str_c("PC", seq_len(ncol(.)))) %>%
+    data.frame %>%
+    cbind(., dge.loess$samples) %>%
+    arrange(cell_type, time_point, donor_id)
+pc.cols <- str_detect(colnames(mdsdims.loess),"PC[0-9]+")
+flipsign <- mdsdims.loess %>% filter(time_point=="Day0") %>%
+    .[pc.cols] %>% colMeans %>% sign %>% multiply_by(-1)
+mdsdims.loess[names(flipsign)] %<>% scale(center=FALSE, scale=flipsign)
+mdsplot.loess <- ggplot(mdsdims.loess) +
+    aes(x=PC1, y=PC2, shape=cell_type, color=time_point, group=donor_id:cell_type, linetype=donor_id) +
+    geom_point(size=5) +
+    geom_path(aes(color=NA)) +
+    coord_fixed() +
+    ggtitle("MDS Plot, Loess Normalized")
 
+tsmsg("Estimating dispersions")
+design <- model.matrix(~0 + group + donor_id, dge$samples)
+colnames(design) %<>%
+    str_replace("^group", "") %>%
+    str_replace("^donor_idD", "Dn")
 
-        design <- model.matrix(~0 + TreatmentGroup + Donor, dge$samples)
-        colnames(design) %<>%
-            str_replace("^TreatmentGroup", "") %>%
-            str_replace("^DonorDn", "Donor")
+dge.comp %<>% estimateDisp(design, robust=TRUE)
+fit.comp <- glmQLFit(dge.comp, design, robust=TRUE)
 
-        tsmsg("Estimating dispersions")
-        dge.comp %<>% estimateDisp(design, robust=TRUE)
-        fit.comp <- glmQLFit(dge.comp, design, robust=TRUE)
+dge.eff %<>% estimateDisp(design, robust=TRUE)
+fit.eff <- glmQLFit(dge.eff, design, robust=TRUE)
 
-        dge.eff %<>% estimateDisp(design, robust=TRUE)
-        fit.eff <- glmQLFit(dge.eff, design, robust=TRUE)
-    }
+dge.loess %<>% estimateDisp(design, robust=TRUE)
+fit.loess <- glmQLFit(dge.loess, design, robust=TRUE)
 
-    tsmsg("Making plots")
-    {
-        pdf(sprintf("results/csaw/%s-norm-eval.pdf", chip), width=8, height=8)
-        plotBCV(dge.eff, ylim=c(0, 1.5), main="BCV Plot, Efficiency Normalized")
-        plotBCV(dge.comp, ylim=c(0, 1.5), main="BCV Plot, Composition Normalized")
-        plotQLDisp(fit.eff, ylim=c(0.5, 1.9), main="QL Dispersion Plot, Efficiency Normalized")
-        plotQLDisp(fit.comp, ylim=c(0.5, 1.9), main="QL Dispersion Plot, Composition Normalized")
-        print(mdsplot.eff)
-        print(mdsplot.comp)
-        dev.off()
-    }
-
-    if (!file.exists(datafile)) {
-        tsmsg("Saving image")
-        save.image(sprintf("saved_data/csaw-norm-eval-%s.rda", chip))
-    }
-    NULL
-})}
+{
+    tsmsg("Printing plots")
+    pdf(sprintf("plots/csaw/%s-norm-eval.pdf", chip), width=8, height=8)
+    plotBCV(dge.comp, ylim=c(0, 1.5), main=sprintf("BCV Plot, Composition Normalized (prior df=%.2f)", max(dge.comp$prior.df)))
+    plotBCV(dge.eff, ylim=c(0, 1.5), main=sprintf("BCV Plot, Efficiency Normalized (prior df=%.2f)", max(dge.eff$prior.df)))
+    plotBCV(dge.loess, ylim=c(0, 1.5), main=sprintf("BCV Plot, Loess Normalized (prior df=%.2f)", max(dge.loess$prior.df)))
+    plotQLDisp(fit.comp, ylim=c(0.5, 1.9), main=sprintf("QL Dispersion Plot, Composition Normalized (prior df=%.2f)", max(fit.comp$df.prior)))
+    plotQLDisp(fit.eff, ylim=c(0.5, 1.9), main=sprintf("QL Dispersion Plot, Efficiency Normalized (prior df=%.2f)", max(fit.eff$df.prior)))
+    plotQLDisp(fit.loess, ylim=c(0.5, 1.9), main=sprintf("QL Dispersion Plot, Loess Normalized (prior df=%.2f)", max(fit.loess$df.prior)))
+    print(mdsplot.eff)
+    print(mdsplot.comp)
+    print(mdsplot.loess)
+    dev.off()
+}
