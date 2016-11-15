@@ -24,7 +24,6 @@ positional_args <- function(argnames, args=commandArgs(trailingOnly = TRUE)) {
 
 library(stringr)
 library(magrittr)
-library(openxlsx)
 library(SummarizedExperiment)
 library(readr)
 library(edgeR)
@@ -33,10 +32,7 @@ library(csaw)
 library(ggplot2)
 library(scales)
 library(rtracklayer)
-library(RColorBrewer)
-library(reshape2)
 library(parallel)
-library(ks)
 library(dplyr)
 
 suppressPlot <- function(arg) {
@@ -44,22 +40,6 @@ suppressPlot <- function(arg) {
     on.exit(dev.off())
     result <- arg
     result
-}
-
-power_trans <- function(pow) {
-    name <- sprintf("^%s", pow)
-    trans_new(name,
-              transform=function(x) x ^ pow,
-              inverse=function(x) x ^ (1/pow),
-              domain =c(0,Inf))
-}
-
-clamp_trans <- function(lower_threshold=0, upper_threshold=1) {
-    name <- sprintf("Clamp values outside of [%s, %s]", lower_threshold, upper_threshold)
-    trans_new(name,
-              transform=function(x) pmin(upper_threshold, pmax(lower_threshold, x)),
-              ## transform is only invertible for part of the range
-              inverse=identity)
 }
 
 ## https://charlesjb.github.io/How_to_import_narrowPeak/
@@ -170,7 +150,6 @@ dge$samples %<>% cbind(colData(peak.window.counts)) %>% as.data.frame %>%
     mutate(group = interaction(cell_type, str_replace(time_point, "Day", "D"), sep=""),
            nf.logratio = log2(PeakNormFactors / CompNormFactors))
 colnames(dge) <- rownames(dge$samples) <- dge$samples$SampleName
-dge$offset <- offsets
 
 tsmsg("Filtering")
 ave.count.threshold <- 5
