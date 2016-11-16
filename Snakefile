@@ -1060,7 +1060,7 @@ rule macs_predictd:
         shell('''
         macs2 predictd -i {input.bam_files:q} -f BAM -g hs \
           --outdir {rfile_dirname:q} --rfile {rfile_basename:q} \
-          &>{output.log:q}
+          &>{output.logfile:q}
         cd plots
         Rscript ../{rfile_dirname:q}/{rfile_basename:q}
         ''')
