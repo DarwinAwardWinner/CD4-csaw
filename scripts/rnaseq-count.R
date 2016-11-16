@@ -485,6 +485,7 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
         }
         assert_that(all(names(annot) %in% rownames(additional_gene_info)))
         mcols(annot)[colnames(additional_gene_info)] <- additional_gene_info[names(annot),]
+        metadata(annot) %<>% c(metadata(additional_gene_info))
     }
 
     saf <- grl.to.saf(annot)
