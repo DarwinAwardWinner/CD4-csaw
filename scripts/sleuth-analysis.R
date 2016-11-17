@@ -40,7 +40,7 @@ get.options <- function(opts) {
         make_option(c("-s", "--samplemeta-file"), metavar="FILENAME.RDS", type="character",
                     help="(REQUIRED) RDS/RData/xlsx/csv file containing a table of sample metadata. Any existing rownames will be replaced with the values in the sample ID  column (see below)."),
         make_option(c("-c", "--sample-id-column"), type="character", default="Sample",
-                    help="Sample metadata column name that holds the sample IDs. These will be substituted into '--bam-file-pattern' to determine the BAM file names."),
+                    help="Sample metadata column name that holds the sample IDs. These will be substituted into '--abundance-file-pattern' to determine the abundance file names."),
         make_option(c("-a", "--abundance-file-pattern"), metavar="PATTERN", type="character",
                     help="(REQUIRED) Format string to convert sample IDs into file paths to the abundance.h5 file for each sample. This should contain a '%s' wherever the sample ID should be substituted ('%s' can occur multiple times),. Example: 'kallisto_quant/Sample_%s/abundance.h5"),
         make_option(c("-o", "--output-file"), metavar="FILENAME.RDS", type="character",
