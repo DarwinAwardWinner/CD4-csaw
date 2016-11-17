@@ -1,12 +1,17 @@
 #!/usr/bin/env Rscript
 
+tsmsg <- function(...) {
+    message(date(), ": ", ...)
+}
+
 getScriptPath <- function() {
     argv <-commandArgs()
     dir <- na.omit(stringr::str_match(argv, "^--file=(.*)$")[,2])[1]
     if (!is.na(dir) && !is.null(dir))
         return(dir)
 }
-setwd(file.path(dirname(getScriptPath()), ".."))
+tryCatch(setwd(file.path(dirname(getScriptPath()), "..")),
+         error=function(...) tsmsg("WARNING: Could not determine script path. Ensure that you are already in the correct directory."))
 
 library(GEOquery)
 library(SRAdb)
@@ -95,10 +100,9 @@ samplemeta <- lapply(esets, function(eset) {
         ## Extract just the IDs from the URLs
         mutate(BioSample=str_replace(BioSample, "^\\Qhttp://www.ncbi.nlm.nih.gov/biosample/", ""),
                SRA=str_replace(SRA, "^\\Qhttp://www.ncbi.nlm.nih.gov/sra?term=", "")) %>%
+        rename(SRA_experiment=SRA) %>%
         ## Get all relevant SRA IDs
-        cbind(sraConvert(.$SRA, out_type=as.list(args(sraConvert))$out_type, sra_con) %>% setNames(str_c("SRA_", names(.)))) %>%
-        ## Clear the no-longer needed SRA
-        mutate(SRA=NULL) %>%
+        inner_join(sraConvert(.$SRA, out_type=as.list(args(sraConvert))$out_type, sra_con) %>% setNames(str_c("SRA_", names(.)))) %>%
         ## Fix column types and ensure that non-numeric variables
         ## never start with numbers
         mutate(cell_type=factor(cell_type, levels=c("Naive", "Memory")),
