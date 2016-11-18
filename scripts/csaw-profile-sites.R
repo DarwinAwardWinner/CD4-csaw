@@ -86,7 +86,7 @@ sample.maxima <- bplapply(sample.table$bam_file, function(bam) {
     maxed <- findMaxima(rowRanges(windowed), range=5000, metric=rwsms)
     maxwindowed <- windowed[maxed,]
     maxranges <- rowRanges(maxwindowed)
-    maxranges$Count <- rwsms
+    maxranges$Count <- rwsms[maxed]
     maxranges
 })
 names(sample.maxima) <- sample.table$SampleName
