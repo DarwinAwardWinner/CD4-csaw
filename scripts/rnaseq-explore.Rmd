@@ -1,0 +1,730 @@
+---
+title: "Exploration of CD4 RNA-Seq Data"
+author: "Ryan C. Thompson"
+output: html_notebook
+params:
+  dataset:
+    value: hisat2_grch38_snp_tran_ensembl.85
+  basedir:
+    value: /home/ryan/Projects/CD4-csaw
+---
+
+# Preliminary Setup
+
+```{r setup, include=FALSE}
+    knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
+                      cache.extra = list(params=params))
+```
+
+First we load the necessary libraries.
+
+```{r load_packages, message=FALSE}
+library(stringr)
+library(magrittr)
+library(openxlsx)
+library(doParallel)
+ncores <- getOption("mc.cores", default=1)
+registerDoParallel(cores=ncores)
+library(BiocParallel)
+register(DoparParam())
+library(SummarizedExperiment)
+library(dplyr)
+library(edgeR)
+library(limma)
+library(sva)
+library(ggplot2)
+library(scales)
+library(GGally)
+library(ggalt)
+library(reshape2)
+library(assertthat)
+library(ggfortify)
+library(broom)
+```
+
+Next we define some utility functions.
+
+```{r utility_functions, echo=FALSE}
+# Useful to wrap functions that both produce a plot and return a useful value,
+# when you only want the return value and not the plot.
+suppressPlot <- function(arg) {
+    png("/dev/null")
+    result <- arg
+    dev.off()
+    result
+}
+
+ggprint <- function(plots, device=dev.cur(), closedev) {
+  orig.device <- dev.cur()
+  new.device <- device
+  # Functions that create devices don't generally return them, they just set
+  # them as the new current device, so get the actual device from dev.cur()
+  # instead.
+  if (is.null(new.device)) {
+    new.device <- dev.cur()
+  }
+  if (missing(closedev)) {
+    closedev = ! orig.device == new.device && new.device != 1
+  }
+  dev.set(new.device)
+  on.exit({
+    if (closedev) {
+      dev.off(new.device)
+    }
+    if (new.device != orig.device) {
+      dev.set(orig.device)
+    }
+  })
+  assert_that(is(plots, "gg") || 
+                is.list(plots))
+  if (is(plots, "gg")) {
+      print(plots)
+  } else if (is.list(plots)) {
+    lapply(plots, ggprint, device=dev.cur(), closedev=FALSE)
+  } else {
+    stop("Argument is not a ggplot or list of ggplots")
+  }
+  invisible(NULL)
+}
+
+## Based on this: https://www.r-bloggers.com/shrinking-rs-pdf-output/
+## Requires some command-line image and PDF manip tools.
+rasterpdf <- function(pdffile, outfile=pdffile, resolution=600, verbose=FALSE) {
+    vmessage <- function(...) {
+        if (verbose) message(...)
+    }
+    require(parallel)
+    wd=getwd()
+    td=file.path(tempdir(),"pdf")
+    if(!file.exists(td))
+        dir.create(td)
+    file.copy(pdffile, file.path(td,"test.pdf"))
+    setwd(td)
+    on.exit(setwd(wd))
+    system2("pdftk", args=c("test.pdf", "burst"))
+    files=list.files(pattern="pg_")
+
+    vmessage(paste0("Rasterizing ",length(files)," pages:  (",paste(files,collapse=","),")"))
+    mclapply(files,function(f){
+        system2("gs", args=c("-dBATCH", "-dTextAlphaBits=4", "-dNOPAUSE",
+                             paste0("-r", resolution), "-q", "-sDEVICE=png16m",
+                             paste0("-sOutputFile=",f,".png"),f))
+        system2("convert", args=c("-quality", "100", "-density", resolution,
+                                  paste0(f,".png"),
+                                  paste0(strsplit(f,".",fixed=T)[[1]][1],".pdf")))
+        vmessage(paste0("Finished page ",f))
+        return()
+    })
+    vmessage("Compiling the final pdf")
+    file.remove("test.pdf")
+    file.remove(list.files(pattern="png"))
+    setwd(wd)
+    system2("gs", args=c("-dBATCH", "-dNOPAUSE", "-q", "-sDEVICE=pdfwrite",
+                         paste0("-sOutputFile=",outfile),
+                         list.files(path=td, pattern=glob2rx("*.pdf"), full.names=TRUE)))
+    file.remove(list.files(td,full=T))
+    vmessage("Finished!!")
+}
+
+add.numbered.colnames <- function(x, prefix="C") {
+    x %>% set_colnames(sprintf("%s%i", prefix, seq(from=1, length.out=ncol(x))))
+}
+
+autoFactorize <- function(df) {
+    for (i in colnames(df)) {
+        if (is.character(df[[i]]) && anyDuplicated(df[[i]])) {
+            df[[i]] %<>% factor
+        }
+    }
+    df
+}
+
+estimateDispByGroup <- function(dge, group=as.factor(dge$samples$group), batch, ...) {
+    assert_that(nlevels(group) > 1)
+    assert_that(length(group) == ncol(dge))
+    if (!is.list(batch)) {
+        batch <- list(batch=batch)
+    }
+    batch <- as.data.frame(batch)
+    assert_that(nrow(batch) == ncol(dge))
+    colnames(batch) %>% make.names(unique=TRUE)
+    igroup <- seq_len(ncol(dge)) %>% split(group)
+    lapply(igroup, function(i) {
+        group.dge <- dge[,i]
+        group.batch <- droplevels(batch[i,, drop=FALSE])
+        group.batch <- group.batch[sapply(group.batch, . %>% unique %>% length %>% is_greater_than(1))]
+        group.vars <- names(group.batch)
+        if (length(group.vars) == 0)
+            group.vars <- "1"
+        group.batch.formula <- as.formula(str_c("~", str_c(group.vars, collapse="+")))
+        des <- model.matrix(group.batch.formula, group.batch)
+        estimateDisp(group.dge, des, ...)
+    })
+}
+
+ggduo.dataXY <- function(dataX, dataY, extraData=NULL, ...) {
+    assert_that(ncol(dataX) > 0)
+    assert_that(ncol(dataY) > 0)
+    alldata <- cbind(dataX, dataY)
+    if (!is.null(extraData)) {
+        alldata <- cbind(alldata, extraData)
+    }
+    ggduo(alldata, columnsX=colnames(dataX), columnsY=colnames(dataY), ...)
+}
+
+# Make cairo_pdf use onefile=TRUE by default
+cairo_pdf <- function(..., onefile=TRUE) {
+    grDevices::cairo_pdf(..., onefile = onefile)
+}
+
+plotdir <- file.path(params$basedir, "plots/RNA-seq", params$dataset)
+```
+
+We also define a parallelized version of `sva::ComBat`, which takes the runtime of ComBat from about an hour to just over 10 minutes.
+
+```{r define_parallel_combat}
+BPComBat <- function (dat, batch, mod = NULL, par.prior = TRUE, prior.plots = FALSE, 
+                      mean.only = FALSE, BPPARAM = bpparam()) 
+{
+    if (mean.only == TRUE) {
+        cat("Using the 'mean only' version of ComBat\n")
+    }
+    if (length(dim(batch)) > 1) {
+        stop("This version of ComBat only allows one batch variable")
+    }
+    batch <- as.factor(batch)
+    batchmod <- model.matrix(~-1 + batch)
+    cat("Found", nlevels(batch), "batches\n")
+    n.batch <- nlevels(batch)
+    batches <- list()
+    for (i in 1:n.batch) {
+        batches[[i]] <- which(batch == levels(batch)[i])
+    }
+    n.batches <- sapply(batches, length)
+    if (any(n.batches == 1)) {
+        mean.only = TRUE
+        cat("Note: one batch has only one sample, setting mean.only=TRUE\n")
+    }
+    n.array <- sum(n.batches)
+    design <- cbind(batchmod, mod)
+    check <- apply(design, 2, function(x) all(x == 1))
+    design <- as.matrix(design[, !check])
+    cat("Adjusting for", ncol(design) - ncol(batchmod), "covariate(s) or covariate level(s)\n")
+    if (qr(design)$rank < ncol(design)) {
+        if (ncol(design) == (n.batch + 1)) {
+            stop("The covariate is confounded with batch! Remove the covariate and rerun ComBat")
+        }
+        if (ncol(design) > (n.batch + 1)) {
+            if ((qr(design[, -c(1:n.batch)])$rank < ncol(design[, 
+                                                                -c(1:n.batch)]))) {
+                stop("The covariates are confounded! Please remove one or more of the covariates so the design is not confounded")
+            }
+            else {
+                stop("At least one covariate is confounded with batch! Please remove confounded covariates and rerun ComBat")
+            }
+        }
+    }
+    NAs = any(is.na(dat))
+    if (NAs) {
+        cat(c("Found", sum(is.na(dat)), "Missing Data Values\n"), 
+            sep = " ")
+    }
+    cat("Standardizing Data across genes\n")
+    if (!NAs) {
+        B.hat <- solve(t(design) %*% design) %*% t(design) %*% 
+            t(as.matrix(dat))
+    }
+    else {
+        B.hat = apply(dat, 1, Beta.NA, design)
+    }
+    grand.mean <- t(n.batches/n.array) %*% B.hat[1:n.batch, 
+                                                 ]
+    if (!NAs) {
+        var.pooled <- ((dat - t(design %*% B.hat))^2) %*% rep(1/n.array, 
+                                                              n.array)
+    }
+    else {
+        var.pooled <- apply(dat - t(design %*% B.hat), 1, var, 
+                              na.rm = T)
+	}
+	stand.mean <- t(grand.mean) %*% t(rep(1, n.array))
+	if (!is.null(design)) {
+		tmp <- design
+		tmp[, c(1:n.batch)] <- 0
+		stand.mean <- stand.mean + t(tmp %*% B.hat)
+	}
+	s.data <- (dat - stand.mean)/(sqrt(var.pooled) %*% t(rep(1, 
+		n.array)))
+	cat("Fitting L/S model and finding priors\n")
+	batch.design <- design[, 1:n.batch]
+	if (!NAs) {
+		gamma.hat <- solve(t(batch.design) %*% batch.design) %*% 
+			t(batch.design) %*% t(as.matrix(s.data))
+	}
+	else {
+		gamma.hat = apply(s.data, 1, Beta.NA, batch.design)
+	}
+	delta.hat <- matrix(1, nrow=length(batches), ncol=nrow(s.data))
+	if (mean.only == FALSE) {
+	  for (i in seq_along(batches)) {
+	    bi <- batches[[i]]
+	    delta.hat[i,] <- apply(s.data[, bi], 1, var, na.rm = T)
+	  }
+	}
+	gamma.bar <- apply(gamma.hat, 1, mean)
+	t2 <- apply(gamma.hat, 1, var)
+	a.prior <- apply(delta.hat, 1, aprior)
+	b.prior <- apply(delta.hat, 1, bprior)
+	if (prior.plots & par.prior) {
+		par(mfrow = c(2, 2))
+		tmp <- density(gamma.hat[1, ])
+		plot(tmp, type = "l", main = "Density Plot")
+		xx <- seq(min(tmp$x), max(tmp$x), length = 100)
+		lines(xx, dnorm(xx, gamma.bar[1], sqrt(t2[1])), col = 2)
+		qqnorm(gamma.hat[1, ])
+		qqline(gamma.hat[1, ], col = 2)
+		tmp <- density(delta.hat[1, ])
+		invgam <- 1/rgamma(ncol(delta.hat), a.prior[1], b.prior[1])
+		tmp1 <- density(invgam)
+		plot(tmp, typ = "l", main = "Density Plot", ylim = c(0, 
+			max(tmp$y, tmp1$y)))
+		lines(tmp1, col = 2)
+		qqplot(delta.hat[1, ], invgam, xlab = "Sample Quantiles", 
+			ylab = "Theoretical Quantiles")
+		lines(c(0, max(invgam)), c(0, max(invgam)), col = 2)
+		title("Q-Q Plot")
+	}
+	gamma.star <- delta.star <- matrix(NA, nrow=n.batch, ncol=nrow(s.data))
+	if (par.prior) {
+		cat("Finding parametric adjustments\n")
+	    results <- bplapply(1:n.batch, function(i) {
+	        if (mean.only) {
+				gamma.star <- postmean(gamma.hat[i,], gamma.bar[i], 1, 1, t2[i])
+				delta.star <- rep(1, nrow(s.data))
+			}
+			else {
+				temp <- it.sol(s.data[, batches[[i]]], gamma.hat[i, 
+					], delta.hat[i, ], gamma.bar[i], t2[i], a.prior[i], 
+					b.prior[i])
+				gamma.star <- temp[1, ]
+				delta.star <- temp[2, ]
+			}
+	        list(gamma.star=gamma.star, delta.star=delta.star)
+	    })
+	    for (i in 1:n.batch) {
+	        gamma.star[i,] <- results[[i]]$gamma.star
+	        delta.star[i,] <- results[[i]]$delta.star
+	    }
+	}
+	else {
+		cat("Finding nonparametric adjustments\n")
+		results <- bplapply(1:n.batch, function(i) {
+			if (mean.only) {
+				delta.hat[i, ] = 1
+			}
+			temp <- int.eprior(as.matrix(s.data[, batches[[i]]]), 
+				gamma.hat[i, ], delta.hat[i, ])
+	        list(gamma.star=temp[1,], delta.star=temp[2,])
+	    })
+	    for (i in 1:n.batch) {
+	        gamma.star[i,] <- results[[i]]$gamma.star
+	        delta.star[i,] <- results[[i]]$delta.star
+	    }
+	}
+	cat("Adjusting the Data\n")
+	bayesdata <- s.data
+	j <- 1
+	for (i in batches) {
+		bayesdata[, i] <- (bayesdata[, i] - t(batch.design[i, 
+			] %*% gamma.star))/(sqrt(delta.star[j, ]) %*% t(rep(1, 
+			n.batches[j])))
+		j <- j + 1
+	}
+	bayesdata <- (bayesdata * (sqrt(var.pooled) %*% t(rep(1, 
+		n.array)))) + stand.mean
+	return(bayesdata)
+}
+environment(BPComBat) <- new.env(parent = environment(ComBat))
+
+# exdata <- matrix(nrow=2000, ncol=12, data=rnorm(2000*12))
+# trt <- rep(factor(letters[1:2]), length.out=ncol(exdata))
+# bat <- rep(factor(letters[24:26]), length.out=ncol(exdata))
+# exdesign <- model.matrix(~trt)
+# x1 <- ComBat(exdata, batch=bat, mod=exdesign, par.prior=TRUE, prior.plots=TRUE)
+# message("ComBat Parametric:")
+# system.time(x2 <- ComBat(exdata, batch=bat, mod=exdesign, par.prior=TRUE, prior.plots=TRUE))
+# message("ComBat Parametric Parallel:")
+# system.time(x3 <- BPComBat(exdata, batch=bat, mod=exdesign, par.prior=TRUE, prior.plots=TRUE))
+# message("ComBat Non-Parametric:")
+# system.time(x4 <- ComBat(exdata, batch=bat, mod=exdesign, par.prior=FALSE, prior.plots=TRUE))
+# message("ComBat Non-Parametric Parallel:")
+# system.time(x5 <- BPComBat(exdata, batch=bat, mod=exdesign, par.prior=FALSE, prior.plots=TRUE))
+# message("ComBat para vs orig data:")
+# summary(as.vector(x1-exdata))
+# message("ComBat para vs para:")
+# summary(as.vector(x2-x1))
+# message("ComBat para vs para parallel:")
+# summary(as.vector(x3-x1))
+# message("ComBat non-para vs non-para parallel:")
+# summary(as.vector(x4-x5))
+```
+
+# Data Loading and Preprocessing
+
+Now we'll load the RNA-seq data set from an RDS file containing a SummarizedExperiment object, and modify it to use the sample names as column names.
+
+```{r load_data}
+sexpfile <- file.path(params$basedir, "saved_data",
+                      sprintf("SummarizedExperiment_rnaseq_%s.RDS", params$dataset))
+sexp <- readRDS(sexpfile)
+colnames(sexp) <- colData(sexp)$SampleName
+```
+
+We extract the sample metadata from the SummarizedExperiment. Since donor_id is a confounding factor, we tell R to use sum-to-zero contrasts when incorporating it into a design matrix.
+
+```{r extract_samplemeta}
+sample.table <- colData(sexp) %>%
+    as.data.frame %>% autoFactorize %>%
+    rename(batch=technical_batch) %>%
+    mutate(time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
+           group=interaction(cell_type, time_point, sep=""))
+contrasts(sample.table$donor_id) <- contr.sum(nlevels(sample.table$donor_id))
+```
+
+Next we extract the count matrix from the SummarizedExperiment. This is made more complicated than usual by the fact that half of the samples were sequenced with a different protocol than the other half, and the two protocols produce reads with opposite strand orientations. Hence, we need the sense counts for half of the samples and the antisense counts for the other half. The appropriate strand for each sample is documented in the `libType` column of the sample metadata, using the library type abbreviations [established by Salmon](http://salmon.readthedocs.io/en/latest/salmon.html#what-s-this-libtype).
+
+```{r extract_counts}
+libtype.assayNames <- c(ISF="sense.counts", ISR="antisense.counts")
+sample.table %<>% mutate(count_type=libtype.assayNames[libType])
+
+message("Selecting stranded counts for each sample")
+assay(sexp, "correct.counts") <- lapply(seq_len(nrow(sample.table)), function(i) {
+    message("Using ", sample.table[i,]$count_type, " for ", colnames(sexp)[i])
+    assay(sexp, sample.table[i,]$count_type %>% as.character)[,i]
+}) %>% do.call(what=cbind)
+```
+
+As a sanity check, we make sure that we selected the strand sense with the higher total count for each sample.
+
+```{r strand_sanity_check}
+total.counts <- sexp %>% assays %>% sapply(colSums) %>% data.frame %>% mutate(SampleName=row.names(.)) %>% inner_join(sample.table, by="SampleName")
+total.counts %$% invisible(assert_that(all(correct.counts == pmax(sense.counts, antisense.counts))))
+```
+
+# Exploratory Analysis
+
+Now we create a DGEList from the counts
+
+```{r prepare_dgelist}
+## Extract gene metadata and colapse lists
+all.gene.meta <- mcols(sexp) %>% as.data.frame
+# Convert list columns to character vectors
+all.gene.meta[] %<>% lapply(function(x) if (is.list(x)) sapply(x, str_c, collapse=",") else x)
+dge <- DGEList(counts=assay(sexp, "correct.counts"))
+dge$genes <- all.gene.meta
+```
+
+Next we take care of the initial scaling normalization for sequencing depth and composition bias. We also discard any genes with all zero counts, since there is no meaningful analysis that can be done with these genes.
+
+```{r initial_normalization}
+## Remove all genes with zero counts in all samples
+dge %<>% .[rowSums(dge$counts) > 0,]
+dge %<>% calcNormFactors
+```
+
+We plot the distribution of average log2 CPM values to verify that our chosen presence threshold is appropriate. The distribution is expected to be bimodal, with a low-abundance peak representing non-expressed genes and a high-abundance peak representing expressed genes. The chosen threshold should separate the two peaks of the bimodal distribution.
+
+```{r aveLogCPM_plots}
+a <- aveLogCPM(dge)
+avelogcpm.presence.threshold <- -1
+
+p <- list(
+    Histogram=ggplot(data.frame(logCPM=a)) +
+        aes(x=logCPM) +
+        geom_histogram(aes(y=100*(..count..)/sum(..count..)), binwidth=0.25, boundary=0) +
+        geom_vline(xintercept=avelogcpm.presence.threshold, color="red", linetype="dashed") +
+        xlab("Average logCPM") + ylab("Percent of genes in bin") +
+        coord_cartesian(xlim=quantile(a, c(0, 0.995)), ylim=c(0,10)) +
+        labs(title="Average gene LogCPM distribution",
+             subtitle="for genes with at least 1 read") +
+        theme(plot.caption = element_text(hjust = 0)),
+    ECDF=ggplot(fortify(ecdf(a))) +
+        aes(x=x, y=y*100) +
+        geom_step() +
+        geom_vline(xintercept=avelogcpm.presence.threshold, color="red", linetype="dashed") +
+        xlab("Average logCPM") + ylab("Percent of genes with smaller average logCPM") +
+        coord_cartesian(xlim=quantile(a, c(0, 0.995))) +
+        labs(title="Empirical Cumulative Distribution Function of gene LogCPM values",
+             subtitle="for genes with at least 1 read") +
+        theme(plot.caption = element_text(hjust = 0)))
+
+ggprint(p)
+```
+```{r avelogCPM_plots_pdf, cache=FALSE, include=FALSE}
+ggprint(p, device=cairo_pdf(file.path(plotdir, "AveLogCPM-plots.pdf"), onefile=TRUE))
+```
+The red dashed line in each plot indicates the chosen presence threshold. We now subset the DGEList to only those genes above the threshold.
+
+```{r abundance_filter_genes}
+dge %<>% .[aveLogCPM(.) >= avelogcpm.presence.threshold,]
+```
+
+Now we estimate the dispersions for each gene, to get an idea of what the variability of this data set is like. In order to evaluate the effect of empirical Bayes shrinkage on the dispersions, we estimate the gene dispersions in 3 different ways: once with no inter-gene information sharing, once with ordinary shrinkage, and once with robust shrinkage, which reduces the strength of shrinkage for outlier genes whose dispersion is farthest away from the trend.
+
+```{r estimate_disp}
+design <- model.matrix(~0 + group + donor_id, sample.table)
+colnames(design) %<>% str_replace("^group", "")
+
+dge %<>% estimateDisp(design, robust=TRUE)
+
+dge.with.eBayes <- dge %>% estimateDisp(design, robust=FALSE)
+dge.with.robust.eBayes <- dge %>% estimateDisp(design, robust=TRUE)
+dge.without.eBayes <- dge %>% estimateDisp(design, prior.df=0)
+```
+
+We now plot all 3 dispersion estimates, along with the overall average and estimated trend. Each plot includes the points from the previous plots in lighter colors for comparison.
+
+```{r plot_disp}
+disptable <- data.frame(
+    logCPM=dge.without.eBayes$AveLogCPM,
+    CommonBCV=dge.with.eBayes$common.dispersion %>% sqrt,
+    TrendBCV=dge.with.eBayes$trended.dispersion %>% sqrt,
+    GeneWiseBCV=dge.without.eBayes$tagwise.dispersion %>% sqrt,
+    eBayesBCV=dge.with.eBayes$tagwise.dispersion %>% sqrt,
+    RobustBCV=dge.with.robust.eBayes$tagwise.dispersion %>% sqrt)
+
+## Reduce the number of points to plot for each line for performance
+## reasons
+npoints <- c(Common=2, Trend=500)
+disp.line.table <-
+    disptable %>%
+    select(logCPM, TrendBCV, CommonBCV) %>%
+    melt(id.vars="logCPM", variable.name="DispType", value.name = "BCV") %>%
+    mutate(DispType=str_replace(DispType, "BCV$", "")) %>%
+    group_by(DispType) %>%
+    do({
+        spline(x=.$logCPM, y=.$BCV, n=npoints[.$DispType[1]]) %>% data.frame(logCPM=.$x, BCV=.$y)
+    })
+
+raw.disp.plot <- ggplot(disptable) +
+    aes(x=logCPM) +
+    geom_point(aes(y=GeneWiseBCV), size=0.1, color="black") +
+    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, group=DispType), color="white", size=1.5, alpha=0.5) +
+    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, linetype=DispType), color="darkred", size=0.5) +
+    scale_linetype_manual(name="Dispersion Type", values=c(Trend="solid", Common="dashed")) +
+    ylab("Biological coefficient of variation") +
+    ggtitle("BCV plot (Raw dispersions)")
+
+eBayes.disp.plot <- ggplot(disptable) +
+    aes(x=logCPM) +
+    geom_point(aes(y=GeneWiseBCV), size=0.4, color="gray") +
+    geom_point(aes(y=eBayesBCV), size=0.1, color="darkblue") +
+    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, group=DispType), color="white", size=1.5, alpha=0.5) +
+    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, linetype=DispType), color="darkred", size=0.5) +
+    scale_linetype_manual(name="Dispersion Type", values=c(Trend="solid", Common="dashed")) +
+    ylab("Biological coefficient of variation") +
+    ggtitle("BCV plot (Raw & squeezed dispersions)")
+
+robust.eBayes.disp.plot <- ggplot(disptable) +
+    aes(x=logCPM) +
+    geom_point(aes(y=GeneWiseBCV), size=0.4, color="gray") +
+    geom_point(aes(y=eBayesBCV), size=0.4, color="deepskyblue") +
+    geom_point(aes(y=RobustBCV), size=0.1, color="darkgreen") +
+    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, group=DispType), color="white", size=1.5, alpha=0.5) +
+    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, linetype=DispType), color="darkred", size=0.5) +
+    scale_linetype_manual(name="Dispersion Type", values=c(Trend="solid", Common="dashed")) +
+    ylab("Biological coefficient of variation") +
+    ggtitle("BCV plot (Raw & squeezed & robust dispersions)")
+
+p <- list(raw.disp.plot, eBayes.disp.plot, robust.eBayes.disp.plot)
+ggprint(p)
+```
+
+```{r plot_disp_pdf, cache=FALSE, include=FALSE}
+ggprint(p, device=cairo_pdf(file.path(plotdir, "disp-plots.pdf"), onefile=TRUE))
+rasterpdf(file.path(plotdir, "disp-plots.pdf"), resolution=600)
+```
+Next, we use limma's sample weight calculating methods to investigate possible quality issues. To confirm our results, we also split the samples into treatment groups and use edgeR to estimate the dispersion within each group. This is a crude method, and these group-specific dispersion estimate would be too unstable for use in a differential expression analysis, but comparing the overall mean dispersion for each sample to the sample quality weights determined by limma provides a useful sanity check.
+
+```{r compute_quality_weights, message=FALSE, warning=FALSE}
+dbg <- estimateDispByGroup(dge, sample.table$group, sample.table$batch)
+
+## We need to exclude time point from this design for
+## duplicateCorrelation to avoid a degenerate design. If I understand
+## correctly, this will underestimate the true correlation, but that's
+## still better than leaving it out entirely (i.e. assuming cor=0).
+design.NoTime <- model.matrix(~1 + cell_type + donor_id, sample.table)
+
+elist.w0 <- voomWithQualityWeights(dge, design.NoTime)
+dupcor0 <- duplicateCorrelation(elist.w0, design.NoTime, block=sample.table$batch)
+elist.w1 <- voomWithQualityWeights(dge, design.NoTime, block=sample.table$batch, correlation=dupcor0$consensus.correlation)
+
+## Final
+dupcor <- duplicateCorrelation(elist.w1, design.NoTime, block=sample.table$batch)
+elist.w <- voomWithQualityWeights(dge, design.NoTime, block=sample.table$batch, correlation=dupcor$consensus.correlation)
+```
+
+To see whether the weights are correlated with specific experimental factors, we create a boxplot of the weights and group dispersions against each relevant covariate.
+
+```{r plot_quality_weights}
+covars <- sample.table %>% dplyr::select(group, time_point, donor_id, batch, cell_type)
+qcmetrics <- data.frame(Weight=elist.w$sample.weights,
+                        GroupBCV=sapply(dbg, `[[`, "common.dispersion")[as.character(covars$group)])
+
+p <- ggduo.dataXY(covars, qcmetrics %>% transmute(Log2Weight=log2(Weight), GroupBCV)) + 
+  ggtitle("Weights and dispersions by group") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5))
+ggprint(p)
+```
+
+```{r plot_quality_weights_pdf, cache=FALSE, include=FALSE}
+ggprint(p, device=cairo_pdf(file.path(plotdir, "qc-weights.pdf"), onefile = TRUE))
+```
+We also make plots of the individual weights against each covariate, and compute the ANOVA p-value for the relationship between the weights and each covariate separately. 
+
+(Note for later: It would be good to try all covariates in the same model as random effects.)
+
+```{r plot_weights_vs_covars}
+awdf <- data.frame(covars, qcmetrics)
+anovas <- lapply(colnames(covars), function(x) {
+    formula <- as.formula(str_c("log2(Weight) ~ ", x))
+    lm(formula, awdf) %>% aov %>% tidy %>% filter(term == x)
+}) %>% 
+    do.call(what=rbind) %>% 
+    mutate(padj=p.adjust(p.value, method="BH"))
+pvals <- anovas %$% setNames(p.value, term)
+aw.plot.base <- ggplot(awdf) +
+    aes(y=Weight) +
+    scale_y_continuous(trans=log_trans(2)) +
+    geom_dotplot(binaxis = "y", stackdir="center", binwidth=0.1)
+p <- lapply(colnames(covars), function(x) {
+    pretty.covar.name <- x %>% str_replace_all("_", " ") %>% str_to_title
+    aw.plot.base + aes_string(x=x) +
+        labs(title=str_c("Array weights by ", pretty.covar.name),
+             subtitle=sprintf("ANOVA p-value = %0.3g", pvals[x]))
+})
+ggprint(p)
+```
+
+```{r plot_weights_vs_covars_pdf, cache=FALSE, include=FALSE}
+ggprint(p, device=cairo_pdf(file.path(plotdir, "weights-vs-covars.pdf"), onefile = TRUE))
+```
+
+Next we perform several methods of batch correction on the voom-transformed data. First, we try direct batch subtraction using limma's `removeBatchEffect` function, which fits a linear model with the batches as sum-to-zero coefficients and then subtracts the batch coefficients from the data. 
+
+```{r batch_subtract}
+elist.bc <- elist.w
+elist.bc$E %<>%
+    removeBatchEffect(batch=sample.table$batch, design=design.NoTime,
+                      weights=elist.bc$weights)
+```
+
+Second, we use ComBat, which performs empirical Bayes shrinkage of the batch correction parameters. First, we run ComBat in parametric prior mode in order to produce a diagnostic plot of the priors.
+
+```{r combat_plot, cache=FALSE}
+design.cb <- model.matrix(~cell_type, sample.table)
+elist.cb <- elist.w
+
+pdf(file.path(plotdir, "rnaseq-ComBat-qc.pdf"))
+# Run to generate plots showing that the parametric priors are no good
+invisible(BPComBat(elist.cb$E, batch=sample.table %$% batch:donor_id, mod=design.cb, par.prior=TRUE, prior.plots = TRUE))
+dev.off()
+# Run the same thing again to output the plot to the knitted document
+invisible(capture.output(BPComBat(elist.cb$E, batch=sample.table %$% batch:donor_id, mod=design.cb, par.prior=TRUE, prior.plots = TRUE)))
+```
+
+For the actual batch correction, we tell ComBat to use a non-parametric prior since the prior plots above indicate that ComBat's standard parametric assumptions are not a great fit for this data. 
+
+```{r combat_adjust}
+# Now perform the actual batch correction using non-parametric prior
+elist.cb$E %<>% BPComBat(batch=sample.table %$% batch:donor_id, mod=design.cb, par.prior=FALSE)
+```
+
+For each of the batch correction methods, we compute the sample distance matrix using multidimensional scaling and plot the first 3 principal coordinates.
+
+```{r batch_correction_mds_plot, fig.height=8, fig.width=8, warning=FALSE}
+dmat <- suppressPlot(plotMDS(elist.w)$distance.matrix) %>% as.dist
+mds <- cmdscale(dmat, k=attr(dmat, "Size") - 1, eig=TRUE)
+mds$points %<>% add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
+dmat.bc <- suppressPlot(plotMDS(elist.bc)$distance.matrix) %>% as.dist
+mds.bc <- cmdscale(dmat.bc, k=attr(dmat, "Size") - 1, eig=TRUE)
+mds.bc$points %<>% add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
+dmat.cb <- suppressPlot(plotMDS(elist.cb)$distance.matrix) %>% as.dist
+mds.cb <- cmdscale(dmat.cb, k=attr(dmat, "Size") - 1, eig=TRUE)
+mds.cb$points %<>% add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
+
+ggmdsbatch <- function(dat, dims=1:2) {
+    if (length(dims) == 1) {
+        dims <- dims + c(0,1)
+    }
+    assert_that(length(dims) == 2)
+    ggplot(dat) + 
+        aes_string(x=str_c("Dim", dims[1]), y=str_c("Dim", dims[2])) +
+        aes(color=batch, label=SampleName) + 
+        geom_text() +
+        scale_x_continuous(expand=c(0.15, 0)) +
+        coord_equal()
+}
+
+p <- list(
+    ggmdsbatch(mds$points) +
+        labs(title="limma voom Principal Coordinates 1 & 2", 
+             subtitle="No batch correction"),
+    ggmdsbatch(mds.bc$points) +
+        labs(title="limma voom Principal Coordinates 1 & 2", 
+             subtitle="After naive batch subtraction"),
+    ggmdsbatch(mds.cb$points) +
+        ggtitle("limma voom Principal Coordinates 1 & 2", 
+             subtitle="After ComBat batch correction"),
+    ggmdsbatch(mds$points, dims=2:3) +
+        ggtitle("limma voom Principal Coordinates 2 & 3", 
+             subtitle="No batch correction"),
+    ggmdsbatch(mds.bc$points, dims=2:3) +
+        ggtitle("limma voom Principal Coordinates 2 & 3", 
+             subtitle="After naive batch subtraction"),
+    ggmdsbatch(mds.cb$points, dims=2:3) +
+        ggtitle("limma voom Principal Coordinates 2 & 3", 
+             subtitle="After ComBat batch correction"))
+ggprint(p)
+```
+
+```{r batch_correction_mds_plot_pdf, fig.height=8, fig.width=8, cache=FALSE, include=FALSE}
+ggprint(p, device=cairo_pdf(file.path(plotdir, "rnaseq-MDSPlots-BatchCorrect.pdf"), width=12, height=12, onefile = TRUE))
+```
+
+Choosing ComBat as the best-looking batch correction, we make more MDS plots for this data, this time plotting the first 5 PCs and adding the experimental information to the plot as colors and shapes.
+
+```{r mds_plot, fig.height=8, fig.width=8}
+xlims <- range(unlist(mds.cb$points[c("Dim1", "Dim2")]))
+ylims <- range(unlist(mds.cb$points[c("Dim2", "Dim3")]))
+pbase <- ggplot(mds.cb$points) +
+    aes(x=Dim1, y=Dim2, color=batch, fill=time_point, shape=cell_type, linetype=donor_id, group=cell_type:donor_id) +
+    geom_encircle(aes(group=time_point:cell_type, color=NULL), s_shape=0.75, expand=0.05, color=NA, alpha=0.2) +
+    geom_path(color=hcl(c=0, l=45), aes(color=NULL)) +
+    geom_point(size=4) +
+    scale_shape_manual(values=c(Naive=21, Memory=24)) +
+    scale_color_manual(values=col2hcl(c(B1="green", B2="magenta"), l=80)) +
+    scale_fill_hue(l=55) +
+    scale_linetype_manual(values=c("solid", "dashed", "dotdash", "twodash")) +
+    guides(colour = guide_legend(override.aes = list(shape = 21)),
+           fill = guide_legend(override.aes = list(shape = 21)),
+           shape = guide_legend(override.aes = list(color=hcl(c=0, l=80), fill=hcl(c=0, l=55)))) +
+    labs(title="limma voom Principal Coordinates 1 & 2",
+         subtitle=" (after ComBat batch correction)") +
+    coord_equal(xlim=xlims, ylim=ylims)
+p <- list(PC12=pbase,
+          PC23=pbase +
+              aes(x=Dim2, y=Dim3) +
+              labs(title="limma voom Principal Coordinates 2 & 3"),
+          PC34=pbase +
+              aes(x=Dim3, y=Dim4) +
+              labs(title="limma voom Principal Coordinates 3 & 4"),
+          PC45=pbase +
+              aes(x=Dim4, y=Dim5) +
+              labs(title="limma voom Principal Coordinates 4 & 5"))
+ggprint(p)
+```
+
+```{r mds_plot_pdf, fig.height=8, fig.width=8, cache=FALSE, include=FALSE}
+ggprint(p, device=cairo_pdf(file.path(plotdir, "rnaseq-MDSPlots.pdf"), onefile = TRUE))
+```
