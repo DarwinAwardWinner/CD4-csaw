@@ -279,6 +279,20 @@ def pick_top_peaks(infile, outfile, by='score', ascending=False, number=150000, 
     peaks.sort_values(by=by, axis=0, ascending=ascending, inplace=True, *args, **kwargs)
     write_narrowpeak(peaks.head(number), outfile)
 
+def dict_to_R_named_list(d):
+    return r['list'](**d)
+
+def rmd_render(input, output_file, output_format=None, **kwargs):
+    if output_format is None:
+        output_format = os.path.splitext(outfile)[1] + '_document'
+    arg_converters = {
+        'params': dict_to_R_named_list,
+        'output_options': dict_to_R_named_list,
+    }
+    for (k, convfun) in arg_converters.items():
+        if k in kwargs:
+            kwargs[k] = convfun(kwargs[k])
+    return r('rmarkdown::render')(input=input, output_file=output_file, output_format=output_format, **kwargs)
 
 # Run a separate Snakemake workflow (if needed) to fetch the sample
 # metadata, which must be avilable before evaluating the rules below.
@@ -373,12 +387,14 @@ subworkflow hg38_ref:
 rule all:
     '''This rule aggregates all the final outputs of the pipeline.'''
     input:
-        rnaseq_counts=[
-            'saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_ensembl.85.RDS',
-            'saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_knownGene.RDS',
-            'saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_ensembl.85.RDS',
-            'saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_knownGene.RDS',
-        ],
+        rnaseq_counts_eda=expand(
+            'reports/RNA-seq/{dataset}-exploration.html',
+            dataset=[
+                'star_hg38.analysisSet_ensembl.85',
+                'star_hg38.analysisSet_knownGene',
+                'hisat2_grch38_snp_tran_ensembl.85',
+                'hisat2_grch38_snp_tran_knownGene',
+            ]),
         salmon_quant=expand(
             'salmon_quant/{genome_build}_{transcriptome}/{SRA_run}/{filename}',
             genome_build='hg38.analysisSet',
@@ -425,14 +441,16 @@ rule all:
                                    ' Selected Sample Peak-Overlap Normalized MA Plots',
                                    '-norm-eval'))
 
-rule all_rnaseq_counts:
+rule all_rnaseq_counts_eda:
     input:
-        rnaseq_counts=[
-            'saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_ensembl.85.RDS',
-            'saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_knownGene.RDS',
-            'saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_ensembl.85.RDS',
-            'saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_knownGene.RDS',
-        ],
+        rnaseq_counts_eda=expand(
+            'reports/RNA-seq/{dataset}-exploration.html',
+            dataset=[
+                'star_hg38.analysisSet_ensembl.85',
+                'star_hg38.analysisSet_knownGene',
+                'hisat2_grch38_snp_tran_ensembl.85',
+                'hisat2_grch38_snp_tran_knownGene',
+            ]),
 
 rule all_rnaseq_quant:
     input:
@@ -1783,3 +1801,23 @@ rule csaw_norm_eval:
     version: R_package_version('csaw')
     resources: mem_gb=20
     shell: 'scripts/csaw-norm-eval.R {wildcards.chip:q}'
+
+rule rnaseq_counts_explore:
+    '''Perform exploratory data analysis on RNA-seq dataset'''
+    input:
+        sexp='saved_data/SummarizedExperiment_rnaseq_{dataset}.RDS'
+    output:
+        plots=expand('plots/RNA-seq/{{dataset}}/{plotfile}',
+                     plotfile=['AveLogCPM-plots.pdf',
+                               'disp-plots.pdf', 'qc-weights.pdf',
+                               'rnaseq-ComBat-qc.pdf', 'rnaseq-MDSPlots.pdf',
+                               'rnaseq-MDSPlots-BatchCorrect.pdf',
+                               'weights-vs-covars.pdf']),
+        html='reports/RNA-seq/{dataset}-exploration.html',
+    version: R_package_version('rmarkdown')
+    threads: 8
+    run:
+        r['options'](**{'mc.cores': threads})
+        rmd_render(input='scripts/rnaseq-explore.Rmd',
+                   output_file=os.path.join(os.getcwd(), output.html), output_format='html_document',
+                   params={ 'basedir': os.getcwd(), 'dataset': wildcards.dataset, })

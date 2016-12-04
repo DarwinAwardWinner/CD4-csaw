@@ -32,3 +32,5 @@ temp-core-*
 /kallisto_quant
 /peak_calls
 /idr_analysis
+/reports/
+*_cache/
