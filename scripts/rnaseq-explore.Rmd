@@ -12,8 +12,9 @@ params:
 # Preliminary Setup
 
 ```{r setup, include=FALSE}
-    knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
-                      cache.extra = list(params=params))
+knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
+                      cache.extra = list(params=params),
+                      cache.path = paste0(file.path(params$basedir, "cache", "rnaseq-explore", params$dataset), .Platform$file.sep))
 ```
 
 First we load the necessary libraries.
@@ -75,7 +76,7 @@ ggprint <- function(plots, device=dev.cur(), closedev) {
       dev.set(orig.device)
     }
   })
-  assert_that(is(plots, "gg") || 
+  assertthat::assert_that(is(plots, "gg") || 
                 is.list(plots))
   if (is(plots, "gg")) {
       print(plots)
