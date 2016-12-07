@@ -34,9 +34,6 @@ match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg)
     choices[i]
 }
 
-known.gene.id.types <- c(entrez="ENTREZID", ensembl="ENSEMBL", unigene="UNIGENE", symbol="SYMBOL")
-gene.id.type.metavar <- sprintf("(%s)", str_c(names(known.gene.id.types), collapse="|"))
-
 get.options <- function(opts) {
 
     ## Do argument parsing early so the script exits quickly if arguments are invalid
@@ -53,9 +50,8 @@ get.options <- function(opts) {
                     help="Comma-separated list of bam file names expected to be used as input. This argument is optional, but if it is provided, it will be checked against the list of files determined from '--samplemeta-file' and '--bam-file-pattern', and an error will be raised if they don't match exactly."),
         make_option(c("-j", "--threads"), metavar="N", type="integer", default=num.cores,
                     help="Number of threads to use while counting reads"),
-        ## TODO: Allow different annotations, via txdb, or gff file
         make_option(c("-t", "--annotation-txdb"), metavar="PACKAGENAME", type="character",
-                    help="Name of TxDb package to use for gene annotation"),
+                    help="Name of TxDb package, or the name of a database file, to use for gene annotation"),
         make_option(c("-g", "--annotation-gff"), metavar="FILENAME", type="character",
                     help="File Name of GFF3 file to use for gene annotation."),
         make_option(c("-f", "--gff-exon-featuretype"), metavar="FEATURETYPE", type="character", default="exon",
@@ -98,12 +94,6 @@ epilogue = "")
         stop("Multiple annotations provided. Please provide only one annotation.")
     }
 
-    if ("txdb-geneid-type" %in% cmdopts) {
-        cmdopts["txdb-geneid-type"] %<>%
-            tolower %>%
-            match.arg(c(known.gene.id.types, "auto"),
-                      argname="txdb-geneid-type")
-    }
     cmdopts %>% setNames(str_replace_all(names(.), "-", "_"))
 }
 
