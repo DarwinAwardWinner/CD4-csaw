@@ -218,6 +218,7 @@ def list_salmon_output_files(outdir, alignment=False):
     file_list = [
         'aux_info/bootstrap/bootstraps.gz',
         'aux_info/bootstrap/names.tsv.gz',
+        'aux_info/eq_classes.txt',
         'aux_info/exp3_seq.gz',
         'aux_info/exp5_seq.gz',
         'aux_info/expected_bias.gz',
@@ -400,12 +401,13 @@ rule all:
             genome_build='hg38.analysisSet',
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run'],
-            filename=['cmd_info.json', 'abundance.h5']),
+            filename=['cmd_info.json', 'quant.sf', 'abundance.h5']),
         kallisto_quant=expand(
-            'kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}/run_info.json',
+            'kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}/{filename}',
             genome_build='hg38.analysisSet',
             transcriptome=['knownGene', 'ensembl.85'],
-            SRA_run=rnaseq_samplemeta['SRA_run']),
+            SRA_run=rnaseq_samplemeta['SRA_run'],
+            filename=['abundance.h5', 'abundance.tsv', 'run_info.json']),
         macs_predictd='results/macs_predictd/output.log',
         idr_peaks_epic=expand(
             'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
@@ -454,13 +456,18 @@ rule all_rnaseq_counts_eda:
 
 rule all_rnaseq_quant:
     input:
-        expand(
-            '{program}_quant/{genome_build}_{transcriptome}/{SRA_run}/abundance.h5',
-            program=['salmon', 'kallisto'],
+        salmon_quant=expand(
+            'salmon_quant/{genome_build}_{transcriptome}/{SRA_run}/{filename}',
             genome_build='hg38.analysisSet',
             transcriptome=['knownGene', 'ensembl.85'],
             SRA_run=rnaseq_samplemeta['SRA_run'],
-        )
+            filename=['cmd_info.json', 'quant.sf', 'abundance.h5']),
+        kallisto_quant=expand(
+            'kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}/{filename}',
+            genome_build='hg38.analysisSet',
+            transcriptome=['knownGene', 'ensembl.85'],
+            SRA_run=rnaseq_samplemeta['SRA_run'],
+            filename=['abundance.h5', 'abundance.tsv', 'run_info.json']),
 
 rule all_macs_callpeak:
     input:
@@ -915,6 +922,7 @@ rule quant_rnaseq_with_salmon:
       --threads {threads:q} \
       --libType {params.libtype:q} \
       --seqBias --gcBias --useVBOpt \
+      --dumpEq --dumpEqWeights \
       --geneMap {input.genemap_file:q} \
       --output {params.outdir:q} \
       --auxDir aux_info \
