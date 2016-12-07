@@ -1805,7 +1805,8 @@ rule csaw_norm_eval:
 rule rnaseq_counts_explore:
     '''Perform exploratory data analysis on RNA-seq dataset'''
     input:
-        sexp='saved_data/SummarizedExperiment_rnaseq_{dataset}.RDS'
+        rmd='scripts/rnaseq-explore.Rmd',
+        sexp='saved_data/SummarizedExperiment_rnaseq_{dataset}.RDS',
     output:
         plots=expand('plots/RNA-seq/{{dataset}}/{plotfile}',
                      plotfile=['AveLogCPM-plots.pdf',
