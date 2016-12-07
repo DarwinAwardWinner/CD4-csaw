@@ -417,7 +417,7 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
     if ("expected_bam_files" %in% names(cmdopts)) {
         tryCatch({
             assert_that(setequal(samplemeta$bam_file, cmdopts$expected_bam_files))
-            tsmsg("Got all expected bam files")
+            tsmsg("Sample metadata contains all expected bam files")
         }, error=function(...) {
             unexpected_existing <- setdiff(samplemeta$bam_file, cmdopts$expected_bam_files)
             expected_but_missing <- setdiff(cmdopts$expected_bam_files, samplemeta$bam_file)

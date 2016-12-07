@@ -47,9 +47,6 @@ get.options <- function(opts) {
                     help="Sample metadata column name that holds the sample IDs. These will be substituted into '--abundance-file-pattern' to determine the abundance file names."),
         make_option(c("-a", "--abundance-file-pattern"), metavar="PATTERN", type="character",
                     help="(REQUIRED) Format string to convert sample IDs into file paths to the abundance.h5 file for each sample. This should contain a '%s' wherever the sample ID should be substituted ('%s' can occur multiple times),. Example: 'kallisto_quant/Sample_%s/abundance.h5'"),
-        ## make_option(c("-t", "--quant-type"), metavar="TYPE", type="character",
-        ##             help=sprintf("(REQUIRED) Input file type, i.e. the quantification tool that was used to generate the input files. Supported types are: %s.",
-        ##                          deparse(setdiff(eval(formals(tximport::tximport)$type), "none")))),
         make_option(c("-l", "--aggregate-level"), metavar="LEVEL", type="character", default="auto",
                     help="Whether to save aggregated gene counts or transcript counts in the output file. By default, aggregated gene counts are saved if a gene annotation is provided, and transcript counts are saved otherwise. You can force one or the other by specifying 'gene' or 'transcript' for this option."),
         make_option(c("-o", "--output-file"), metavar="FILENAME.RDS", type="character",
@@ -58,20 +55,22 @@ get.options <- function(opts) {
                     help="Comma-separated list of file names expected to be used as input. This argument is optional, but if it is provided, it will be checked against the list of files determined from '--samplemeta-file' and '--abundance-file-pattern', and an error will be raised if they don't match exactly."),
         make_option(c("-j", "--threads"), metavar="N", type="integer", default=num.cores,
                     help="Number of threads to use"),
+        make_option(c("-m", "--genemap-file"), metavar="FILENAME", type="character",
+                    help="Genemap file in the Salmon simple gene map format (see 'salmon quant --help-reads')"),
         make_option(c("-d", "--gene-annotation-txdb"), metavar="PACKAGE_OR_FILE_NAME", type="character",
                     help="Name of TxDb package, or the name of a database file, to use for gene annotation"),
-        make_option(c("-g", "--gene-annotation-gff"), metavar="FILENAME", type="character",
-                    help="File Name of GFF3 file to use for gene annotation."),
-        make_option(c("-f", "--gff-transcript-featuretype"), metavar="FEATURETYPE", type="character", default="transcript",
-                    help="GFF feature type from which transcript metadata should be extracted. Can be a comma-separated list of multiple feature types."),
-        make_option(c("-i", "--gff-geneid-attr"), metavar="ATTRNAME", type="character", default="gene_id",
-                    help="GFF feature attribute to use as a feature's Gene ID."),
+        ## make_option(c("-g", "--gene-annotation-gff"), metavar="FILENAME", type="character",
+        ##             help="File Name of GFF3 file to use for gene annotation."),
+        ## make_option(c("-f", "--gff-transcript-featuretype"), metavar="FEATURETYPE", type="character", default="transcript",
+        ##             help="GFF feature type from which transcript metadata should be extracted. Can be a comma-separated list of multiple feature types."),
+        ## make_option(c("-i", "--gff-geneid-attr"), metavar="ATTRNAME", type="character", default="gene_id",
+        ##             help="GFF feature attribute to use as a feature's Gene ID."),
         make_option(c("-e", "--gff-gene-featuretype"), metavar="FEATURETYPE", type="character", default="gene",
                     help="GFF feature type from which gene metadata should be extracted. Can be a comma-separated list of multiple feature types."),
-        make_option(c("--additional-gene-info"), metavar="FILENAME", type="character",
-                    help="RDS/RData/xlsx/csv file containing a table of gene metadata. Row names (or the first column of the file if there are no row names) should be gene/feature IDs that match the ones used in the main annotation, and these should be unique. This can also be a GFF3 file where the metadata is in the attributes of elements of type specified by '--gff-gene-featuretype' ('gene' by default), where the 'ID' attribute specifies the gene ID. This option is ignored when not aggregating counts to the gene level."),
-        make_option(c("--additional-transcript-info"), metavar="FILENAME", type="character",
-                    help="RDS/RData/xlsx/csv file containing a table of transcript metadata. Row names (or the first column of the file if there are no row names) should be gene/feature IDs that match the ones used in the main annotation, and these should be unique. This can also be a GFF3 file where the metadata is in the attributes of elements of type specified by '--gff-gene-featuretype' ('gene' by default), where the 'ID' attribute specifies the gene ID."))
+        make_option(c("--gene-info"), metavar="FILENAME", type="character",
+                    help="RDS/RData/xlsx/csv file containing a table of gene metadata. Row names (or the first column of the file if there are no row names) should be gene/feature IDs that match the ones used in the main annotation, and these should be unique. This option is ignored when not aggregating counts to the gene level."),
+        make_option(c("--transcript-info"), metavar="FILENAME", type="character",
+                    help="RDS/RData/xlsx/csv file containing a table of transcript metadata. Row names (or the first column of the file if there are no row names) should be transcript IDs that match the ones used in the quantification files, and these should be unique. This option is ignored when aggregating counts to the gene level."))
     progname <- na.omit(c(get_Rscript_filename(), "convert-quant-to-sexp.R"))[1]
     parser <- OptionParser(
         usage="Usage: %prog [options] -s SAMPLEMETA.RDS -p PATTERN -o SUMEXP.RDS [ -t TXDB.PACKAGE.NAME | -g ANNOTATION.GFF3 | -r ANNOTATION.RDS ]",
@@ -94,10 +93,10 @@ epilogue = "")
     ## Ensure that no more than one annotation was provided, and that
     ## exactly one annotation was provided if gene-level aggregation
     ## was requested.
-    annot.opts <- c("gene-annotation-txdb", "gene-annotation-gff")
+    annot.opts <- c("gene-annotation-txdb", "genemap-file")
     provided.annot.opts <- intersect(annot.opts, names(cmdopts))
     if (length(provided.annot.opts) > 1) {
-        stop("Multiple gene annotations were provided. Please provide only one. Additional gene metadata can be provided using the '--additional-gene-info' option.")
+        stop("Multiple gene annotations were provided. Please provide only one.")
     }
     quant.level.options <- c("auto", "gene", "transcript", "tx")
     cmdopts[['aggregate-level']] %<>% tolower %>% match.arg(choices=quant.level.options, argname="--aggregate-level", ignore.case=TRUE)
@@ -105,7 +104,7 @@ epilogue = "")
         cmdopts[['aggregate-level']] = ifelse(length(provided.annot.opts) == 1, "gene", "transcript")
     }
     ## "tx" is an undocumented shortcut for "transcript", for
-    ## consistency with terminology of TxDb, etc.
+    ## consistency with tximport, TxDb, etc.
     if (cmdopts[['aggregate-level']] == "tx") {
         cmdopts[['aggregate-level']] <- "transcript"
     }
@@ -131,7 +130,7 @@ library(stringr)
 
 library(annotate)
 library(GenomicRanges)
-library(Rsubread)
+library(rtracklayer)
 library(S4Vectors)
 library(SummarizedExperiment)
 library(sleuth)
@@ -302,12 +301,6 @@ tximport_read_kallisto_h5 <- function(file, ...) {
         rename(eff_length=eff_len)
 }
 
-## x <- tximport_read_kallisto_h5("/home/ryan/Projects/CD4-csaw/kallisto_quant/hg38.analysisSet_ensembl.85/SRR2454050/abundance.h5")
-
-## x <- tximport(c("/home/ryan/Projects/CD4-csaw/kallisto_quant/hg38.analysisSet_ensembl.85/SRR2454050/abundance.h5",
-##                 "/home/ryan/Projects/CD4-csaw/salmon_quant/hg38.analysisSet_ensembl.85/SRR2454050/abundance.h5"), type="kallisto",
-##               txOut=TRUE, reader=tximport_read_kallisto_h5)
-
 ## Read a single R object from an RDA file. If run on an RDA
 ## file containing more than one object, throws an error.
 read.single.object.from.rda <- function(filename) {
@@ -471,6 +464,20 @@ get.txdb <- function(txdbname) {
     })
 }
 
+get.tx2gene.from.txdb <- function(txdb) {
+    k <- keys(txdb, keytype = "GENEID")
+    suppressMessages(AnnotationDbi::select(txdb, keys = k, keytype = "GENEID", columns = "TXNAME")) %>%
+        .[c("TXNAME", "GENEID")]
+}
+
+read.tx2gene.from.genemap <- function(fname) {
+    df <- read.table.general(fname)
+    df %<>% .[1:2]
+    df[] %<>% lapply(as.character)
+    names(df) <- c("TXNAME", "GENEID")
+    df
+}
+
 read.annotation.from.gff <- function(filename, format="GFF3", ...) {
     gff <- NULL
     ## Allow the file to be an RDS file containing the GRanges
@@ -497,8 +504,6 @@ read.annotation.from.rdata <- function(filename) {
     read.RDS.or.RDA(filename, "GRangesList")
 }
 
-
-
 read.additional.gene.info <- function(filename, gff_format="GFF3", geneFeatureType="gene", ...) {
     df <- tryCatch({
         gff <- tryCatch({
@@ -507,8 +512,11 @@ read.additional.gene.info <- function(filename, gff_format="GFF3", geneFeatureTy
             import(filename, format=gff_format)
         })
         assert_that(is(gff, "GRanges"))
-        gff %>% .[.$type %in% geneFeatureType] %>%
-            mcols %>% cleanup.mcols(mcols_df=.)
+        if (!is.null(geneFeatureType)) {
+            gff %<>% .[.$type %in% geneFeatureType]
+        }
+        gff %<>% .[!is.na(.$ID) & !duplicated(.$ID)]
+        gff %>% mcols %>% cleanup.mcols(mcols_df=.)
     }, error=function(...) {
         tab <- read.table.general(filename, ..., dataframe.class="DataFrame")
         ## Nonexistent or automatic row names
@@ -589,7 +597,7 @@ sprintf.single.value <- function(fmt, value) {
     if ("expected_abundance_files" %in% names(cmdopts)) {
         tryCatch({
             assert_that(setequal(samplemeta$path, cmdopts$expected_abundance_files))
-            tsmsg("Got all expected abundance files")
+            tsmsg("Sample metadata contains all expected abundance files")
         }, error=function(...) {
             unexpected_existing <- setdiff(samplemeta$path, cmdopts$expected_abundance_files)
             expected_but_missing <- setdiff(cmdopts$expected_abundance_files, samplemeta$path)
@@ -605,18 +613,54 @@ sprintf.single.value <- function(fmt, value) {
 
     assert_that(all(file.exists(samplemeta$path)))
 
-    ## TODO annot
-    tsmsg("TODO ANNOT")
     annot <- NULL
+    annot <- NULL
+    tx2gene <- NULL
+    if (cmdopts$aggregate_level == "gene") {
+        if ("annotation_txdb" %in% names(cmdopts)) {
+            txdb <- get.txdb(cmdopts$annotation_txdb)
+            tx2gene <- get.tx2gene.from.txdb(txdb)
+        } else if ("genemap_file" %in% names(cmdopts)) {
+            tx2gene <- read.tx2gene.from.genemap(cmdopts$genemap_file)
+        } else {
+            stop("Need a gene annotation to aggregate at the gene level.")
+        }
+        if ("gene_info" %in% names(cmdopts)) {
+            tsmsg("Reading gene annotations")
+            annot <- read.table.general(cmdopts$gene_info, dataframe.class="DataFrame")
+            ## Nonexistent or automatic row names
+            if (.row_names_info(annot) <= 0) {
+                row.names(annot) <- annot[[1]]
+            }
+        }
+    } else {
+        if ("transcript_info" %in% names(cmdopts)) {
+            tsmsg("Reading transcript annotations")
+            annot <- read.table.general(cmdopts$transcript_info, dataframe.class="DataFrame")
+            ## Nonexistent or automatic row names
+            if (.row_names_info(annot) <= 0) {
+                row.names(annot) <- annot[[1]]
+            }
+        }
+    }
 
     tsmsg("Reading quantification files")
     txi <- BPtximport(samplemeta$path, type="kallisto", txOut=TRUE, reader=tximport_read_kallisto_h5)
+    if (cmdopts$aggregate_level == "gene") {
+        txi %<>% summarizeToGene(tx2gene)
+    }
 
     txi_assayNames <- c("counts", "abundance", "length")
+    txi_featureNames <- rownames(txi[[txi_assayNames[1]]])
+    if (!is.null(annot)) {
+        annot %<>% .[txi_featureNames,] %>% set_rownames(txi_featureNames)
+    }
+
     sexp <- SummarizedExperiment(
         assays=List(txi[txi_assayNames]),
         colData=as(samplemeta, "DataFrame"),
-        rowData=annot,
+        rowData=as(annot, "DataFrame"),
+        ## Put non-assay elements of txi into the metadata
         metadata=SimpleList(txi[!names(txi) %in% txi_assayNames]))
 
     tsmsg("Saving SummarizedExperiment")
