@@ -396,18 +396,11 @@ rule all:
                 'hisat2_grch38_snp_tran_ensembl.85',
                 'hisat2_grch38_snp_tran_knownGene',
             ]),
-        salmon_quant=expand(
-            'salmon_quant/{genome_build}_{transcriptome}/{SRA_run}/{filename}',
-            genome_build='hg38.analysisSet',
-            transcriptome=['knownGene', 'ensembl.85'],
-            SRA_run=rnaseq_samplemeta['SRA_run'],
-            filename=['cmd_info.json', 'quant.sf', 'abundance.h5']),
-        kallisto_quant=expand(
-            'kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}/{filename}',
-            genome_build='hg38.analysisSet',
-            transcriptome=['knownGene', 'ensembl.85'],
-            SRA_run=rnaseq_samplemeta['SRA_run'],
-            filename=['abundance.h5', 'abundance.tsv', 'run_info.json']),
+        rnaseq_quant=expand(
+            'saved_data/SummarizedExperiment_rnaseq_{quantifier}_{genome}_{transcriptome}.RDS',
+            quantifier=['kallisto','salmon'],
+            genome="hg38.analysisSet",
+            transcriptome=['ensembl.85','knownGene']),
         macs_predictd='results/macs_predictd/output.log',
         idr_peaks_epic=expand(
             'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
@@ -456,18 +449,10 @@ rule all_rnaseq_counts_eda:
 
 rule all_rnaseq_quant:
     input:
-        salmon_quant=expand(
-            'salmon_quant/{genome_build}_{transcriptome}/{SRA_run}/{filename}',
-            genome_build='hg38.analysisSet',
-            transcriptome=['knownGene', 'ensembl.85'],
-            SRA_run=rnaseq_samplemeta['SRA_run'],
-            filename=['cmd_info.json', 'quant.sf', 'abundance.h5']),
-        kallisto_quant=expand(
-            'kallisto_quant/{genome_build}_{transcriptome}/{SRA_run}/{filename}',
-            genome_build='hg38.analysisSet',
-            transcriptome=['knownGene', 'ensembl.85'],
-            SRA_run=rnaseq_samplemeta['SRA_run'],
-            filename=['abundance.h5', 'abundance.tsv', 'run_info.json']),
+        sexp=expand('saved_data/SummarizedExperiment_rnaseq_{quantifier}_{genome}_{transcriptome}.RDS',
+                    quantifier=['kallisto','salmon'],
+                    genome="hg38.analysisSet",
+                    transcriptome=['ensembl.85','knownGene']),
 
 rule all_macs_callpeak:
     input:
@@ -1830,3 +1815,62 @@ rule rnaseq_counts_explore:
         rmd_render(input='scripts/rnaseq-explore.Rmd',
                    output_file=os.path.join(os.getcwd(), output.html), output_format='html_document',
                    params={ 'basedir': os.getcwd(), 'dataset': wildcards.dataset, })
+
+rule convert_abundance_h5_to_sexp_ensembl:
+    '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
+
+    This uses the tximport and sleuth R packages.'''
+    input:
+        samplemeta='saved_data/samplemeta-RNASeq.RDS',
+        txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v{release}.sqlite3'),
+        genemeta=hg38_ref('genemeta.ensembl.{release}.RDS'),
+        samples=expand('{{quantifier}}_quant/hg38.analysisSet_ensembl.{{release}}/{sample}/abundance.h5',
+                       sample=rnaseq_samplemeta['SRA_run']),
+    output:
+        sexp='saved_data/SummarizedExperiment_rnaseq_{quantifier}_hg38.analysisSet_ensembl.{release,\\d+}.RDS'
+    version: (R_package_version('tximport'), R_package_version('sleuth'))
+    threads: 8
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
+    run:
+        cmd = [
+            'scripts/convert-quant-to-sexp.R',
+            '--samplemeta-file', input.samplemeta,
+            '--sample-id-column', 'SRA_run',
+            '--abundance-file-pattern', expand('{quantifier}_quant/hg38.analysisSet_ensembl.{release}/%s/abundance.h5', **wildcards),
+            '--output-file', output.sexp,
+            '--expected-abundance-files', ','.join(input.samples),
+            '--threads', str(threads),
+            '--aggregate-level', 'gene',
+            '--annotation-txdb', input.txdb,
+            '--gene-info', input.genemeta,
+        ]
+        check_call(cmd)
+
+rule convert_abundance_h5_to_sexp_knownGene:
+    '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
+
+    This uses the tximport and sleuth R packages.'''
+    input:
+        samplemeta='saved_data/samplemeta-RNASeq.RDS',
+        genemeta=hg38_ref('genemeta.org.Hs.eg.db.RDS'),
+        samples=expand('{{quantifier}}_quant/hg38.analysisSet_knownGene/{sample}/abundance.h5',
+                       sample=rnaseq_samplemeta['SRA_run']),
+    output:
+        sexp='saved_data/SummarizedExperiment_rnaseq_{quantifier}_hg38.analysisSet_knownGene.RDS',
+    version: (R_package_version('tximport'), R_package_version('sleuth'))
+    threads: 8
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
+    run:
+        cmd = [
+            'scripts/convert-quant-to-sexp.R',
+            '--samplemeta-file', input.samplemeta,
+            '--sample-id-column', 'SRA_run',
+            '--abundance-file-pattern', expand('{quantifier}_quant/hg38.analysisSet_knownGene/%s/abundance.h5', **wildcards),
+            '--output-file', output.sexp,
+            '--expected-abundance-files', ','.join(input.samples),
+            '--threads', str(threads),
+            '--aggregate-level', 'gene',
+            '--annotation-txdb', 'TxDb.Hsapiens.UCSC.hg38.knownGene',
+            '--gene-info', input.genemeta,
+        ]
+        check_call(cmd)

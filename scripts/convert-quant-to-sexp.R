@@ -2,6 +2,9 @@
 
 library(getopt)
 library(optparse)
+library(magrittr)
+library(assertthat)
+
 num.cores <- 1
 ## Don't default to more than 4 cores
 try({library(parallel); num.cores <- min(4, detectCores()); }, silent=TRUE)
@@ -57,23 +60,15 @@ get.options <- function(opts) {
                     help="Number of threads to use"),
         make_option(c("-m", "--genemap-file"), metavar="FILENAME", type="character",
                     help="Genemap file in the Salmon simple gene map format (see 'salmon quant --help-reads')"),
-        make_option(c("-d", "--gene-annotation-txdb"), metavar="PACKAGE_OR_FILE_NAME", type="character",
+        make_option(c("-d", "--annotation-txdb"), metavar="PACKAGE_OR_FILE_NAME", type="character",
                     help="Name of TxDb package, or the name of a database file, to use for gene annotation"),
-        ## make_option(c("-g", "--gene-annotation-gff"), metavar="FILENAME", type="character",
-        ##             help="File Name of GFF3 file to use for gene annotation."),
-        ## make_option(c("-f", "--gff-transcript-featuretype"), metavar="FEATURETYPE", type="character", default="transcript",
-        ##             help="GFF feature type from which transcript metadata should be extracted. Can be a comma-separated list of multiple feature types."),
-        ## make_option(c("-i", "--gff-geneid-attr"), metavar="ATTRNAME", type="character", default="gene_id",
-        ##             help="GFF feature attribute to use as a feature's Gene ID."),
-        make_option(c("-e", "--gff-gene-featuretype"), metavar="FEATURETYPE", type="character", default="gene",
-                    help="GFF feature type from which gene metadata should be extracted. Can be a comma-separated list of multiple feature types."),
-        make_option(c("--gene-info"), metavar="FILENAME", type="character",
+        make_option(c("-g", "--gene-info"), metavar="FILENAME", type="character",
                     help="RDS/RData/xlsx/csv file containing a table of gene metadata. Row names (or the first column of the file if there are no row names) should be gene/feature IDs that match the ones used in the main annotation, and these should be unique. This option is ignored when not aggregating counts to the gene level."),
         make_option(c("--transcript-info"), metavar="FILENAME", type="character",
                     help="RDS/RData/xlsx/csv file containing a table of transcript metadata. Row names (or the first column of the file if there are no row names) should be transcript IDs that match the ones used in the quantification files, and these should be unique. This option is ignored when aggregating counts to the gene level."))
     progname <- na.omit(c(get_Rscript_filename(), "convert-quant-to-sexp.R"))[1]
     parser <- OptionParser(
-        usage="Usage: %prog [options] -s SAMPLEMETA.RDS -p PATTERN -o SUMEXP.RDS [ -t TXDB.PACKAGE.NAME | -g ANNOTATION.GFF3 | -r ANNOTATION.RDS ]",
+        usage="Usage: %prog [ -d TXDB | -m GENEMAP ] [ -g GENEINFO | -t TXINFO ] -s SAMPLEMETA.RDS -a PATTERN -l (gene|transcript) -o SUMEXP.RDS",
         description="Collect RNA-seq quantification results into a SummarizedExperiment object.
 
 TODO UPDATE Counts are stored along with the sample and gene metadata in a SummarizedExperiment object. Note that the '-s', '-a', '-t', and '-o' arguments are all required, since they specify the essential input and output files and formats.",
@@ -93,7 +88,7 @@ epilogue = "")
     ## Ensure that no more than one annotation was provided, and that
     ## exactly one annotation was provided if gene-level aggregation
     ## was requested.
-    annot.opts <- c("gene-annotation-txdb", "genemap-file")
+    annot.opts <- c("annotation-txdb", "genemap-file")
     provided.annot.opts <- intersect(annot.opts, names(cmdopts))
     if (length(provided.annot.opts) > 1) {
         stop("Multiple gene annotations were provided. Please provide only one.")
@@ -557,13 +552,16 @@ sprintf.single.value <- function(fmt, value) {
 
 {
 
-    ## cmdopts <- get.options(commandArgs(TRUE))
-    myargs <- c("-s", "./saved_data/samplemeta-RNASeq.RDS",
-                "-c", "SRA_run",
-                "-a", "salmon_quant/hg38.analysisSet_ensembl.85/%s/abundance.h5",
-                "-o", "temp.rds",
-                "-j", "8")
-    cmdopts <- get.options(myargs)
+    cmdopts <- get.options(commandArgs(TRUE))
+    ## myargs <- c("-s", "./saved_data/samplemeta-RNASeq.RDS",
+    ##             "-c", "SRA_run",
+    ##             "-a", "salmon_quant/hg38.analysisSet_ensembl.85/%s/abundance.h5",
+    ##             "-o", "temp.rds",
+    ##             "-j", "2",
+    ##             "-d", "TxDb.Hsapiens.UCSC.hg38.knownGene",
+    ##             "-l", "gene",
+    ##             "-g", "~/references/hg38/genemeta.org.Hs.eg.db.RDS")
+    ## cmdopts <- get.options(myargs)
     cmdopts$help <- NULL
 
     cmdopts$threads %<>% round %>% max(1)
