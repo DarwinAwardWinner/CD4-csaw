@@ -34,3 +34,4 @@ temp-core-*
 /idr_analysis
 /reports/
 *_cache/
+/cache/
