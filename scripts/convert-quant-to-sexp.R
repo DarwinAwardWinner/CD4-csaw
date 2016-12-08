@@ -225,10 +225,11 @@ BPtximport <- function (files, type = c("none", "kallisto", "salmon", "sailfish"
                 stopifnot(all(c(lengthCol, abundanceCol) %in%
                               names(raw)))
             }
-            data.frame(txId=raw[[txIdCol]],
+            data.frame(txId=as.character(raw[[txIdCol]]),
                        abundance=raw[[abundanceCol]],
                        counts=raw[[countsCol]],
-                       length=raw[[lengthCol]])
+                       length=raw[[lengthCol]],
+                       stringsAsFactors=FALSE)
         }
 
         ## Read all the samples (re-using the raw read of the first

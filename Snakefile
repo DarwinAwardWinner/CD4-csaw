@@ -1816,7 +1816,7 @@ rule rnaseq_counts_explore:
                    output_file=os.path.join(os.getcwd(), output.html), output_format='html_document',
                    params={ 'basedir': os.getcwd(), 'dataset': wildcards.dataset, })
 
-rule convert_abundance_h5_to_sexp_ensembl:
+rule collect_abundance_ensembl:
     '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
 
     This uses the tximport and sleuth R packages.'''
@@ -1836,7 +1836,7 @@ rule convert_abundance_h5_to_sexp_ensembl:
             'scripts/convert-quant-to-sexp.R',
             '--samplemeta-file', input.samplemeta,
             '--sample-id-column', 'SRA_run',
-            '--abundance-file-pattern', expand('{quantifier}_quant/hg38.analysisSet_ensembl.{release}/%s/abundance.h5', **wildcards),
+            '--abundance-file-pattern', *expand('{quantifier}_quant/hg38.analysisSet_ensembl.{release}/%s/abundance.h5', **wildcards),
             '--output-file', output.sexp,
             '--expected-abundance-files', ','.join(input.samples),
             '--threads', str(threads),
@@ -1846,7 +1846,7 @@ rule convert_abundance_h5_to_sexp_ensembl:
         ]
         check_call(cmd)
 
-rule convert_abundance_h5_to_sexp_knownGene:
+rule collect_abundance_knownGene:
     '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
 
     This uses the tximport and sleuth R packages.'''
@@ -1865,7 +1865,7 @@ rule convert_abundance_h5_to_sexp_knownGene:
             'scripts/convert-quant-to-sexp.R',
             '--samplemeta-file', input.samplemeta,
             '--sample-id-column', 'SRA_run',
-            '--abundance-file-pattern', expand('{quantifier}_quant/hg38.analysisSet_knownGene/%s/abundance.h5', **wildcards),
+            '--abundance-file-pattern', *expand('{quantifier}_quant/hg38.analysisSet_knownGene/%s/abundance.h5', **wildcards),
             '--output-file', output.sexp,
             '--expected-abundance-files', ','.join(input.samples),
             '--threads', str(threads),
