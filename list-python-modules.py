@@ -6,8 +6,8 @@ import sys
 
 from tempfile import TemporaryFile
 from subprocess import check_output, Popen, PIPE
-
-python_files = check_output(''' find . -maxdepth 2 -name '*.py' ''', shell=True)\
+from importlib import import_module
+python_files = check_output(''' find . -maxdepth 2 -name '*.py' -not -name list-python-modules.py ''', shell=True)\
                .decode(sys.getdefaultencoding()).strip().split('\n')
 snakefiles = check_output(''' find . -maxdepth 2 -name '*Snakefile' ''', shell=True)\
                .decode(sys.getdefaultencoding()).strip().split('\n')
@@ -25,4 +25,13 @@ with TemporaryFile(mode='w+t') as tempf:
     fulltext = tempf.read()
 instructions = filter(lambda x: x.opname == 'IMPORT_NAME', dis.get_instructions(fulltext))
 imports = { x.argval for x in instructions }
-print('\n'.join(sorted(imports)))
+# print('\n'.join(sorted(imports)))
+
+import_files = {}
+for libname in imports:
+    lib = import_module(libname)
+    try:
+        import_files[libname] = lib.__file__
+    except AttributeError:
+        pass
+print('\n'.join(''.join([k, ": ", repr(v)]) for k,v in import_files.items()))

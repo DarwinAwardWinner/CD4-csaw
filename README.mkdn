@@ -57,20 +57,53 @@ before I learned the value of reproducible research.)
 * Document dependencies fully, including all Python & R packages. Also
   provide links to dependencies. Provide install script for packages.
 
-## Dependencies (incomplete)
+## Dependencies
 
-* R/Bioconductor + many packages
-* Python + many packages
-* Snakemake for running the workflow
-* STAR, HISAT2, and Bowtie2 aligners
-* Salmon & Kallisto
-* Sleuth R package
-* Picard tools
-* SRA toolkit for extracting reads from SRA files
-* UCSC command-line tools (e.g. liftOver)
-* Bedtools
-* Macs2 and Epic peak callers
-* IDR python script
+* [ascp](http://downloads.asperasoft.com/en/downloads/50) Aspera
+  download client
+* [Bedtools](http://bedtools.readthedocs.io/en/latest/)
+* [Bowtie2](http://bowtie-bio.sourceforge.net/bowtie2/index.shtml)
+  aligner
+* [Cufflinks](http://cole-trapnell-lab.github.io/cufflinks/)
+* [Epic](https://github.com/endrebak/epic) peak caller
+* [fastq-tools](http://homes.cs.washington.edu/~dcjones/fastq-tools/)
+* [HISAT2](https://ccb.jhu.edu/software/hisat2/index.shtml) aligner
+* [IDR python script](https://github.com/nboley/idr)
+* [Kallisto](https://pachterlab.github.io/kallisto/about) RNA-seq
+  quantifier
+* [MACS2](https://github.com/taoliu/MACS) peak caller
+* [Picard tools](https://broadinstitute.github.io/picard/) for various
+  file manipulation utilities
+* [Salmon](http://salmon.readthedocs.io/en/latest/) RNA-seq quantifier
+  (devel version 0.7.3)
+* [Samtools](http://www.htslib.org/)
+* [Snakemake](https://bitbucket.org/snakemake/snakemake/wiki/Home) for running the workflow
+* [SRA toolkit](https://github.com/ncbi/sra-tools) for extracting
+  reads from SRA files
+* [STAR](https://github.com/alexdobin/STAR) aligner
+* [UCSC command-line tools](http://hgdownload.cse.ucsc.edu/downloads.html#source_downloads)
+  (e.g. liftOver)
+
+* [R](https://www.r-project.org/),
+  [Bioconductor](http://bioconductor.org/), and the following R
+  packages:
+    * From [CRAN](http://cran.r-project.org/): assertthat, doParallel,
+      dplyr, future, getopt, GGally, ggforce, ggfortify, ggplot2, ks,
+      lazyeval, lubridate, magrittr, MASS, Matrix, openxlsx, optparse,
+      parallel, purrr, RColorBrewer, readr, reshape2, rex, scales,
+      stringi, stringr
+    * From [Bioconductor](http://bioconductor.org/): annotate,
+      Biobase, BiocParallel, BSgenome.Hsapiens.UCSC.hg19,
+      BSgenome.Hsapiens.UCSC.hg38, ChIPQC, csaw, edgeR,
+      GenomicFeatures, GenomicRanges, GEOquery, limma, org.Hs.eg.db,
+      Rsamtools, Rsubread, rtracklayer, S4Vectors, SRAdb,
+      SummarizedExperiment, TxDb.Hsapiens.UCSC.hg19.knownGene,
+      tximport
+    * Installed manually:
+      [sleuth](http://pachterlab.github.io/sleuth/about)
+* [Python 3](https://www.python.org/) and the following Python
+  packages: biopython, atomicwrites, numpy, pandas, plac, pysam, rpy2,
+  snakemake
 
 # Old workflow
 

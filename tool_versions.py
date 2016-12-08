@@ -83,7 +83,6 @@ SOFTWARE_VERSIONS['SALMON'] = get_command_version_string('salmon --version', 've
 SOFTWARE_VERSIONS['SAMTOOLS'] = get_command_version_string('samtools', 'Version:\\s+(?P<version>\\S+)', prefix='samtools ')
 SOFTWARE_VERSIONS['SRATOOLKIT'] = get_command_version_string('fastq-dump --version', ':\\s+(?P<version>\\S+)', prefix='sratoolkit ')
 SOFTWARE_VERSIONS['STAR'] = get_command_version_string('STAR --version', 'STAR_(?P<version>\\S+)', prefix='STAR ')
-SOFTWARE_VERSIONS['TOPHAT2'] = get_command_version_string('tophat --version', 'TopHat v(?P<version>\\S+)', prefix='tophat ')
 
 # R, BioC, & packages
 try:
