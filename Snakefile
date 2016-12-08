@@ -388,19 +388,13 @@ subworkflow hg38_ref:
 rule all:
     '''This rule aggregates all the final outputs of the pipeline.'''
     input:
-        rnaseq_counts_eda=expand(
-            'reports/RNA-seq/{dataset}-exploration.html',
-            dataset=[
-                'star_hg38.analysisSet_ensembl.85',
-                'star_hg38.analysisSet_knownGene',
-                'hisat2_grch38_snp_tran_ensembl.85',
-                'hisat2_grch38_snp_tran_knownGene',
-            ]),
-        rnaseq_quant=expand(
-            'saved_data/SummarizedExperiment_rnaseq_{quantifier}_{genome}_{transcriptome}.RDS',
-            quantifier=['kallisto','salmon'],
-            genome="hg38.analysisSet",
-            transcriptome=['ensembl.85','knownGene']),
+        rnaseq_eda=expand(
+            'reports/RNA-seq/{tool_and_genome}_{transcriptome}-exploration.html',
+            tool_and_genome=[
+                'star_hg38.analysisSet', 'hisat2_grch38_snp_tran',
+                'salmon_hg38.analysisSet', 'kallisto_hg38.analysisSet',
+            ],
+            transcriptome=['ensembl.85', 'knownGene']),
         macs_predictd='results/macs_predictd/output.log',
         idr_peaks_epic=expand(
             'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
@@ -436,8 +430,15 @@ rule all:
                                    ' Selected Sample Peak-Overlap Normalized MA Plots',
                                    '-norm-eval'))
 
-rule all_rnaseq_counts_eda:
+rule all_rnaseq_eda:
     input:
+        rnaseq_eda=expand(
+            'reports/RNA-seq/{tool_and_genome}_{transcriptome}-exploration.html',
+            tool_and_genome=[
+                'star_hg38.analysisSet', 'hisat2_grch38_snp_tran',
+                'salmon_hg38.analysisSet', 'kallisto_hg38.analysisSet',
+            ],
+            transcriptome=['ensembl.85', 'knownGene']),
         rnaseq_counts_eda=expand(
             'reports/RNA-seq/{dataset}-exploration.html',
             dataset=[
@@ -446,6 +447,12 @@ rule all_rnaseq_counts_eda:
                 'hisat2_grch38_snp_tran_ensembl.85',
                 'hisat2_grch38_snp_tran_knownGene',
             ]),
+
+rule all_rnaseq_counts:
+    input:
+        sexp=expand('saved_data/SummarizedExperiment_rnaseq_{aligner_and_genome}_{transcriptome}.RDS',
+                    aligner_and_genome=['star_hg38.analysisSet', 'hisat2_grch38_snp_tran'],
+                    transcriptome=['ensembl.85','knownGene']),
 
 rule all_rnaseq_quant:
     input:
@@ -527,6 +534,20 @@ rule all_idr_filtered_peaks:
                     genome_build='hg38.analysisSet',
                     chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
                     condition = list(chipseq_samplemeta_noinput.apply(lambda x: '%s.%s' % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL'])
+
+rule all_csaw_qc:
+    input:
+        ccf_plots=expand('plots/csaw/CCF-plots{suffix}.pdf',
+                         suffix=('', '-relative', '-noBL', '-relative-noBL')),
+        site_profile_plot='plots/csaw/site-profile-plots.pdf',
+        csaw_qc_plots=expand('plots/csaw/{chip}{plot}.pdf',
+                             chip=set(chipseq_samplemeta_noinput['chip_antibody']),
+                             plot=('-window-abundance-vs-peaks', '-normfactors',
+                                   ' Selected Sample MA Plots',
+                                   ' Selected Sample 10KB Bin MA Plots',
+                                   ' Selected Sample Peak-Overlap MA Plots',
+                                   ' Selected Sample Peak-Overlap Normalized MA Plots',
+                                   '-norm-eval'))
 
 rule fetch_sra_run:
     '''Script to fetch the .sra file for an SRA run.
