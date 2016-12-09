@@ -96,7 +96,8 @@ reproduce the full analysis.
       SummarizedExperiment, TxDb.Hsapiens.UCSC.hg19.knownGene,
       tximport
     * Installed manually:
-      [sleuth](http://pachterlab.github.io/sleuth/about)
+      [sleuth](http://pachterlab.github.io/sleuth/about),
+      [wasabi](https://github.com/COMBINE-lab/wasabi)
 * [Python 3](https://www.python.org/) and the following Python
   packages: biopython, atomicwrites, numpy, pandas, plac, pysam, rpy2,
   snakemake
