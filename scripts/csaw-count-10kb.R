@@ -16,31 +16,18 @@ tryCatch(setwd(file.path(dirname(getScriptPath()), "..")),
 library(stringr)
 library(magrittr)
 library(GenomicRanges)
-library(Rsubread)
-library(openxlsx)
-library(annotate)
-library(BSgenome.Hsapiens.UCSC.hg19)
-library(TxDb.Hsapiens.UCSC.hg19.knownGene)
-library(org.Hs.eg.db)
-library(GenomicRanges)
 library(rtracklayer)
 library(SummarizedExperiment)
 library(dplyr)
-library(reshape2)
-library(purrr)
 library(csaw)
 library(Matrix)
 library(assertthat)
 
-library(parallel)
-options(mc.preschedule=FALSE)
+library(doParallel)
 ncores <- getOption("mc.cores", default=1)
+registerDoParallel(cores=ncores)
 library(BiocParallel)
-if (ncores > 1) {
-    register(MulticoreParam(workers=ncores))
-} else {
-    register(SerialParam())
-}
+register(DoparParam())
 
 tsmsg("Using ", ncores, " cores.")
 

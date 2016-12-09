@@ -25,15 +25,12 @@ library(BSgenome.Hsapiens.UCSC.hg38)
 library(SummarizedExperiment)
 library(rtracklayer)
 
-library(parallel)
+library(doParallel)
 options(mc.preschedule=FALSE)
 ncores <- getOption("mc.cores", default=1)
+registerDoParallel(cores=ncores)
 library(BiocParallel)
-if (ncores > 1) {
-    register(MulticoreParam(workers=ncores))
-} else {
-    register(SerialParam())
-}
+register(DoparParam())
 
 windowCountsParallel <- function(bam.files, ..., filter=10) {
     reslist <- bplapply(bam.files, windowCounts, ..., filter=0)

@@ -16,15 +16,7 @@ tryCatch(setwd(file.path(dirname(getScriptPath()), "..")),
 library(stringr)
 library(magrittr)
 library(GenomicRanges)
-library(Rsubread)
-library(openxlsx)
-library(annotate)
-library(BSgenome.Hsapiens.UCSC.hg19)
-library(TxDb.Hsapiens.UCSC.hg19.knownGene)
-library(org.Hs.eg.db)
-library(GenomicRanges)
 library(rtracklayer)
-library(SummarizedExperiment)
 library(dplyr)
 library(reshape2)
 library(purrr)
@@ -32,23 +24,12 @@ library(csaw)
 library(Matrix)
 library(assertthat)
 
-library(parallel)
+library(doParallel)
 options(mc.preschedule=FALSE)
 ncores <- getOption("mc.cores", default=1)
+registerDoParallel(cores=ncores)
 library(BiocParallel)
-if (ncores > 1) {
-    register(MulticoreParam(workers=ncores, tasks=100,
-                            progressbar = TRUE))
-} else {
-    register(SerialParam())
-}
-
-windowCountsParallel <- function(bam.files, ..., filter=10) {
-    reslist <- bplapply(bam.files, windowCounts, ..., filter=0)
-    res <- do.call(cbind, reslist)
-    keep <- rowSums(assay(res)) >= filter
-    res[keep,]
-}
+register(DoparParam())
 
 tsmsg("Loading sample data")
 

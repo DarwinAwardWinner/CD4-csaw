@@ -31,15 +31,12 @@ library(purrr)
 library(csaw)
 library(Matrix)
 
-library(parallel)
+library(doParallel)
 options(mc.preschedule=FALSE)
 ncores <- getOption("mc.cores", default=1)
+registerDoParallel(cores=ncores)
 library(BiocParallel)
-if (ncores > 1) {
-    register(MulticoreParam(workers=ncores))
-} else {
-    register(SerialParam())
-}
+register(DoparParam())
 
 tsmsg("Loading sample data")
 

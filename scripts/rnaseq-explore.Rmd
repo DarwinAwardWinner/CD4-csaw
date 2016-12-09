@@ -24,11 +24,6 @@ First we load the necessary libraries.
 library(stringr)
 library(magrittr)
 library(openxlsx)
-library(doParallel)
-ncores <- getOption("mc.cores", default=1)
-registerDoParallel(cores=ncores)
-library(BiocParallel)
-register(DoparParam())
 library(SummarizedExperiment)
 library(dplyr)
 library(edgeR)
@@ -42,6 +37,12 @@ library(reshape2)
 library(assertthat)
 library(ggfortify)
 library(broom)
+
+library(doParallel)
+ncores <- getOption("mc.cores", default=1)
+registerDoParallel(cores=ncores)
+library(BiocParallel)
+register(DoparParam())
 ```
 
 Next we define some utility functions.
