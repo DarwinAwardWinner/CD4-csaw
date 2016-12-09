@@ -433,6 +433,56 @@ rule all:
                                    ' Selected Sample Peak-Overlap Normalized MA Plots',
                                    '-norm-eval'))
 
+rule all_rnaseq:
+    '''This rule aggregates all the final outputs of the pipeline.'''
+    input:
+        rnaseq_eda=expand(
+            'reports/RNA-seq/{tool_and_genome}_{transcriptome}-exploration.html',
+            tool_and_genome=[
+                'star_hg38.analysisSet', 'hisat2_grch38_snp_tran',
+                'salmon_hg38.analysisSet', 'kallisto_hg38.analysisSet',
+                'shoal_hg38.analysisSet',
+            ],
+            transcriptome=['ensembl.85', 'knownGene']),
+
+rule all_chipseq:
+    '''This rule aggregates all the final outputs of the pipeline.'''
+    input:
+        macs_predictd='results/macs_predictd/output.log',
+        idr_peaks_epic=expand(
+            'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
+            condition = list(chipseq_samplemeta_noinput\
+                             .apply(lambda x: '%s.%s' % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL']),
+        idr_peaks_macs=expand(
+            'peak_calls/macs_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
+            genome_build='hg38.analysisSet',
+            chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
+            condition = list(chipseq_samplemeta_noinput\
+                             .apply(lambda x: '%s.%s' % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL']),
+        idr_plots_one_cond=set(expand(
+            expand('plots/IDR/{{peak_caller}}_{{genome_build}}/{chip_antibody}/condition.{cell_type}.{time_point}/{donorA}vs{donorB}_idrplots.pdf',
+                   zip_longest_recycled,
+                   **dict(idr_sample_pairs.iteritems())),
+            peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet')),
+        idr_plots_all_cond=set(expand(
+            expand('plots/IDR/{{peak_caller}}_{{genome_build}}/{chip_antibody}/condition.ALL/{donorA}vs{donorB}_idrplots.pdf',
+                   zip_longest_recycled,
+                   **dict(idr_sample_pairs.iteritems())),
+            peak_caller=['macs', 'epic'], genome_build='hg38.analysisSet')),
+        ccf_plots=expand('plots/csaw/CCF-plots{suffix}.pdf',
+                         suffix=('', '-relative', '-noBL', '-relative-noBL')),
+        site_profile_plot='plots/csaw/site-profile-plots.pdf',
+        csaw_qc_plots=expand('plots/csaw/{chip}{plot}.pdf',
+                             chip=set(chipseq_samplemeta_noinput['chip_antibody']),
+                             plot=('-window-abundance-vs-peaks', '-normfactors',
+                                   ' Selected Sample MA Plots',
+                                   ' Selected Sample 10KB Bin MA Plots',
+                                   ' Selected Sample Peak-Overlap MA Plots',
+                                   ' Selected Sample Peak-Overlap Normalized MA Plots',
+                                   '-norm-eval'))
+
 rule all_rnaseq_eda:
     input:
         rnaseq_eda=expand(
