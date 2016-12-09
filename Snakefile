@@ -680,7 +680,7 @@ rule align_rnaseq_with_hisat2_single_end:
             ]
         ]
         with atomic_write(output.bam, mode='wb', overwrite=True) as outfile, \
-             open(log, mode='wb') as logfile:
+             open(log[0], mode='wb') as logfile:
             pipeline = Popen_pipeline(cmds, stdout=outfile, stderr=logfile)
             wait_for_subprocs(pipeline)
 
