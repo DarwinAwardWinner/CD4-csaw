@@ -12,7 +12,7 @@ import pandas as pd
 
 from atomicwrites import atomic_write, AtomicWriter
 from math import log10, ceil
-from itertools import product, count
+from itertools import product, count, chain
 from subprocess import check_call, Popen, PIPE, CalledProcessError, list2cmdline
 from rpy2 import robjects
 from rpy2.robjects import r, pandas2ri
@@ -214,7 +214,7 @@ def zip_longest_recycled(*args, warn_on_uneven=True):
             warn("Longest iterable's length is not a multiple of shorter.")
     return zip_recycled(*args, length=maxlen)
 
-def list_salmon_output_files(outdir, alignment=False):
+def list_salmon_output_files(outdirs, alignment=False):
     file_list = [
         'aux_info/bootstrap/bootstraps.gz',
         'aux_info/bootstrap/names.tsv.gz',
@@ -236,7 +236,9 @@ def list_salmon_output_files(outdir, alignment=False):
         file_list += ['logs/salmon.log',]
     else:
         file_list += ['libParams/flenDist.txt', 'logs/salmon_quant.log',]
-    return [ os.path.join(outdir, f) for f in file_list ]
+    if isinstance(outdirs, str):
+        outdirs = [outdirs]
+    return [ os.path.join(od, f) for od in outdirs for f in file_list ]
 
 def list_kallisto_output_files(outdir):
     file_list = [
@@ -393,6 +395,7 @@ rule all:
             tool_and_genome=[
                 'star_hg38.analysisSet', 'hisat2_grch38_snp_tran',
                 'salmon_hg38.analysisSet', 'kallisto_hg38.analysisSet',
+                'shoal_hg38.analysisSet',
             ],
             transcriptome=['ensembl.85', 'knownGene']),
         macs_predictd='results/macs_predictd/output.log',
@@ -437,16 +440,9 @@ rule all_rnaseq_eda:
             tool_and_genome=[
                 'star_hg38.analysisSet', 'hisat2_grch38_snp_tran',
                 'salmon_hg38.analysisSet', 'kallisto_hg38.analysisSet',
+                'shoal_hg38.analysisSet',
             ],
             transcriptome=['ensembl.85', 'knownGene']),
-        rnaseq_counts_eda=expand(
-            'reports/RNA-seq/{dataset}-exploration.html',
-            dataset=[
-                'star_hg38.analysisSet_ensembl.85',
-                'star_hg38.analysisSet_knownGene',
-                'hisat2_grch38_snp_tran_ensembl.85',
-                'hisat2_grch38_snp_tran_knownGene',
-            ]),
 
 rule all_rnaseq_counts:
     input:
@@ -457,7 +453,7 @@ rule all_rnaseq_counts:
 rule all_rnaseq_quant:
     input:
         sexp=expand('saved_data/SummarizedExperiment_rnaseq_{quantifier}_{genome}_{transcriptome}.RDS',
-                    quantifier=['kallisto','salmon'],
+                    quantifier=['kallisto','salmon','shoal'],
                     genome="hg38.analysisSet",
                     transcriptome=['ensembl.85','knownGene']),
 
@@ -944,6 +940,24 @@ rule convert_salmon_to_hdf5:
     input: list_salmon_output_files('{salmon_quant_dir}')
     output: '{salmon_quant_dir}/abundance.h5'
     shell: ''' scripts/convert-salmon-to-hdf5.R {wildcards.salmon_quant_dir:q} '''
+
+rule run_shoal:
+    '''Run shoal on the output of Salmon.'''
+    input:
+        samples=list_salmon_output_files(
+            expand('salmon_quant/{{genome}}_{{transcriptome}}/{sample}',
+                   sample=rnaseq_samplemeta['SRA_run'])),
+    output:
+        samples=expand('shoal_quant/{{genome}}_{{transcriptome}}/{sample}_adapt.sf',
+                       sample=rnaseq_samplemeta['SRA_run']),
+        prior='shoal_quant/{genome}_{transcriptome}/prior/prior.tsv',
+    params:
+        quantdir='salmon_quant/{genome}_{transcriptome}',
+        outdir='shoal_quant/{genome}_{transcriptome}',
+    threads: 8
+    shell: '''
+    run_shoal.sh -j {threads:q} -q {params.quantdir:q} -o {params.outdir:q}
+    '''
 
 rule quant_rnaseq_with_kallisto:
     '''Quantify genes from reads using Kallisto.
@@ -1889,6 +1903,63 @@ rule collect_abundance_knownGene:
             '--abundance-file-pattern', *expand('{quantifier}_quant/hg38.analysisSet_knownGene/%s/abundance.h5', **wildcards),
             '--output-file', output.sexp,
             '--expected-abundance-files', ','.join(input.samples),
+            '--threads', str(threads),
+            '--aggregate-level', 'gene',
+            '--annotation-txdb', 'TxDb.Hsapiens.UCSC.hg38.knownGene',
+            '--gene-info', input.genemeta,
+        ]
+        check_call(cmd)
+
+rule collect_shoal_ensembl:
+    '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
+
+    This uses the tximport and sleuth R packages.'''
+    input:
+        samplemeta='saved_data/samplemeta-RNASeq.RDS',
+        txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v{release}.sqlite3'),
+        genemeta=hg38_ref('genemeta.ensembl.{release}.RDS'),
+        samples=expand('shoal_quant/hg38.analysisSet_ensembl.{{release}}/{sample}_adapt.sf',
+                       sample=rnaseq_samplemeta['SRA_run']),
+    output:
+        sexp='saved_data/SummarizedExperiment_rnaseq_shoal_hg38.analysisSet_ensembl.{release,\\d+}.RDS'
+    version: (R_package_version('tximport'), R_package_version('sleuth'))
+    threads: 8
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
+    run:
+        cmd = [
+            'scripts/convert-shoal-to-sexp.R',
+            '--samplemeta-file', input.samplemeta,
+            '--sample-id-column', 'SRA_run',
+            '--shoal-dir', *expand('shoal_quant/hg38.analysisSet_ensembl.{release}', **wildcards),
+            '--output-file', output.sexp,
+            '--threads', str(threads),
+            '--aggregate-level', 'gene',
+            '--annotation-txdb', input.txdb,
+            '--gene-info', input.genemeta,
+        ]
+        check_call(cmd)
+
+rule collect_shoal_knownGene:
+    '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
+
+    This uses the tximport and sleuth R packages.'''
+    input:
+        samplemeta='saved_data/samplemeta-RNASeq.RDS',
+        genemeta=hg38_ref('genemeta.org.Hs.eg.db.RDS'),
+        samples=expand('shoal_quant/hg38.analysisSet_knownGene/{sample}_adapt.sf',
+                       sample=rnaseq_samplemeta['SRA_run']),
+    output:
+        sexp='saved_data/SummarizedExperiment_rnaseq_shoal_hg38.analysisSet_knownGene.RDS',
+    version: (R_package_version('tximport'), R_package_version('sleuth'))
+    threads: 8
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
+    run:
+        cmd = [
+            'scripts/convert-quant-to-sexp.R',
+            '--samplemeta-file', input.samplemeta,
+            '--sample-id-column', 'SRA_run',
+            '--shoal-dir', *expand('shoal_quant/hg38.analysisSet_knownGene', **wildcards),
+            '--output-file', output.sexp,
             '--threads', str(threads),
             '--aggregate-level', 'gene',
             '--annotation-txdb', 'TxDb.Hsapiens.UCSC.hg38.knownGene',

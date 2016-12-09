@@ -29,6 +29,7 @@ temp-core-*
 /fastq_files/
 /aligned/
 /salmon_quant
+/shoal_quant
 /kallisto_quant
 /peak_calls
 /idr_analysis
