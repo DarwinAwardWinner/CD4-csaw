@@ -10,13 +10,9 @@ pre-defined promoter regions. In addition, some improvements have also
 been made to the RNA-seq analysis using newer features of [limma][4]
 such as quality weights.
 
-In time, these scripts will be updated to pull the data from the
-public release. *(Update: This is currently in progress, and this
-README is somewhat out of date as a result.)* At that point, it should
-be possible for anyone to reproduce the analysis with these scripts.
-(Although this analysis does not yet repeat the peak calling and some
-other preliminary steps of the [original analysis][5], which was done
-before I learned the value of reproducible research.)
+This workflow downloads the sequence data and sample metadata from the
+public GEO/SRA release, so anyone can download and run this code to
+reproduce the full analysis.
 
 ## Workflow
 
@@ -27,7 +23,7 @@ before I learned the value of reproducible research.)
 * ChIP-seq
   * Mapping with bowtie2
   * Peak calling with MACS2 and Epic
-  * Fetching of blacklists from UCSC
+  * Fetching of [blacklists][5] from UCSC
   * Generation of greylists from ChIP-Seq input samples
   * IDR analysis of blacklist-filtered peak calls
   * Computation of cross-correlation function for ChIP-Seq samples,
@@ -38,14 +34,12 @@ before I learned the value of reproducible research.)
   * Counting reads aligned to genes
   * Alignment-free bias-corrected transcript quantification using Salmon & Kallisto
 
-### Testing components
-
 ### TODO components
 
 * RNA-seq differential gene expression
 * RNA-seq differential gene/transcript/exon/whatever expression from
   Salmon quantification
-* csaw analysis of ChIP-seq
+* csaw differential analysis of ChIP-seq
 
 ## TODO Other
 
@@ -59,12 +53,13 @@ before I learned the value of reproducible research.)
 
 ## Dependencies
 
+### Command-line tools
+
 * [ascp](http://downloads.asperasoft.com/en/downloads/50) Aspera
-  download client
+  download client for downloading SRA files
 * [Bedtools](http://bedtools.readthedocs.io/en/latest/)
 * [Bowtie2](http://bowtie-bio.sourceforge.net/bowtie2/index.shtml)
   aligner
-* [Cufflinks](http://cole-trapnell-lab.github.io/cufflinks/)
 * [Epic](https://github.com/endrebak/epic) peak caller
 * [fastq-tools](http://homes.cs.washington.edu/~dcjones/fastq-tools/)
 * [HISAT2](https://ccb.jhu.edu/software/hisat2/index.shtml) aligner
@@ -76,13 +71,16 @@ before I learned the value of reproducible research.)
   file manipulation utilities
 * [Salmon](http://salmon.readthedocs.io/en/latest/) RNA-seq quantifier
   (devel version 0.7.3)
-* [Samtools](http://www.htslib.org/)
-* [Snakemake](https://bitbucket.org/snakemake/snakemake/wiki/Home) for running the workflow
+* [Shoal](https://github.com/COMBINE-lab/shoal)
+* [Snakemake](https://bitbucket.org/snakemake/snakemake/wiki/Home) for
+  running the workflow
 * [SRA toolkit](https://github.com/ncbi/sra-tools) for extracting
   reads from SRA files
 * [STAR](https://github.com/alexdobin/STAR) aligner
 * [UCSC command-line tools](http://hgdownload.cse.ucsc.edu/downloads.html#source_downloads)
   (e.g. liftOver)
+
+### Programming languages and packages
 
 * [R](https://www.r-project.org/),
   [Bioconductor](http://bioconductor.org/), and the following R
@@ -105,58 +103,8 @@ before I learned the value of reproducible research.)
   packages: biopython, atomicwrites, numpy, pandas, plac, pysam, rpy2,
   snakemake
 
-# Old workflow
-
-The workflow described below starts from the BAM files (which were
-aligned to hg19) instead of re-aligning to hg38. This section and the
-old workflow will be deleted once the new workflow catches up.
-
-## ChIP-Seq analysis pipeline
-
-1. `csaw-pre-count-qc.R`: Perform some QC steps that do not require
-   window counts, including determining the fragment length and
-   binding footprint profiles.
-2. `csaw-count.R`: Generate window counts for all samples.
-3. `csaw-split.R`: Split the enormous monolithic window count data set
-   into separate sets for each ChIP type.
-4. `csaw-qc.R`: Perform QC steps that require window counts, mostly
-   regarding normalization issues.
-5. `csaw-analysis.R`: Analyze window counts for differential binding
-   (Not finished yet)
-
-### TODO
-
-* Document required software
-* Make analysis into a reproducible workflow
-* ChIPQC: http://bioconductor.org/packages/release/bioc/html/ChIPQC.html
-* ChIP-Seq blacklists: http://www.broadinstitute.org/~anshul/projects/encode/rawdata/blacklists/hg19-blacklist-README.pdf
-* Greylists: http://bioconductor.org/packages/release/bioc/html/GreyListChIP.html
-* Differential binding (using csaw and edgeR)
-* Motif enrichment
-* Document dependencies
-
-## Incomplete list of dependencies
-
-* R/Bioconductor + a bunch of packages
-* python + a bunch of packages
-* Picard tools
-* samtools
-* seqtk
-* sra-toolkit
-
-## RNA-Seq analysis
-
-This data set also contains RNA-seq information for each sample, which
-are analyzed for differential expression. I have also improved on this
-analysis, using some custom code to make voom, glm offsets, and
-quality weights work together to produce a workable solution for
-mitigating the batch effects in the data.
-
-1. `rnaseq-count.R`: Generate gene counts for each sample
-2. `rnaseq-analysis.R`: Perform differential expression analysis using limma
-
 [1]: http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE73214
 [2]: http://www.ncbi.nlm.nih.gov/pubmed/27170561
 [3]: https://bioconductor.org/packages/release/bioc/html/csaw.html
 [4]: https://bioconductor.org/packages/release/bioc/html/limma.html
-[5]: https://github.com/DarwinAwardWinner/cd4-histone-paper-code
+[5]: http://www.broadinstitute.org/~anshul/projects/encode/rawdata/blacklists/hg19-blacklist-README.pdf
