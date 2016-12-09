@@ -46,10 +46,8 @@ reproduce the full analysis.
 * Document required software
 * Make analysis into a reproducible workflow
 * ChIPQC: http://bioconductor.org/packages/release/bioc/html/ChIPQC.html
-* ChIP-Seq blacklists: http://www.broadinstitute.org/~anshul/projects/encode/rawdata/blacklists/hg19-blacklist-README.pdf
 * Motif enrichment
-* Document dependencies fully, including all Python & R packages. Also
-  provide links to dependencies. Provide install script for packages.
+* Provide install script for R & Python packages.
 
 ## Dependencies
 
