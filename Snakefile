@@ -650,45 +650,51 @@ rule align_rnaseq_with_star_single_end:
     https://github.com/alexdobin/STAR
 
     '''
-    input: fastq='fastq_files/{samplename}.fq.gz',
-           index_sa=hg38_ref('STAR_index_{genome_build}_{transcriptome}/SA'),
-           transcriptome_gff=hg38_ref('{transcriptome}.gff3'),
-    output: bam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.sortedByCoord.out.bam',
-            sj='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/SJ.out.tab',
-            logs=[ os.path.join('aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}', fname)
-                   for fname in ['Log.final.out', 'Log.out', 'Log.progress.out'] ],
-    params: temp_sam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.out.sam',
+    input:
+        fastq='fastq_files/{samplename}.fq.gz',
+        index_sa=hg38_ref('STAR_index_{genome_build}_{transcriptome}/SA'),
+        transcriptome_gff=hg38_ref('{transcriptome}.gff3'),
+    output:
+        sam=temp('aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.out.sam'),
+        sj='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/SJ.out.tab',
+        logs=[ os.path.join('aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}', fname)
+               for fname in ['Log.final.out', 'Log.out', 'Log.progress.out'] ],
+    params:
+        # Note: trailing slash is significant here
+        outdir='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/',
+        index_genomedir=hg38_ref('STAR_index_{genome_build}_{transcriptome}'),
+        read_cmd=list2cmdline(fastq_compression_cmds['fq.gz']['decompress']),
     version: SOFTWARE_VERSIONS['STAR']
     threads: 8
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['star']
-    run:
-        index_genomedir = os.path.dirname(input.index_sa)
-        outdir = os.path.dirname(output.bam) + os.path.sep
-        read_cmd = list2cmdline(fastq_compression_cmds['fq.gz']['decompress'])
-        star_cmd = [
-            'STAR',
-            '--runThreadN', threads,
-            '--runMode', 'alignReads',
-            '--genomeDir', index_genomedir,
-            '--sjdbGTFfile', input.transcriptome_gff,
-            '--sjdbGTFfeatureExon', 'CDS',
-            '--sjdbGTFtagExonParentTranscript', 'Parent',
-            '--sjdbGTFtagExonParentGene', 'gene_id',
-            '--sjdbOverhang', '100',
-            '--readFilesIn', input.fastq,
-            '--readFilesCommand', read_cmd,
-            '--outSAMattributes', 'Standard',
-            '--outSAMunmapped', 'Within',
-            '--outFileNamePrefix', outdir,
-            '--outSAMtype', 'SAM',
-        ]
-        # Run STAR
-        shell(list2cmdline(map(str, star_cmd)))
-        # Sort SAM into BAM
-        picard_sort_cmd = 'picard-tools SortSam I={params.temp_sam:q} O={output.bam:q} SORT_ORDER=coordinate VALIDATION_STRINGENCY=LENIENT'
-        shell(picard_sort_cmd)
-        # Delete sam file
-        os.remove(params.temp_sam)
+    shell: '''
+    STAR \
+      --runThreadN {threads:q} \
+      --runMode alignReads \
+      --genomeDir {params.index_genomedir:q} \
+      --sjdbGTFfile {input.transcriptome_gff:q} \
+      --sjdbGTFfeatureExon CDS \
+      --sjdbGTFtagExonParentTranscript Parent \
+      --sjdbGTFtagExonParentGene gene_id \
+      --sjdbOverhang 100 \
+      --readFilesIn {input.fastq:q} \
+      --readFilesCommand {params.read_cmd:q} \
+      --outSAMattributes Standard \
+      --outSAMunmapped Within \
+      --outFileNamePrefix {params.outdir:q} \
+      --outSAMtype SAM
+    '''
+
+rule convert_star_sam_to_bam:
+    input:
+        sam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.out.sam',
+    output:
+        bam='aligned/rnaseq_star_{genome_build}_{transcriptome}/{samplename}/Aligned.sortedByCoord.out.bam',
+    shell: '''
+    picard-tools SortSam \
+      I={input.sam:q} O={output.bam:q} \
+      SORT_ORDER=coordinate VALIDATION_STRINGENCY=LENIENT
+    '''
 
 rule align_rnaseq_with_hisat2_single_end:
     '''Align fastq file with HISAT2.
