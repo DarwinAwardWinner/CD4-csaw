@@ -46,6 +46,7 @@ reproduce the full analysis.
 * Document required software
 * Make analysis into a reproducible workflow
 * ChIPQC: http://bioconductor.org/packages/release/bioc/html/ChIPQC.html
+* ChIPseeker: http://bioconductor.org/packages/devel/bioc/html/ChIPseeker.html
 * Motif enrichment
 * Provide install script for R & Python packages.
 
