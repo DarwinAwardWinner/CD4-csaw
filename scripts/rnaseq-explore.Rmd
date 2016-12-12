@@ -705,11 +705,11 @@ design.NoTime <- model.matrix(~1 + cell_type + donor_id, sample.table)
 
 elist.w0 <- voomWithQualityWeightsAndOffset(dge, design.NoTime)
 dupcor0 <- duplicateCorrelation(elist.w0, design.NoTime, block=sample.table$batch)
-elist.w1 <- voomWithQualityWeights(dge, design.NoTime, block=sample.table$batch, correlation=dupcor0$consensus.correlation)
+elist.w1 <- voomWithQualityWeightsAndOffset(dge, design.NoTime, block=sample.table$batch, correlation=dupcor0$consensus.correlation)
 
 ## Final
 dupcor <- duplicateCorrelation(elist.w1, design.NoTime, block=sample.table$batch)
-elist.w <- voomWithQualityWeights(dge, design.NoTime, block=sample.table$batch, correlation=dupcor$consensus.correlation)
+elist.w <- voomWithQualityWeightsAndOffset(dge, design.NoTime, block=sample.table$batch, correlation=dupcor$consensus.correlation)
 ```
 
 To see whether the weights are correlated with specific experimental factors, we create a boxplot of the weights and group dispersions against each relevant covariate.
