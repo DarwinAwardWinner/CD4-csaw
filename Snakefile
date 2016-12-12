@@ -833,22 +833,25 @@ rule count_rnaseq_hisat2_ensembl:
         txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v85.sqlite3'),
         genemeta=hg38_ref('genemeta.ensembl.85.RDS')
     output: sexp='saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_ensembl.{release}.RDS'
-    version: SOFTWARE_VERSIONS['BIOC']
-    threads: 4
+    params:
+        expected_bam_files=','.join(expand(
+            'aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam',
+            SRA_run=rnaseq_samplemeta['SRA_run'])),
+        bam_file_pattern='aligned/rnaseq_hisat2_grch38_snp_tran/%s/Aligned.bam',
+    version: R_package_version('RSubread')
+    threads: len(rnaseq_samplemeta)
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
-    run:
-        cmd = [
-            'scripts/rnaseq-count.R',
-            '--samplemeta-file', input.samplemeta,
-            '--sample-id-column', 'SRA_run',
-            '--bam-file-pattern', 'aligned/rnaseq_hisat2_grch38_snp_tran/%s/Aligned.bam',
-            '--output-file', output.sexp,
-            '--expected-bam-files', ','.join(input.bam_files),
-            '--threads', str(threads),
-            '--annotation-txdb', input.txdb,
-            '--additional-gene-info', input.genemeta,
-        ]
-        check_call(cmd)
+    shell: '''
+    scripts/rnaseq-count.R \
+      --samplemeta-file {input.samplemeta:q} \
+      --sample-id-column SRA_run \
+      --bam-file-pattern {params.bam_file_pattern:q} \
+      --output-file {output.sexp:q} \
+      --expected-bam-files {params.expected_bam_files:q} \
+      --threads {threads:q} \
+      --annotation-txdb {input.txdb:q} \
+      --additional-gene-info {input.genemeta:q}
+    '''
 
 rule count_rnaseq_hisat2_knownGene:
     '''Assign & count reads reads aligned to UCSC known genes by HISAT2.
@@ -866,22 +869,25 @@ rule count_rnaseq_hisat2_knownGene:
             SRA_run=rnaseq_samplemeta['SRA_run']),
         genemeta=hg38_ref('genemeta.org.Hs.eg.db.RDS')
     output: sexp='saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_knownGene.RDS'
+    params:
+        expected_bam_files=','.join(expand(
+            'aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam',
+            SRA_run=rnaseq_samplemeta['SRA_run'])),
+        bam_file_pattern='aligned/rnaseq_hisat2_grch38_snp_tran/%s/Aligned.bam',
     version: R_package_version('RSubread')
-    threads: 4
+    threads: len(rnaseq_samplemeta)
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
-    run:
-        cmd = [
-            'scripts/rnaseq-count.R',
-            '--samplemeta-file', input.samplemeta,
-            '--sample-id-column', 'SRA_run',
-            '--bam-file-pattern', 'aligned/rnaseq_hisat2_grch38_snp_tran/%s/Aligned.bam',
-            '--output-file', output.sexp,
-            '--expected-bam-files', ','.join(input.bam_files),
-            '--threads', str(threads),
-            '--annotation-txdb', 'TxDb.Hsapiens.UCSC.hg38.knownGene',
-            '--additional-gene-info', input.genemeta,
-        ]
-        check_call(cmd)
+    shell: '''
+    scripts/rnaseq-count.R \
+      --samplemeta-file {input.samplemeta:q} \
+      --sample-id-column SRA_run \
+      --bam-file-pattern {params.bam_file_pattern:q} \
+      --output-file {output.sexp:q} \
+      --expected-bam-files {params.expected_bam_files:q} \
+      --threads {threads:q} \
+      --annotation-txdb 'TxDb.Hsapiens.UCSC.hg38.knownGene' \
+      --additional-gene-info {input.genemeta:q}
+    '''
 
 rule count_rnaseq_star_ensembl:
     '''Assign & count reads reads aligned to Ensembl genes by STAR.
@@ -900,27 +906,25 @@ rule count_rnaseq_star_ensembl:
         txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v{release}.sqlite3'),
         genemeta=hg38_ref('genemeta.ensembl.{release}.RDS')
     output: sexp='saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_ensembl.{release,\\d+}.RDS'
+    params:
+        expected_bam_files=','.join(expand(
+            'aligned/rnaseq_star_hg38.analysisSet_ensembl.{{release}}/{SRA_run}/Aligned.sortedByCoord.out.bam',
+            SRA_run=rnaseq_samplemeta['SRA_run'])),
+        bam_file_pattern=lambda wildcards: expand('aligned/rnaseq_star_hg38.analysisSet_ensembl.{release}/%s/Aligned.sortedByCoord.out.bam', **wildcards)
     version: R_package_version('RSubread')
-    threads: 4
+    threads: len(rnaseq_samplemeta)
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
-    run:
-        cmd = [
-            'scripts/rnaseq-count.R',
-            '--samplemeta-file', input.samplemeta,
-            '--sample-id-column', 'SRA_run',
-            '--bam-file-pattern',
-            'aligned/rnaseq_star_hg38.analysisSet_ensembl.{release}/%s/Aligned.sortedByCoord.out.bam'.format(
-                   release=wildcards.release,
-            ),
-            '--output-file', output.sexp,
-            '--expected-bam-files', ','.join(input.bam_files),
-            '--threads', str(threads),
-            '--annotation-txdb', input.txdb,
-            '--additional-gene-info', input.genemeta,
-        ]
-        print(cmd)
-        check_call(cmd)
-
+    shell: '''
+    scripts/rnaseq-count.R \
+      --samplemeta-file {input.samplemeta:q} \
+      --sample-id-column SRA_run \
+      --bam-file-pattern {params.bam_file_pattern:q} \
+      --output-file {output.sexp:q} \
+      --expected-bam-files {params.expected_bam_files:q} \
+      --threads {threads:q} \
+      --annotation-txdb {input.txdb:q} \
+      --additional-gene-info {input.genemeta:q}
+    '''
 rule count_rnaseq_star_knownGene:
     '''Assign & count reads reads aligned to UCSC known genes by STAR.
 
@@ -937,22 +941,24 @@ rule count_rnaseq_star_knownGene:
             SRA_run=rnaseq_samplemeta['SRA_run']),
         genemeta=hg38_ref('genemeta.org.Hs.eg.db.RDS')
     output: sexp='saved_data/SummarizedExperiment_rnaseq_star_hg38.analysisSet_knownGene.RDS'
+    params:
+        expected_bam_files=','.join(expand(
+            'aligned/rnaseq_star_hg38.analysisSet_knownGene/{SRA_run}/Aligned.sortedByCoord.out.bam',
+            SRA_run=rnaseq_samplemeta['SRA_run']))
     version: R_package_version('RSubread')
-    threads: 4
+    threads: len(rnaseq_samplemeta)
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
-    run:
-        cmd = [
-            'scripts/rnaseq-count.R',
-            '--samplemeta-file', input.samplemeta,
-            '--sample-id-column', 'SRA_run',
-            '--bam-file-pattern', 'aligned/rnaseq_star_hg38.analysisSet_knownGene/%s/Aligned.sortedByCoord.out.bam',
-            '--output-file', output.sexp,
-            '--expected-bam-files', ','.join(input.bam_files),
-            '--threads', str(threads),
-            '--annotation-txdb', 'TxDb.Hsapiens.UCSC.hg38.knownGene',
-            '--additional-gene-info', input.genemeta,
-        ]
-        check_call(cmd)
+    shell: '''
+    scripts/rnaseq-count.R \
+      --samplemeta-file {input.samplemeta:q} \
+      --sample-id-column SRA_run \
+      --bam-file-pattern aligned/rnaseq_star_hg38.analysisSet_knownGene/%s/Aligned.sortedByCoord.out.bam \
+      --output-file {output.sexp:q} \
+      --expected-bam-files {params.expected_bam_files:q} \
+      --threads {threads:q} \
+      --annotation-txdb TxDb.Hsapiens.UCSC.hg38.knownGene \
+      --additional-gene-info {input.genemeta:q}
+    '''
 
 rule quant_rnaseq_with_salmon:
     '''Quantify genes from reads using Salmon.

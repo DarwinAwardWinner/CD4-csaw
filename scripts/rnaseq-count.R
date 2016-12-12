@@ -112,8 +112,13 @@ library(annotate)
 library(GenomicRanges)
 library(Rsubread)
 library(SummarizedExperiment)
-
+library(withr)
 library(org.Hs.eg.db)
+
+library(BiocParallel)
+library(doParallel)
+options(mc.preschedule=FALSE)
+register(DoparParam())
 
 tsmsg <- function(...) {
     message(date(), ": ", ...)
@@ -151,6 +156,42 @@ save.RDS.or.RDA <-
     } else{
         saveRDS(object=object, file=file, ascii=ascii, version=version, compress=compress)
     }
+}
+
+combineFCResults <- function(fcreslist) {
+    combfuncs <- list(
+        counts=cbind,
+        counts_junction=cbind,
+        annotation=function(x, ...) x,
+        targets=c,
+        stat=function(...) {
+            statlist <- list(...)
+            firstcol <- statlist[[1]][,1, drop=FALSE]
+            restcols <- statlist %>% lapply(. %>% .[,-1, drop=FALSE])
+            cbind(firstcol, do.call(cbind, restcols))
+        })
+    res <- list()
+    for (i in names(combfuncs)) {
+        if (i %in% names(fcreslist[[1]])) {
+            res[[i]] <- fcreslist %>%
+                lapply(`[[`, i) %>%
+                do.call(what=combfuncs[[i]])
+        }
+    }
+    res
+}
+
+featureCountsQuiet <- function(...) {
+    with_output_sink("/dev/null", featureCounts(...))
+}
+
+featureCountsParallel <- function(files, ...) {
+    # Let featureCounts handle the degenerate case itself
+    if (length(files) == 0) {
+        return(featureCounts(files, ...))
+    }
+    bplapply(files, featureCountsQuiet, ..., nthreads=1) %>%
+        combineFCResults
 }
 
 ## Read a table from a R data file, csv, or xlsx file. Returns a data
@@ -389,6 +430,7 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
 
     cmdopts$threads %<>% round %>% max(1)
     tsmsg("Running with ", cmdopts$threads, " threads")
+    registerDoParallel(cores=cmdopts$threads)
 
     ## Expand expected_bam_files into vector
     if ("expected_bam_files" %in% names(cmdopts)) {
@@ -502,20 +544,17 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
     rownames(sexp) <- names(annot)
 
     tsmsg("Computing sense counts")
-    sense.fc <- featureCounts(
+    sense.fc <- featureCountsParallel(
         samplemeta$bam_file, annot.ext=saf,
-        strandSpecific=1,
-        nthreads=cmdopts$threads)
+        strandSpecific=1)
     tsmsg("Computing antisense counts")
-    antisense.fc <- featureCounts(
+    antisense.fc <- featureCountsParallel(
         samplemeta$bam_file, annot.ext=saf,
-        strandSpecific=2,
-        nthreads=cmdopts$threads)
+        strandSpecific=2)
     tsmsg("Computing unstranded counts")
-    unstranded.fc <- featureCounts(
+    unstranded.fc <- featureCountsParallel(
         samplemeta$bam_file, annot.ext=saf,
-        strandSpecific=0,
-        nthreads=cmdopts$threads)
+        strandSpecific=0)
     assay(sexp, "counts")[,] <- unstranded.fc$counts
     assay(sexp, "sense.counts")[,] <- sense.fc$counts
     assay(sexp, "antisense.counts")[,] <- antisense.fc$counts

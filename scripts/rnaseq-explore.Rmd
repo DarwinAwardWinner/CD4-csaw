@@ -116,7 +116,7 @@ rasterpdf <- function(pdffile, outfile=pdffile, resolution=600, verbose=FALSE) {
     files=list.files(pattern="pg_")
 
     vmessage(paste0("Rasterizing ",length(files)," pages:  (",paste(files,collapse=","),")"))
-    mclapply(files,function(f){
+    bplapply(files,function(f){
         system2("gs", args=c("-dBATCH", "-dTextAlphaBits=4", "-dNOPAUSE",
                              paste0("-r", resolution), "-q", "-sDEVICE=png16m",
                              paste0("-sOutputFile=",f,".png"),f))
@@ -160,7 +160,7 @@ estimateDispByGroup <- function(dge, group=as.factor(dge$samples$group), batch, 
     assert_that(nrow(batch) == ncol(dge))
     colnames(batch) %>% make.names(unique=TRUE)
     igroup <- seq_len(ncol(dge)) %>% split(group)
-    lapply(igroup, function(i) {
+    bplapply(igroup, function(i) {
         group.dge <- dge[,i]
         group.batch <- droplevels(batch[i,, drop=FALSE])
         group.batch <- group.batch[sapply(group.batch, . %>% unique %>% length %>% is_greater_than(1))]
