@@ -57,7 +57,7 @@ suppressPlot <- function(arg) {
     result
 }
 
-ggprint <- function(plots, device=dev.cur(), closedev) {
+ggprint <- function(plots, device=dev.cur(), closedev, printfun=print) {
   orig.device <- dev.cur()
   new.device <- device
   # Functions that create devices don't generally return them, they just set
@@ -81,14 +81,22 @@ ggprint <- function(plots, device=dev.cur(), closedev) {
   assertthat::assert_that(is(plots, "gg") ||
                           is.list(plots))
   if (is(plots, "gg")) {
-      print(plots)
+      printfun(plots)
   } else if (is.list(plots)) {
-    lapply(plots, ggprint, device=dev.cur(), closedev=FALSE)
+    lapply(plots, ggprint, device=dev.cur(), closedev=FALSE, printfun=printfun)
   } else {
     stop("Argument is not a ggplot or list of ggplots")
   }
   invisible(NULL)
 }
+
+# ggplotly.printer <- function(...) {
+#     dots <- list(...)
+#     function(p) {
+#         args <- c(list(p=p), dots)
+#         print(do.call(ggplotly, args))
+#     }
+# }
 
 ## Based on this: https://www.r-bloggers.com/shrinking-rs-pdf-output/
 ## Requires some command-line image and PDF manip tools.
@@ -639,7 +647,8 @@ disptable <- data.frame(
     TrendBCV=dge.with.eBayes$trended.dispersion %>% sqrt,
     GeneWiseBCV=dge.without.eBayes$tagwise.dispersion %>% sqrt,
     eBayesBCV=dge.with.eBayes$tagwise.dispersion %>% sqrt,
-    RobustBCV=dge.with.robust.eBayes$tagwise.dispersion %>% sqrt)
+    RobustBCV=dge.with.robust.eBayes$tagwise.dispersion %>% sqrt) %>%
+    cbind(dge$genes)
 
 ## Reduce the number of points to plot for each line for performance
 ## reasons
@@ -654,8 +663,9 @@ disp.line.table <-
         spline(x=.$logCPM, y=.$BCV, n=npoints[.$DispType[1]]) %>% data.frame(logCPM=.$x, BCV=.$y)
     })
 
-raw.disp.plot <- ggplot(disptable) +
-    aes(x=logCPM) +
+baseplot <- ggplot(disptable) +
+    aes(x=logCPM)
+raw.disp.plot <- baseplot +
     geom_point(aes(y=GeneWiseBCV), size=0.1, color="black") +
     geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, group=DispType), color="white", size=1.5, alpha=0.5) +
     geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, linetype=DispType), color="darkred", size=0.5) +
@@ -663,8 +673,7 @@ raw.disp.plot <- ggplot(disptable) +
     ylab("Biological coefficient of variation") +
     ggtitle("BCV plot (Raw dispersions)")
 
-eBayes.disp.plot <- ggplot(disptable) +
-    aes(x=logCPM) +
+eBayes.disp.plot <- baseplot +
     geom_point(aes(y=GeneWiseBCV), size=0.4, color="gray") +
     geom_point(aes(y=eBayesBCV), size=0.1, color="darkblue") +
     geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, group=DispType), color="white", size=1.5, alpha=0.5) +
@@ -673,8 +682,7 @@ eBayes.disp.plot <- ggplot(disptable) +
     ylab("Biological coefficient of variation") +
     ggtitle("BCV plot (Raw & squeezed dispersions)")
 
-robust.eBayes.disp.plot <- ggplot(disptable) +
-    aes(x=logCPM) +
+robust.eBayes.disp.plot <- baseplot +
     geom_point(aes(y=GeneWiseBCV), size=0.4, color="gray") +
     geom_point(aes(y=eBayesBCV), size=0.4, color="deepskyblue") +
     geom_point(aes(y=RobustBCV), size=0.1, color="darkgreen") +
@@ -848,7 +856,7 @@ Choosing ComBat as the best-looking batch correction, we make more MDS plots for
 xlims <- range(unlist(mds.cb$points[c("Dim1", "Dim2")]))
 ylims <- range(unlist(mds.cb$points[c("Dim2", "Dim3")]))
 pbase <- ggplot(mds.cb$points) +
-    aes(x=Dim1, y=Dim2, color=batch, fill=time_point, shape=cell_type, linetype=donor_id, group=cell_type:donor_id) +
+    aes(x=Dim1, y=Dim2, label=SampleName, color=batch, fill=time_point, shape=cell_type, linetype=donor_id, group=cell_type:donor_id) +
     geom_encircle(aes(group=time_point:cell_type, color=NULL), s_shape=0.75, expand=0.05, color=NA, alpha=0.2) +
     geom_path(color=hcl(c=0, l=45), aes(color=NULL)) +
     geom_point(size=4) +
