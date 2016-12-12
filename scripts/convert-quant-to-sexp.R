@@ -140,156 +140,22 @@ tsmsg <- function(...) {
 }
 
 ## Parallel version of tximport, because why not.
-BPtximport <- function (files, type = c("none", "kallisto", "salmon", "sailfish",
-    "rsem"), txIn = TRUE, txOut = FALSE, countsFromAbundance = c("no",
-    "scaledTPM", "lengthScaledTPM"), tx2gene = NULL, reader = read.delim,
-    geneIdCol, txIdCol, abundanceCol, countsCol, lengthCol, importer,
-    collatedFiles, ignoreTxVersion = FALSE, BPPARAM = try(BiocParallel::bpparam(), silent=TRUE))
+BPtximport <- function (files, ... , BPPARAM = try(BiocParallel::bpparam(), silent=TRUE))
 {
-    type <- match.arg(type)
-    countsFromAbundance <- match.arg(countsFromAbundance, c("no",
-                                                            "scaledTPM", "lengthScaledTPM"))
-    stopifnot(all(file.exists(files)))
-    if (!txIn & txOut)
-        stop("txOut only an option when transcript-level data is read in (txIn=TRUE)")
-    lapply_fun <- lapply
-    if (inherits(BPPARAM, "BiocParallelParam")) {
-        lapply_fun <- function(...) BiocParallel::bplapply(..., BPPARAM=BPPARAM)
+    dots <- list(...)
+    tximport1 <- function(f, i) {
+        message(i, " ", appendLF=FALSE)
+        args <- c(list(files=f), dots)
+        suppressMessages(do.call(tximport, args))
     }
-
-    if (type == "kallisto") {
-        geneIdCol = "gene_id"
-        txIdCol <- "target_id"
-        abundanceCol <- "tpm"
-        countsCol <- "est_counts"
-        lengthCol <- "eff_length"
-        importer <- reader
-    }
-    if (type %in% c("salmon", "sailfish")) {
-        geneIdCol = "gene_id"
-        txIdCol <- "Name"
-        abundanceCol <- "TPM"
-        countsCol <- "NumReads"
-        lengthCol <- "EffectiveLength"
-        importer <- function(x) reader(x, comment = "#")
-    }
-    if (type == "rsem") {
-        txIn <- FALSE
-        geneIdCol <- "gene_id"
-        abundanceCol <- "FPKM"
-        countsCol <- "expected_count"
-        lengthCol <- "effective_length"
-        importer <- reader
-    }
-    if (type == "cufflinks") {
-        stop("reading from collated files not yet implemented")
-    }
-    if (txIn) {
-        message("reading in files")
-
-        stopifnot(length(files) >= 1)
-
-        ## Maybe read the first sample to figure out the right column
-        ## names.
-        raw1 <- NULL
-        if (type %in% c("salmon", "sailfish")) {
-            importer <- function(x, ...) {
-                tmp <- reader(x, comment = "#", header = FALSE, ...)
-                names(tmp) <- c("Name", "Length", "TPM", "NumReads")
-                tmp
-            }
-            raw1 <- try(as.data.frame(importer(files[1])), silent=TRUE)
-            if (inherits(raw1, "try-error")) {
-                importer <- function(x, ...) {
-                    reader(x, comment = "#",
-                           col_names = c("Name", "Length", "TPM", "NumReads"), ...)
-                }
-                raw1 <- try(as.data.frame(importer(files[1])))
-                if (inherits(raw1, "try-error"))
-                    stop("tried but couldn't use reader() without error\n  user will need to define the importer() as well")
-            }
-        }
-
-        read_one_sample <- function(i, raw=as.data.frame(importer(files[i]))) {
-            message(i, " ", appendLF = FALSE)
-            force(raw)
-            if (is.null(tx2gene) & !txOut) {
-                if (!geneIdCol %in% names(raw)) {
-                    message()
-                    stop("\n\n  tximport failed at summarizing to the gene-level.\n  Please see 'Solutions' in the Details section of the man page: ?tximport\n\n")
-                }
-                stopifnot(all(c(lengthCol, abundanceCol) %in%
-                              names(raw)))
-            }
-            else {
-                stopifnot(all(c(lengthCol, abundanceCol) %in%
-                              names(raw)))
-            }
-            data.frame(txId=as.character(raw[[txIdCol]]),
-                       abundance=raw[[abundanceCol]],
-                       counts=raw[[countsCol]],
-                       length=raw[[lengthCol]],
-                       stringsAsFactors=FALSE)
-        }
-
-        ## Read all the samples (re-using the raw read of the first
-        ## sample if we already read it above)
-        remaining_files_i <- seq_along(files)
-        all_samples <- list()
-        if (!is.null(raw1)) {
-            all_samples <- c(all_samples, read_one_sample(1, raw1))
-            remaining_files_i <- remaining_files_i[-1]
-        }
-        all_samples <- c(all_samples, lapply_fun(remaining_files_i, read_one_sample))
-
-        txIdMat <- do.call(cbind, lapply(all_samples, `[[`, "txId"))
-        txIds <- lapply(seq_len(nrow(txIdMat)), function(i) unique(txIdMat[i,]))
-        stopifnot(all(lengths(txIds) == 1))
-        txIds <- unlist(txIds)
-        abundanceMatTx <- do.call(cbind, lapply(all_samples, `[[`, "abundance"))
-        countsMatTx <- do.call(cbind, lapply(all_samples, `[[`, "counts"))
-        lengthMatTx <- do.call(cbind, lapply(all_samples, `[[`, "length"))
-        dimnames(abundanceMatTx) <- dimnames(countsMatTx) <- dimnames(lengthMatTx) <-
-            list(txIds, names(files))
-        message("")
-        txi <- list(abundance = abundanceMatTx, counts = countsMatTx,
-                    length = lengthMatTx, countsFromAbundance = "no")
-        if (txOut) {
-            return(txi)
-        }
-        txi[["countsFromAbundance"]] <- NULL
-        txiGene <- summarizeToGene(txi, tx2gene, ignoreTxVersion,
-                                   countsFromAbundance)
-        return(txiGene)
-    }
-    else {
-        message("reading in files")
-        read_one_sample <- function(i) {
-            message(i, " ", appendLF = FALSE)
-            raw <- as.data.frame(importer(files[i]))
-            stopifnot(all(c(geneIdCol, abundanceCol, lengthCol) %in%
-                          names(raw)))
-            data.frame(geneId=raw[[geneIdCol]],
-                       abundance=raw[[abundanceCol]],
-                       counts=raw[[countsCol]],
-                       length=raw[[lengthCol]])
-        }
-        all_samples <- lapply_fun(seq_along(files), read_one_sample)
-        geneIdMat <- do.call(cbind, lapply(all_samples, `[[`, "geneId"))
-        geneIds <- lapply(seq_len(nrow(geneIdMat)), function(i) unique(geneIdMat[i,]))
-        stopifnot(all(lengths(geneIds) == 1))
-        geneIds <- unlist(geneIds)
-        abundanceMatTx <- do.call(cbind, lapply(all_samples, `[[`, "abundance"))
-        countsMatTx <- do.call(cbind, lapply(all_samples, `[[`, "counts"))
-        lengthMatTx <- do.call(cbind, lapply(all_samples, `[[`, "length"))
-        dimnames(abundanceMatTx) <- dimnames(countsMatTx) <- dimnames(lengthMatTx) <-
-            list(geneIds, names(files))
-    }
+    message("reading in files")
+    x <- bpmapply(tximport1, files, seq_along(files), SIMPLIFY=FALSE, BPPARAM=BPPARAM)
     message("")
-    return(list(abundance = abundanceMat, counts = countsMat,
-                length = lengthMat, countsFromAbundance = "no"))
+    list(abundance = lapply(x, `[[`, "abundance") %>% do.call(what=cbind) %>% set_colnames(names(files)),
+         counts = lapply(x, `[[`, "counts") %>% do.call(what=cbind) %>% set_colnames(names(files)),
+         length = lapply(x, `[[`, "length") %>% do.call(what=cbind) %>% set_colnames(names(files)),
+         countsFromAbundance = x[[1]]$countsFromAbundance)
 }
-environment(BPtximport) <- new.env(parent = environment(tximport))
 
 tximport_read_kallisto_h5 <- function(file, ...) {
     read_kallisto_h5(file, read_bootstrap=FALSE) %$%
