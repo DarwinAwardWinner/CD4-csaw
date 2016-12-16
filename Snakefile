@@ -1021,7 +1021,7 @@ rule run_shoal:
     params:
         quantdir='salmon_quant/{genome}_{transcriptome}',
         outdir='shoal_quant/{genome}_{transcriptome}',
-    threads: 8
+    threads: 16
     shell: '''
     run_shoal.sh -j {threads:q} -q {params.quantdir:q} -o {params.outdir:q}
     '''
@@ -2022,7 +2022,7 @@ rule collect_shoal_knownGene:
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
     run:
         cmd = [
-            'scripts/convert-quant-to-sexp.R',
+            'scripts/convert-shoal-to-sexp.R',
             '--samplemeta-file', input.samplemeta,
             '--sample-id-column', 'SRA_run',
             '--shoal-dir', *expand('shoal_quant/hg38.analysisSet_knownGene', **wildcards),
