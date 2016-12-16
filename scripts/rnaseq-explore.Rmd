@@ -4,14 +4,14 @@ author: "Ryan C. Thompson"
 output: html_notebook
 params:
   dataset:
-    value: salmon_hg38.analysisSet_ensembl.85
+    value: star_hg38.analysisSet_ensembl.85
   basedir:
     value: /home/ryan/Projects/CD4-csaw
 ---
 
 # Preliminary Setup
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, cache=FALSE}
 knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
                       cache.extra = list(params=params),
                       fig.height=8, fig.width=8,
@@ -20,7 +20,7 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
 
 First we load the necessary libraries.
 
-```{r load_packages, message=FALSE}
+```{r load_packages, message=FALSE, cache=FALSE}
 library(stringr)
 library(magrittr)
 library(openxlsx)
@@ -798,18 +798,22 @@ elist.cb <- elist.w
 elist.cb$E %<>% BPComBat(batch=sample.table %$% batch:donor_id, mod=design.cb, par.prior=FALSE)
 ```
 
-For each of the batch correction methods, we compute the sample distance matrix using multidimensional scaling and plot the first 3 principal coordinates.
+For each of the batch correction methods, we compute the sample distance matrix using multidimensional scaling and plot the first 3 principal coordinates. We reflect all the principal coordinates so as to make the mean of the Naive D0 samples negative in all dimensions, so that MDS plots will be oriented consistently between different reports. 
 
 ```{r batch_correction_mds_plot, warning=FALSE}
+naive.d0.samples <- sample.table$group == "NaiveD0"
 dmat <- suppressPlot(plotMDS(elist.w)$distance.matrix) %>% as.dist
 mds <- cmdscale(dmat, k=attr(dmat, "Size") - 1, eig=TRUE)
-mds$points %<>% add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
+mds$points %<>% scale(center=FALSE, scale=-sign(colMeans(.[naive.d0.samples,]))) %>%
+    add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
 dmat.bc <- suppressPlot(plotMDS(elist.bc)$distance.matrix) %>% as.dist
 mds.bc <- cmdscale(dmat.bc, k=attr(dmat, "Size") - 1, eig=TRUE)
-mds.bc$points %<>% add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
+mds.bc$points %<>% scale(center=FALSE, scale=sign(colMeans(.[naive.d0.samples,]))) %>%
+    add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
 dmat.cb <- suppressPlot(plotMDS(elist.cb)$distance.matrix) %>% as.dist
 mds.cb <- cmdscale(dmat.cb, k=attr(dmat, "Size") - 1, eig=TRUE)
-mds.cb$points %<>% add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
+mds.cb$points %<>% scale(center=FALSE, scale=sign(colMeans(.[naive.d0.samples,]))) %>%
+     add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
 
 ggmdsbatch <- function(dat, dims=1:2) {
     if (length(dims) == 1) {
