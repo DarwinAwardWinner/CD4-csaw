@@ -142,19 +142,21 @@ tsmsg <- function(...) {
 ## Parallel version of tximport, because why not.
 BPtximport <- function (files, ... , BPPARAM = try(BiocParallel::bpparam(), silent=TRUE))
 {
-    dots <- list(...)
-    tximport1 <- function(f, i) {
-        message(i, " ", appendLF=FALSE)
-        args <- c(list(files=f), dots)
-        suppressMessages(do.call(tximport, args))
+    if (is(BPPARAM, "BiocParallelParam")) {
+        agg.txi <- function(...) {
+            x <- list(...)
+            list(abundance = do.call(cbind, lapply(x, `[[`, "abundance")),
+                 counts = do.call(cbind, lapply(x, `[[`, "counts")),
+                 length = do.call(cbind, lapply(x, `[[`, "length")),
+                 countsFromAbundance = x[[1]]$countsFromAbundance)
+        }
+        ## Silence the individual calls since the intermixed output would
+        ## be unreadable.
+        tximport_silent <- function(...) suppressMessages(tximport(...))
+        return(bpvec(files, tximport_silent, ..., AGGREGATE=agg.txi, BPPARAM=BPPARAM))
+    } else {
+        return(tximport(files=files, ...))
     }
-    message("reading in files")
-    x <- bpmapply(tximport1, files, seq_along(files), SIMPLIFY=FALSE, BPPARAM=BPPARAM)
-    message("")
-    list(abundance = lapply(x, `[[`, "abundance") %>% do.call(what=cbind) %>% set_colnames(names(files)),
-         counts = lapply(x, `[[`, "counts") %>% do.call(what=cbind) %>% set_colnames(names(files)),
-         length = lapply(x, `[[`, "length") %>% do.call(what=cbind) %>% set_colnames(names(files)),
-         countsFromAbundance = x[[1]]$countsFromAbundance)
 }
 
 tximport_read_kallisto_h5 <- function(file, ...) {
