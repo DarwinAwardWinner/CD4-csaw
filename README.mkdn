@@ -39,15 +39,32 @@ reproduce the full analysis.
 * RNA-seq differential gene expression
 * RNA-seq differential gene/transcript/exon/whatever expression from
   Salmon quantification
+* Variance partitioning: http://bioconductor.org/packages/devel/bioc/html/variancePartition.html
+* pvca
 * csaw differential analysis of ChIP-seq
+* fdrtool: http://strimmerlab.org/software/fdrtool/
+* Integrating RNA-seq and ChIP-seq
+  * geneXtendeR: http://bioconductor.org/packages/devel/bioc/html/geneXtendeR.html
+  * fCCAC: http://bioconductor.org/packages/release/bioc/html/fCCAC.html
+  * hiAnnotator: http://bioconductor.org/packages/devel/bioc/html/hiAnnotator.html
+  * ChIPseeker: http://bioconductor.org/packages/devel/bioc/html/ChIPseeker.html
+  * mogsa: http://bioconductor.org/packages/release/bioc/html/mogsa.html
+* Gene set tests
+  * ToPASeq: http://bioconductor.org/packages/devel/bioc/html/ToPASeq.html
+  * mvGST: http://bioconductor.org/packages/devel/bioc/html/mvGST.html
+  * mgsa: http://bioconductor.org/packages/release/bioc/html/mgsa.html
+* QC Stuff
+  * ChIPQC: http://bioconductor.org/packages/release/bioc/html/ChIPQC.html
+  * MultiQC: http://multiqc.info/
+  * Rqc: http://www.bioconductor.org/packages/devel/bioc/html/Rqc.html
+* mixOmics: http://mixomics.org/
+* ica: https://cran.rstudio.com/web/packages/ica/index.html
+* Motif enrichment
+* pcaExplorer: https://bioconductor.org/packages/release/bioc/html/pcaExplorer.html
 
 ## TODO Other
 
-* Document required software
-* Make analysis into a reproducible workflow
-* ChIPQC: http://bioconductor.org/packages/release/bioc/html/ChIPQC.html
-* ChIPseeker: http://bioconductor.org/packages/devel/bioc/html/ChIPseeker.html
-* Motif enrichment
+* Document how to run the pipeline
 * Provide install script for R & Python packages.
 
 ## Dependencies
