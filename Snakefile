@@ -985,7 +985,8 @@ rule quant_rnaseq_with_salmon:
     threads: 16
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['salmon']
     shell: '''
-    salmon quant \
+    timeout 1h \
+      salmon quant \
       --index {params.index_dir:q} \
       --libType {params.libtype:q} \
       --unmatedReads {input.fastq:q} \
