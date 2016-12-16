@@ -527,7 +527,7 @@ Next we extract the count matrix from the SummarizedExperiment. This is made mor
 For SummarizedExperiments generated using tximport, this step is skipped, since the quantification tool has already been told which strand to use and only provides counts for that strand.
 
 ```{r extract_counts}
-libtype.assayNames <- c(ISF="sense.counts", ISR="antisense.counts")
+libtype.assayNames <- c(SF="sense.counts", SR="antisense.counts")
 if (all(libtype.assayNames %in% assayNames(sexp))) {
     message("Selecting stranded counts for each sample")
     sample.table %<>% mutate(count_type=libtype.assayNames[libType])

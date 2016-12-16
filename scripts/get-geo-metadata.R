@@ -115,7 +115,7 @@ samplemeta <- lapply(esets, function(eset) {
         mutate_if_present(
             "technical_batch",
             technical_batch=sprintf("B%s", technical_batch),
-            libType=ifelse(technical_batch == "B1", "ISF", "ISR")) %>%
+            libType=ifelse(technical_batch == "B1", "SF", "SR")) %>%
         ## Only in ChIP-seq
         mutate_if_present(
             "chip_antibody",

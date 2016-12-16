@@ -982,9 +982,9 @@ rule quant_rnaseq_with_salmon:
     shell: '''
     salmon quant \
       --index {params.index_dir:q} \
+      --libType {params.libtype:q} \
       --unmatedReads {input.fastq:q} \
       --threads {threads:q} \
-      --libType {params.libtype:q} \
       --seqBias --gcBias --useVBOpt \
       --dumpEq --dumpEqWeights \
       --geneMap {input.genemap_file:q} \
@@ -1040,9 +1040,9 @@ rule quant_rnaseq_with_kallisto:
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['kallisto']
     run:
         libType = list(rnaseq_samplemeta['libType'][rnaseq_samplemeta['SRA_run'] == wildcards.SRA_run])[0]
-        if libType == 'ISF':
+        if libType == 'SF':
             lib_opt = '--fr-stranded'
-        elif libType == 'ISR':
+        elif libType == 'SR':
             lib_opt = '--rf-stranded'
         else:
             raise ValueError('Unknown kallisto libtype: {}'.format(libType))
