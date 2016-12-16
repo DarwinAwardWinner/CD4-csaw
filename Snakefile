@@ -282,6 +282,11 @@ def pick_top_peaks(infile, outfile, by='score', ascending=False, number=150000, 
     peaks.sort_values(by=by, axis=0, ascending=ascending, inplace=True, *args, **kwargs)
     write_narrowpeak(peaks.head(number), outfile)
 
+def call_R_external(f, *args, **kwargs):
+    arglist_string = r['paste'](r['deparse'](r['list'](*args, **kwargs), backtick=True, nlines=-1), collapse=" ")[0]
+    rcode = "do.call(%s, %s)" % (f, arglist_string)
+    check_call(['Rscript', '-e', rcode])
+
 def dict_to_R_named_list(d):
     return r['list'](**d)
 
@@ -295,7 +300,7 @@ def rmd_render(input, output_file, output_format=None, **kwargs):
     for (k, convfun) in arg_converters.items():
         if k in kwargs:
             kwargs[k] = convfun(kwargs[k])
-    return r('rmarkdown::render')(input=input, output_file=output_file, output_format=output_format, **kwargs)
+    call_R_external('rmarkdown::render', input=input, output_file=output_file, output_format=output_format, **kwargs)
 
 # Run a separate Snakemake workflow (if needed) to fetch the sample
 # metadata, which must be avilable before evaluating the rules below.
@@ -1908,7 +1913,7 @@ rule rnaseq_counts_explore:
     version: R_package_version('rmarkdown')
     threads: 8
     run:
-        r['options'](**{'mc.cores': threads})
+        os.environ['MC_CORES'] = str(threads)
         rmd_render(input='scripts/rnaseq-explore.Rmd',
                    output_file=os.path.join(os.getcwd(), output.html), output_format='html_document',
                    params={ 'basedir': os.getcwd(), 'dataset': wildcards.dataset, })
