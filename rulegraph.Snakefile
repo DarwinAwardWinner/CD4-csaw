@@ -68,3 +68,5 @@ rule rulegraph_svg:
         snakemake --nolock -f --rulegraph {real_targets:q} | \
         dot -Grankdir=LR -Tsvg > {output:q}
         ''')
+
+localrules: rulegraph_svg_to_png, rulegraph_svg_to_pdf, dag_svg, rulegraph_svg
