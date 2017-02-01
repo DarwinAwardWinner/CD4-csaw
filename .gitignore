@@ -36,3 +36,4 @@ temp-core-*
 /reports/
 *_cache/
 /cache/
+*.nb.html
