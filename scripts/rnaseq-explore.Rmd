@@ -1,12 +1,14 @@
 ---
-title: "Exploration of CD4 RNA-Seq Data"
-author: "Ryan C. Thompson"
-output: html_notebook
 params:
   dataset:
     value: star_hg38.analysisSet_ensembl.85
   basedir:
     value: /home/ryan/Projects/CD4-csaw
+title: Exploration of CD4 RNA-Seq Dataset
+subtitle: "`r paste0('Using Dataset ', params$dataset)`"
+author: "Ryan C. Thompson"
+date: "`r gsub('\\s+', ' ', format(Sys.time(), '%B %e, %Y'))`"
+output: html_notebook
 ---
 
 # Preliminary Setup
@@ -67,23 +69,25 @@ ggprint <- function(plots, device=dev.cur(), closedev, printfun=print) {
     new.device <- dev.cur()
   }
   if (missing(closedev)) {
-    closedev = ! orig.device == new.device && new.device != 1
+    closedev = orig.device != new.device && new.device != 1
   }
-  dev.set(new.device)
-  on.exit({
-    if (closedev) {
-      dev.off(new.device)
-    }
-    if (new.device != orig.device) {
-      dev.set(orig.device)
-    }
-  })
+  if (!is.na(device)) {
+      dev.set(new.device)
+      on.exit({
+          if (closedev) {
+              dev.off(new.device)
+          }
+          if (new.device != orig.device) {
+              dev.set(orig.device)
+          }
+      })
+  }
   assertthat::assert_that(is(plots, "gg") ||
                           is.list(plots))
   if (is(plots, "gg")) {
       printfun(plots)
   } else if (is.list(plots)) {
-    lapply(plots, ggprint, device=dev.cur(), closedev=FALSE, printfun=printfun)
+    lapply(plots, ggprint, device=NA, closedev=FALSE, printfun=printfun)
   } else {
     stop("Argument is not a ggplot or list of ggplots")
   }
