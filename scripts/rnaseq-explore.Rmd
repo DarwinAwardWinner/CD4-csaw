@@ -71,7 +71,7 @@ ggprint <- function(plots, device=dev.cur(), closedev, printfun=print) {
   if (missing(closedev)) {
     closedev = orig.device != new.device && new.device != 1
   }
-  if (!is.na(device)) {
+  if (!is.null(device) && !is.na(device)) {
       dev.set(new.device)
       on.exit({
           if (closedev) {
@@ -504,6 +504,60 @@ BPComBat <- function (dat, batch, mod = NULL, par.prior = TRUE, prior.plots = FA
 environment(BPComBat) <- new.env(parent = environment(ComBat))
 ```
 
+Lastly, we define a convenience function for alternating voom and duplicateCorrelation.
+
+```{r voom_and_dupcor_function}
+voomWithDuplicateCorrelation <- function(counts, design = NULL, plot = FALSE, block = NULL, trim = 0.15, voom.fun=voom, dupCor.fun=duplicateCorrelation, initial.correlation=0, niter=2, tol=1e-6, verbose=TRUE, ...) {
+    assert_that(niter >= 1)
+    assert_that(is.finite(niter))
+    
+    if (niter < 2) {
+        warning("Using less than 2 iterations of voom and duplicateCorrelation is not recommended.")
+    }
+    # Do first iteration
+    prev.cor <- 0
+    iter.num <- 0
+    if (initial.correlation != 0 && !is.null(block)) {
+        elist <- voom.fun(counts, design=design, plot=FALSE, block=block, correlation=initial.correlation, ...)
+    } else {
+        elist <- voom.fun(counts, design=design, plot=FALSE, ...)
+    }
+    if (is.null(block)) {
+        warning("Not running duplicateCorrelation because block is NULL.")
+    }
+    if (verbose) {
+        message(sprintf("Initial guess for duplicate correlation before 1st iteration: %s", initial.correlation))
+    }
+    dupcor <- dupCor.fun(elist, design, block=block, trim=trim)
+    iter.num <- iter.num + 1
+    if (verbose) {
+        message(sprintf("Duplicate correlation after %s iteration: %s", toOrdinal(iter.num), dupcor$consensus.correlation))
+    }
+    while (iter.num < niter) {
+        if (!is.null(tol) && is.finite(tol)) {
+            if (abs(dupcor$consensus.correlation - prev.cor) <= tol) {
+                if (verbose) {
+                    message(sprintf("Stopping after %s iteration because tolerance threshold was reached.", toOrdinal(iter.num)))
+                }
+                break
+            }
+        }
+        prev.cor <- dupcor$consensus.correlation
+        elist <- voom.fun(counts, design=design, plot=FALSE, block=block, correlation=prev.cor, ...)
+        dupcor <- dupCor.fun(elist, design, block=block, trim=trim)
+        iter.num <- iter.num + 1
+        if (verbose) {
+            message(sprintf("Duplicate correlation after %s iteration: %s", toOrdinal(iter.num), dupcor$consensus.correlation))
+        }
+    }
+    elist <- voom.fun(counts, design=design, plot=plot, block=block, correlation=dupcor$consensus.correlation, ...)
+    for (i in names(dupcor)) {
+        elist[[i]] <- dupcor[[i]]
+    }
+    return(elist)
+}
+```
+
 # Data Loading and Preprocessing
 
 Now we'll load the RNA-seq data set from an RDS file containing a SummarizedExperiment object, and modify it to use the sample names as column names.
@@ -704,6 +758,7 @@ ggprint(p)
 ggprint(p, device=cairo_pdf(file.path(plotdir, "disp-plots.pdf"), onefile=TRUE))
 rasterpdf(file.path(plotdir, "disp-plots.pdf"), resolution=600)
 ```
+
 Next, we use limma's sample weight calculating methods to investigate possible quality issues. To confirm our results, we also split the samples into treatment groups and use edgeR to estimate the dispersion within each group. This is a crude method, and these group-specific dispersion estimate would be too unstable for use in a differential expression analysis, but comparing the overall mean dispersion for each sample to the sample quality weights determined by limma provides a useful sanity check.
 
 ```{r compute_quality_weights, message=FALSE, warning=FALSE}
@@ -714,14 +769,7 @@ dbg <- estimateDispByGroup(dge, sample.table$group, sample.table$batch)
 ## correctly, this will underestimate the true correlation, but that's
 ## still better than leaving it out entirely (i.e. assuming cor=0).
 design.NoTime <- model.matrix(~1 + cell_type + donor_id, sample.table)
-
-elist.w0 <- voomWithQualityWeightsAndOffset(dge, design.NoTime)
-dupcor0 <- duplicateCorrelation(elist.w0, design.NoTime, block=sample.table$batch)
-elist.w1 <- voomWithQualityWeightsAndOffset(dge, design.NoTime, block=sample.table$batch, correlation=dupcor0$consensus.correlation)
-
-## Final
-dupcor <- duplicateCorrelation(elist.w1, design.NoTime, block=sample.table$batch)
-elist.w <- voomWithQualityWeightsAndOffset(dge, design.NoTime, block=sample.table$batch, correlation=dupcor$consensus.correlation)
+elist.w <- voomWithDuplicateCorrelation(dge, design.NoTime, block=sample.table$batch, niter=10, voom.fun=voomWithQualityWeightsAndOffset)
 ```
 
 To see whether the weights are correlated with specific experimental factors, we create a boxplot of the weights and group dispersions against each relevant covariate.
