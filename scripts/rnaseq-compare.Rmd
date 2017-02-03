@@ -69,7 +69,7 @@ ggprint <- function(plots, device=dev.cur(), closedev, printfun=print) {
   if (missing(closedev)) {
     closedev = orig.device != new.device && new.device != 1
   }
-  if (!is.na(device)) {
+  if (!is.null(device) && !is.na(device)) {
       dev.set(new.device)
       on.exit({
           if (closedev) {
@@ -560,7 +560,7 @@ for (dset in seq_along(sexps)) {
 
 As a sanity check, we make sure that we selected the strand sense with the higher total count for each sample.
 
-```{r strand_sanity_check}
+```{r strand_sanity_check, message=FALSE}
 for (dset in seq_along(sexps)) {
     if (all(libtype.assayNames %in% assayNames(sexps[[dset]]))) {
         total.counts <- sexps[[dset]] %>% assays %>% sapply(colSums) %>% data.frame %>%
@@ -595,7 +595,7 @@ dges <- bplapply(sexps, function(sexp) {
 
 Finally, we compute the normalized logCPM matrix for each dataset, and convert it into a tidy format. We also compute the normalized logCPM without taking into account the offsets derived from gene length normalization. 
 
-```{r prepare_logCPM}
+```{r prepare_logCPM, message=FALSE}
 logcpm.matrices <- bplapply(dges, cpmWithOffset, log=TRUE)
 logcpm.matrices.nooffset <- bplapply(dges, cpm, log=TRUE)
 logcpm <- bplapply(dges, function(dge) {
@@ -814,14 +814,3 @@ p <- ggplot(logcpm.merged) +
              x="logCPM by Salmon", y="logCPM by Shoal")
 ggprint(p)
 ```
-Comparisons to do: 
-
-* STAR vs HISAT2
-* STAR vs Salmon (with and without offset)
-* Salmon vs Kallisto (with and without offset)
-* Salmon vs shoal
-
-Plots to make:
-
-* Abundance A vs B w/correlation
-* Plot of estimated length A vs B (where relevant)
