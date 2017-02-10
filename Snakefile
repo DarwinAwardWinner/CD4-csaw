@@ -1900,45 +1900,6 @@ rule csaw_norm_eval:
     resources: mem_gb=20
     shell: 'scripts/csaw-norm-eval.R {wildcards.chip:q}'
 
-rule rnaseq_explore:
-    '''Perform exploratory data analysis on RNA-seq dataset'''
-    input:
-        rmd='scripts/rnaseq-explore.Rmd',
-        sexp='saved_data/SummarizedExperiment_rnaseq_{dataset}.RDS',
-    output:
-        html='reports/RNA-seq/{dataset}-exploration.html',
-        plots=expand('plots/RNA-seq/{{dataset}}/{plotfile}',
-                     plotfile=['AveLogCPM-plots.pdf',
-                               'disp-plots.pdf', 'qc-weights.pdf',
-                               'rnaseq-ComBat-qc.pdf', 'rnaseq-MDSPlots.pdf',
-                               'rnaseq-MDSPlots-BatchCorrect.pdf',
-                               'weights-vs-covars.pdf']),
-    version: R_package_version('rmarkdown')
-    threads: 8
-    run:
-        os.environ['MC_CORES'] = str(threads)
-        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
-                   output_format='html_document',
-                   params={ 'basedir': os.getcwd(), 'dataset': wildcards.dataset, })
-
-rule rnaseq_compare:
-    input:
-        rmd='scripts/rnaseq-compare.Rmd',
-        sexps=expand('saved_data/SummarizedExperiment_rnaseq_{aligner_and_genome}_{transcriptome}.RDS',
-                           aligner_and_genome=[
-                               'star_hg38.analysisSet', 'hisat2_grch38_snp_tran', 'kallisto_hg38.analysisSet',
-                               'salmon_hg38.analysisSet', 'shoal_hg38.analysisSet'
-                           ],
-                           transcriptome=['ensembl.85','knownGene']),
-    output:
-        html='reports/RNA-seq/rnaseq-compare.html',
-    version: R_package_version('rmarkdown')
-    threads: 8
-    run:
-        os.environ['MC_CORES'] = str(threads)
-        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
-                   output_format='html_document')
-
 rule collect_abundance_ensembl:
     '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
 
@@ -2054,3 +2015,61 @@ rule collect_shoal_knownGene:
             '--gene-info', input.genemeta,
         ]
         check_call(cmd)
+
+rule rnaseq_explore:
+    '''Perform exploratory data analysis on RNA-seq dataset'''
+    input:
+        rmd='scripts/rnaseq-explore.Rmd',
+        sexp='saved_data/SummarizedExperiment_rnaseq_{dataset}.RDS',
+    output:
+        html='reports/RNA-seq/{dataset}-exploration.html',
+        plots=expand('plots/RNA-seq/{{dataset}}/{plotfile}',
+                     plotfile=['AveLogCPM-plots.pdf',
+                               'disp-plots.pdf', 'qc-weights.pdf',
+                               'rnaseq-ComBat-qc.pdf', 'rnaseq-MDSPlots.pdf',
+                               'rnaseq-MDSPlots-BatchCorrect.pdf',
+                               'weights-vs-covars.pdf']),
+    version: R_package_version('rmarkdown')
+    threads: 8
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
+                   output_format='html_document',
+                   params={ 'basedir': os.getcwd(), 'dataset': wildcards.dataset, })
+
+rule rnaseq_compare:
+    '''Perform basic comparisons between RNA-seq quantification methods'''
+    input:
+        rmd='scripts/rnaseq-compare.Rmd',
+        sexps=expand('saved_data/SummarizedExperiment_rnaseq_{aligner_and_genome}_{transcriptome}.RDS',
+                           aligner_and_genome=[
+                               'star_hg38.analysisSet', 'hisat2_grch38_snp_tran', 'kallisto_hg38.analysisSet',
+                               'salmon_hg38.analysisSet', 'shoal_hg38.analysisSet'
+                           ],
+                           transcriptome=['ensembl.85','knownGene']),
+    output:
+        html='reports/RNA-seq/rnaseq-compare.html',
+    version: R_package_version('rmarkdown')
+    threads: 8
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
+                   output_format='html_document')
+
+rule rnaseq_diffexp:
+    '''Perform differential expression analysis on RNA-seq dataset'''
+    input:
+        rmd='scripts/rnaseq-diffexp.Rmd',
+        sexp='saved_data/SummarizedExperiment_rnaseq_{dataset}.RDS',
+    output:
+        html='reports/RNA-seq/{dataset}-diffexp.html',
+        table='results/RNA-seq/{dataset}-diffexp.xlsx',
+        rds='saved_data/RNA-seq/{dataset}-diffexp-tables.RDS',
+        rda='saved_data/RNA-seq/{dataset}-diffexp.rda',
+    version: (R_package_version('rmarkdown'), R_package_version('limma'))
+    threads: 8
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
+                   output_format='html_document',
+                   params={ 'basedir': os.getcwd(), 'dataset': wildcards.dataset, })

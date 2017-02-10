@@ -1,0 +1,936 @@
+---
+title: "Differential expression analysis of CD4 RNA-Seq Dataset"
+author: "Ryan C. Thompson"
+date: '`r gsub("[[:space:]]+", " ", format(Sys.time(), "%B %e, %Y"))`'
+output:
+  html_document: default
+  html_notebook: default
+subtitle: '`r paste0("Using Dataset ", params$dataset)`'
+params:
+  basedir:
+    value: /home/ryan/Projects/CD4-csaw
+  dataset:
+    value: shoal_hg38.analysisSet_ensembl.85
+---
+
+# Preliminary Setup
+
+```{r setup, include=FALSE, cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
+                      cache.extra = list(params=params),
+                      fig.height=8, fig.width=8,
+                      cache.path = paste0(file.path(params$basedir, "cache", "rnaseq-diffexp", params$dataset), .Platform$file.sep))
+```
+
+First we load the necessary libraries.
+
+```{r load_packages, message=FALSE, cache=FALSE}
+library(stringr)
+library(magrittr)
+library(openxlsx)
+library(Biobase)
+library(SummarizedExperiment)
+library(dplyr)
+library(edgeR)
+library(limma)
+library(sva)
+library(ggplot2)
+library(scales)
+library(GGally)
+library(ggalt)
+library(reshape2)
+library(assertthat)
+library(ggfortify)
+library(broom)
+library(toOrdinal)
+library(qvalue)
+
+library(doParallel)
+ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
+registerDoParallel(cores=ncores)
+library(BiocParallel)
+register(DoparParam())
+```
+
+Next we define some utility functions.
+
+```{r utility_functions, echo=FALSE}
+# Useful to wrap functions that both produce a plot and return a useful value,
+# when you only want the return value and not the plot.
+suppressPlot <- function(arg) {
+    png("/dev/null")
+    result <- arg
+    dev.off()
+    result
+}
+
+ggprint <- function(plots, device=dev.cur(), closedev, printfun=print) {
+  orig.device <- dev.cur()
+  new.device <- device
+  # Functions that create devices don't generally return them, they just set
+  # them as the new current device, so get the actual device from dev.cur()
+  # instead.
+  if (is.null(new.device)) {
+    new.device <- dev.cur()
+  }
+  if (missing(closedev)) {
+    closedev = orig.device != new.device && new.device != 1
+  }
+  if (!is.null(device) && !is.na(device)) {
+      dev.set(new.device)
+      on.exit({
+          if (closedev) {
+              dev.off(new.device)
+          }
+          if (new.device != orig.device) {
+              dev.set(orig.device)
+          }
+      })
+  }
+  assertthat::assert_that(is(plots, "gg") ||
+                          is.list(plots))
+  if (is(plots, "gg")) {
+      printfun(plots)
+  } else if (is.list(plots)) {
+    lapply(plots, ggprint, device=NA, closedev=FALSE, printfun=printfun)
+  } else {
+    stop("Argument is not a ggplot or list of ggplots")
+  }
+  invisible(NULL)
+}
+
+# ggplotly.printer <- function(...) {
+#     dots <- list(...)
+#     function(p) {
+#         args <- c(list(p=p), dots)
+#         print(do.call(ggplotly, args))
+#     }
+# }
+
+## Based on this: https://www.r-bloggers.com/shrinking-rs-pdf-output/
+## Requires some command-line image and PDF manip tools.
+rasterpdf <- function(pdffile, outfile=pdffile, resolution=600, verbose=FALSE) {
+    vmessage <- function(...) {
+        if (verbose) message(...)
+    }
+    require(parallel)
+    wd=getwd()
+    td=file.path(tempdir(),"pdf")
+    if(!file.exists(td))
+        dir.create(td)
+    file.copy(pdffile, file.path(td,"test.pdf"))
+    setwd(td)
+    on.exit(setwd(wd))
+    system2("pdftk", args=c("test.pdf", "burst"))
+    files=list.files(pattern="pg_")
+
+    vmessage(paste0("Rasterizing ",length(files)," pages:  (",paste(files,collapse=","),")"))
+    bplapply(files,function(f){
+        system2("gs", args=c("-dBATCH", "-dTextAlphaBits=4", "-dNOPAUSE",
+                             paste0("-r", resolution), "-q", "-sDEVICE=png16m",
+                             paste0("-sOutputFile=",f,".png"),f))
+        system2("convert", args=c("-quality", "100", "-density", resolution,
+                                  paste0(f,".png"),
+                                  paste0(strsplit(f,".",fixed=T)[[1]][1],".pdf")))
+        vmessage(paste0("Finished page ",f))
+        return()
+    })
+    vmessage("Compiling the final pdf")
+    file.remove("test.pdf")
+    file.remove(list.files(pattern="png"))
+    setwd(wd)
+    system2("gs", args=c("-dBATCH", "-dNOPAUSE", "-q", "-sDEVICE=pdfwrite",
+                         paste0("-sOutputFile=",outfile),
+                         list.files(path=td, pattern=glob2rx("*.pdf"), full.names=TRUE)))
+    file.remove(list.files(td,full=T))
+    vmessage("Finished!!")
+}
+
+add.numbered.colnames <- function(x, prefix="C") {
+    x %>% set_colnames(sprintf("%s%i", prefix, seq(from=1, length.out=ncol(x))))
+}
+
+autoFactorize <- function(df) {
+    for (i in colnames(df)) {
+        if (is.character(df[[i]]) && anyDuplicated(df[[i]])) {
+            df[[i]] %<>% factor
+        }
+    }
+    df
+}
+
+estimateDispByGroup <- function(dge, group=as.factor(dge$samples$group), batch, ...) {
+    assert_that(nlevels(group) > 1)
+    assert_that(length(group) == ncol(dge))
+    if (!is.list(batch)) {
+        batch <- list(batch=batch)
+    }
+    batch <- as.data.frame(batch)
+    assert_that(nrow(batch) == ncol(dge))
+    colnames(batch) %>% make.names(unique=TRUE)
+    igroup <- seq_len(ncol(dge)) %>% split(group)
+    bplapply(igroup, function(i) {
+        group.dge <- dge[,i]
+        group.batch <- droplevels(batch[i,, drop=FALSE])
+        group.batch <- group.batch[sapply(group.batch, . %>% unique %>% length %>% is_greater_than(1))]
+        group.vars <- names(group.batch)
+        if (length(group.vars) == 0)
+            group.vars <- "1"
+        group.batch.formula <- as.formula(str_c("~", str_c(group.vars, collapse="+")))
+        des <- model.matrix(group.batch.formula, group.batch)
+        estimateDisp(group.dge, des, ...)
+    })
+}
+
+ggduo.dataXY <- function(dataX, dataY, extraData=NULL, ...) {
+    assert_that(ncol(dataX) > 0)
+    assert_that(ncol(dataY) > 0)
+    alldata <- cbind(dataX, dataY)
+    if (!is.null(extraData)) {
+        alldata <- cbind(alldata, extraData)
+    }
+    ggduo(alldata, columnsX=colnames(dataX), columnsY=colnames(dataY), ...)
+}
+
+# Make cairo_pdf use onefile=TRUE by default
+cairo_pdf <- function(..., onefile=TRUE) {
+    grDevices::cairo_pdf(..., onefile = onefile)
+}
+
+collapseToAtomic <- function(x, sep=",") {
+    if (is.atomic(x)) {
+        return(x) 
+    } else {
+        y <- lapply(x, str_c, collapse=sep)
+        y[lengths(y) == 0] <- NA
+        assert_that(all(lengths(y) == 1))
+        y <- unlist(y)
+        assert_that(length(y) == length(x))
+        return(y)
+    }
+}
+
+ensureAtomicColumns <- function(df, sep=",") {
+    df[] %<>% lapply(collapseToAtomic, sep=sep)
+    df
+}
+
+## Version of cpm that uses an offset matrix instead of lib sizes
+cpmWithOffset <- function(dge, offset=expandAsMatrix(getOffset(dge), dim(dge)),
+                          log = FALSE, prior.count = 0.25, ...) {
+    x <- dge$counts
+    effective.lib.size <- exp(offset)
+    if (log) {
+        prior.count.scaled <- effective.lib.size/mean(effective.lib.size) * prior.count
+        effective.lib.size <- effective.lib.size + 2 * prior.count.scaled
+    }
+    effective.lib.size <- 1e-06 * effective.lib.size
+    if (log)
+        log2((x + prior.count.scaled) / effective.lib.size)
+    else x / effective.lib.size
+}
+
+aveLogCPMWithOffset <- function(y, ...) {
+    UseMethod("aveLogCPM")
+}
+
+aveLogCPMWithOffset.default <- function (y, offset = NULL, prior.count = 2,
+                                         dispersion = NULL, weights = NULL, ...)
+{
+    aveLogCPM(y, lib.size = NULL, offset = offset, prior.count = prior.count, dispersion = dispersion, weights = weights, ...)
+}
+
+aveLogCPMWithOffset.DGEList <- function (
+    y, offset = expandAsMatrix(getOffset(y), dim(y)),
+    prior.count = 2, dispersion = NULL, ...) {
+    if (is.null(dispersion)) {
+        dispersion <- y$common.dispersion
+    }
+    aveLogCPMWithOffset(
+        y$counts, offset = y$offset, prior.count = prior.count,
+        dispersion = dispersion, weights = y$weights)
+}
+
+
+## Version of voom that uses an offset matrix instead of lib sizes
+voomWithOffset <- function (
+    dge, design = NULL, offset=expandAsMatrix(getOffset(dge), dim(dge)),
+    normalize.method = "none", plot = FALSE, span = 0.5, ...)
+{
+    out <- list()
+    out$genes <- dge$genes
+    out$targets <- dge$samples
+    if (is.null(design) && diff(range(as.numeric(counts$sample$group))) >
+        0)
+        design <- model.matrix(~group, data = counts$samples)
+    counts <- dge$counts
+    if (is.null(design)) {
+        design <- matrix(1, ncol(counts), 1)
+        rownames(design) <- colnames(counts)
+        colnames(design) <- "GrandMean"
+    }
+
+    effective.lib.size <- exp(offset)
+
+    y <- log2((counts + 0.5)/(effective.lib.size + 1) * 1e+06)
+    y <- normalizeBetweenArrays(y, method = normalize.method)
+    fit <- lmFit(y, design, ...)
+    if (is.null(fit$Amean))
+        fit$Amean <- rowMeans(y, na.rm = TRUE)
+    sx <- fit$Amean + mean(log2(effective.lib.size + 1)) - log2(1e+06)
+    sy <- sqrt(fit$sigma)
+    allzero <- rowSums(counts) == 0
+    if (any(allzero)) {
+        sx <- sx[!allzero]
+        sy <- sy[!allzero]
+    }
+    l <- lowess(sx, sy, f = span)
+    if (plot) {
+        plot(sx, sy, xlab = "log2( count size + 0.5 )", ylab = "Sqrt( standard deviation )",
+            pch = 16, cex = 0.25)
+        title("voom: Mean-variance trend")
+        lines(l, col = "red")
+    }
+    f <- approxfun(l, rule = 2)
+    if (fit$rank < ncol(design)) {
+        j <- fit$pivot[1:fit$rank]
+        fitted.values <- fit$coef[, j, drop = FALSE] %*% t(fit$design[,
+            j, drop = FALSE])
+    }
+    else {
+        fitted.values <- fit$coef %*% t(fit$design)
+    }
+    fitted.cpm <- 2^fitted.values
+    ## fitted.count <- 1e-06 * t(t(fitted.cpm) * (lib.size + 1))
+    fitted.count <- 1e-06 * fitted.cpm * (effective.lib.size + 1)
+    fitted.logcount <- log2(fitted.count)
+    w <- 1/f(fitted.logcount)^4
+    dim(w) <- dim(fitted.logcount)
+    out$E <- y
+    out$weights <- w
+    out$design <- design
+    out$effective.lib.size <- effective.lib.size
+    if (is.null(out$targets))
+        out$targets <- data.frame(lib.size = exp(colMeans(offset)))
+    else out$targets$lib.size <- exp(colMeans(offset))
+    new("EList", out)
+}
+
+## Version of voom that uses an offset matrix instead of lib sizes
+voomWithQualityWeightsAndOffset <-function (
+    dge, design = NULL,
+    offset=expandAsMatrix(getOffset(dge), dim(dge)),
+    normalize.method = "none",
+    plot = FALSE, span = 0.5, var.design = NULL, method = "genebygene",
+    maxiter = 50, tol = 1e-10, trace = FALSE, replace.weights = TRUE,
+    col = NULL, ...)
+{
+    counts <- dge$counts
+    if (plot) {
+        oldpar <- par(mfrow = c(1, 2))
+        on.exit(par(oldpar))
+    }
+    v <- voomWithOffset(dge, design = design, offset = offset, normalize.method = normalize.method,
+        plot = FALSE, span = span, ...)
+    aw <- arrayWeights(v, design = design, method = method, maxiter = maxiter,
+        tol = tol, var.design = var.design)
+    v <- voomWithOffset(dge, design = design, weights = aw, offset = offset,
+        normalize.method = normalize.method, plot = plot, span = span,
+        ...)
+    aw <- arrayWeights(v, design = design, method = method, maxiter = maxiter,
+        tol = tol, trace = trace, var.design = var.design)
+    wts <- asMatrixWeights(aw, dim(v)) * v$weights
+    attr(wts, "arrayweights") <- NULL
+    if (plot) {
+        barplot(aw, names = 1:length(aw), main = "Sample-specific weights",
+            ylab = "Weight", xlab = "Sample", col = col)
+        abline(h = 1, col = 2, lty = 2)
+    }
+    if (replace.weights) {
+        v$weights <- wts
+        v$sample.weights <- aw
+        return(v)
+    }
+    else {
+        return(wts)
+    }
+}
+
+plotpvals <- function(pvals, ptn=propTrueNull(pvals)) {
+    df <- data.frame(p=pvals)
+    linedf <- data.frame(y=c(1, ptn), Line=c("Uniform", "Est. Null") %>% factor(levels=unique(.)))
+    ggplot(df) + aes(x=p) +
+        geom_histogram(aes(y = ..density..), binwidth=0.01, boundary=0) +
+        geom_hline(aes(yintercept=y, color=Line),
+                   data=linedf, alpha=0.5, show.legend=TRUE) +
+        scale_color_manual(name="Ref. Line", values=c("blue", "red")) +
+        xlim(0,1) + ggtitle(sprintf("P-value distribution (Est. %0.2f%% signif.)",
+                                    100 * (1-ptn))) +
+        xlab("p-value") + ylab("Relative frequency") +
+        theme(legend.position=c(0.95, 0.95),
+              legend.justification=c(1,1))
+}
+
+eBayes_autoprop <- function(..., prop.method="lfdr") {
+    eb <- eBayes(...)
+    if (is.function(prop.method)) {
+        ptn <- prop.method(eb$p.value)
+    } else {
+        ptn <- propTrueNull(eb$p.value, method=prop.method)
+    }
+    eBayes(..., proportion=1-ptn)
+}
+
+bfdr <- function(B) {
+    o <- order(B, decreasing = TRUE)
+    ro <- order(o)
+    B <- B[o]
+    positive <- which(B > 0)
+    PP <- exp(B)/(1+exp(B))
+    ## Computing from 1-PP gives better numerical precision for the
+    ## most significant genes (large B-values)
+    oneMinusPP <- 1/(1+exp(B))
+    BayesFDR <- cummean(oneMinusPP)
+    data.frame(B, PP, BayesFDR)[ro,]
+}
+
+add.bfdr <- function(ttab) {
+    B <- ttab[["B"]]
+    if (is.null(B)) {
+        warning("Cannot add BFDR to table with no B statistics")
+        return(ttab)
+    }
+    cbind(ttab, bfdr(B)[c("PP", "BayesFDR")])
+}
+
+get.pval.colname <- function(ttab) {
+    if (is.character(ttab)) {
+        cnames <- ttab
+    } else {
+        cnames <- colnames(ttab)
+    }
+    pcol <- match(c("p.value", "pvalue", "pval", "p"),
+                  tolower(cnames)) %>%
+        na.omit %>% .[1]
+    pcolname <- cnames[pcol]
+    if (length(pcolname) != 1)
+        stop("Could not determine p-value column name")
+    return(pcolname)
+}
+
+add.qvalue <- function(ttab, ...) {
+    tryCatch({
+        P <- ttab[[get.pval.colname(ttab)]]
+        qobj <- qvalue(P, ...)
+        qobj %$%
+            cbind(ttab,
+                  QValue=qvalues,
+                  LocFDR=lfdr)
+    }, error=function(e) {
+        warning(str_c("Failed to compute q-values: ", e$message))
+        ttab
+    })
+}
+
+filter_or_top_n <- function(.data, ..., minN=100) {
+    if (minN >= nrow(.data)) {
+        return(.data)
+    }
+    x <- filter(.data, ...)
+    if (nrow(x) < minN) {
+        x <- .data[seq_len(min(minN, nrow(.data))),]
+    }
+    x
+}
+```
+
+We also define a parallelized version of `sva::ComBat`, which takes the runtime of ComBat from about an hour to just over 10 minutes.
+
+```{r define_parallel_combat}
+BPComBat <- function (dat, batch, mod = NULL, par.prior = TRUE, prior.plots = FALSE,
+                      mean.only = FALSE, BPPARAM = bpparam())
+{
+    if (mean.only == TRUE) {
+        cat("Using the 'mean only' version of ComBat\n")
+    }
+    if (length(dim(batch)) > 1) {
+        stop("This version of ComBat only allows one batch variable")
+    }
+    batch <- as.factor(batch)
+    batchmod <- model.matrix(~-1 + batch)
+    cat("Found", nlevels(batch), "batches\n")
+    n.batch <- nlevels(batch)
+    batches <- list()
+    for (i in 1:n.batch) {
+        batches[[i]] <- which(batch == levels(batch)[i])
+    }
+    n.batches <- sapply(batches, length)
+    if (any(n.batches == 1)) {
+        mean.only = TRUE
+        cat("Note: one batch has only one sample, setting mean.only=TRUE\n")
+    }
+    n.array <- sum(n.batches)
+    design <- cbind(batchmod, mod)
+    check <- apply(design, 2, function(x) all(x == 1))
+    design <- as.matrix(design[, !check])
+    cat("Adjusting for", ncol(design) - ncol(batchmod), "covariate(s) or covariate level(s)\n")
+    if (qr(design)$rank < ncol(design)) {
+        if (ncol(design) == (n.batch + 1)) {
+            stop("The covariate is confounded with batch! Remove the covariate and rerun ComBat")
+        }
+        if (ncol(design) > (n.batch + 1)) {
+            if ((qr(design[, -c(1:n.batch)])$rank < ncol(design[,
+                                                                -c(1:n.batch)]))) {
+                stop("The covariates are confounded! Please remove one or more of the covariates so the design is not confounded")
+            }
+            else {
+                stop("At least one covariate is confounded with batch! Please remove confounded covariates and rerun ComBat")
+            }
+        }
+    }
+    NAs = any(is.na(dat))
+    if (NAs) {
+        cat(c("Found", sum(is.na(dat)), "Missing Data Values\n"),
+            sep = " ")
+    }
+    cat("Standardizing Data across genes\n")
+    if (!NAs) {
+        B.hat <- solve(t(design) %*% design) %*% t(design) %*%
+            t(as.matrix(dat))
+    }
+    else {
+        B.hat = apply(dat, 1, Beta.NA, design)
+    }
+    grand.mean <- t(n.batches/n.array) %*% B.hat[1:n.batch,
+                                                 ]
+    if (!NAs) {
+        var.pooled <- ((dat - t(design %*% B.hat))^2) %*% rep(1/n.array,
+                                                              n.array)
+    }
+    else {
+        var.pooled <- apply(dat - t(design %*% B.hat), 1, var,
+                              na.rm = T)
+	}
+	stand.mean <- t(grand.mean) %*% t(rep(1, n.array))
+	if (!is.null(design)) {
+		tmp <- design
+		tmp[, c(1:n.batch)] <- 0
+		stand.mean <- stand.mean + t(tmp %*% B.hat)
+	}
+    s.data <- (dat - stand.mean)/(sqrt(var.pooled) %*% t(rep(1,
+		n.array)))
+	cat("Fitting L/S model and finding priors\n")
+	batch.design <- design[, 1:n.batch]
+	if (!NAs) {
+        gamma.hat <- solve(t(batch.design) %*% batch.design) %*%
+			t(batch.design) %*% t(as.matrix(s.data))
+	}
+	else {
+		gamma.hat = apply(s.data, 1, Beta.NA, batch.design)
+	}
+	delta.hat <- matrix(1, nrow=length(batches), ncol=nrow(s.data))
+	if (mean.only == FALSE) {
+	  for (i in seq_along(batches)) {
+	    bi <- batches[[i]]
+	    delta.hat[i,] <- apply(s.data[, bi], 1, var, na.rm = T)
+	  }
+	}
+	gamma.bar <- apply(gamma.hat, 1, mean)
+	t2 <- apply(gamma.hat, 1, var)
+	a.prior <- apply(delta.hat, 1, aprior)
+	b.prior <- apply(delta.hat, 1, bprior)
+	if (prior.plots & par.prior) {
+		par(mfrow = c(2, 2))
+		tmp <- density(gamma.hat[1, ])
+		plot(tmp, type = "l", main = "Density Plot")
+		xx <- seq(min(tmp$x), max(tmp$x), length = 100)
+		lines(xx, dnorm(xx, gamma.bar[1], sqrt(t2[1])), col = 2)
+		qqnorm(gamma.hat[1, ])
+		qqline(gamma.hat[1, ], col = 2)
+		tmp <- density(delta.hat[1, ])
+		invgam <- 1/rgamma(ncol(delta.hat), a.prior[1], b.prior[1])
+		tmp1 <- density(invgam)
+        plot(tmp, typ = "l", main = "Density Plot", ylim = c(0,
+			max(tmp$y, tmp1$y)))
+		lines(tmp1, col = 2)
+        qqplot(delta.hat[1, ], invgam, xlab = "Sample Quantiles",
+			ylab = "Theoretical Quantiles")
+		lines(c(0, max(invgam)), c(0, max(invgam)), col = 2)
+		title("Q-Q Plot")
+	}
+	gamma.star <- delta.star <- matrix(NA, nrow=n.batch, ncol=nrow(s.data))
+	if (par.prior) {
+		cat("Finding parametric adjustments\n")
+	    results <- bplapply(1:n.batch, function(i) {
+	        if (mean.only) {
+				gamma.star <- postmean(gamma.hat[i,], gamma.bar[i], 1, 1, t2[i])
+				delta.star <- rep(1, nrow(s.data))
+			}
+			else {
+                temp <- it.sol(s.data[, batches[[i]]], gamma.hat[i,
+                    ], delta.hat[i, ], gamma.bar[i], t2[i], a.prior[i],
+					b.prior[i])
+				gamma.star <- temp[1, ]
+				delta.star <- temp[2, ]
+			}
+	        list(gamma.star=gamma.star, delta.star=delta.star)
+	    })
+	    for (i in 1:n.batch) {
+	        gamma.star[i,] <- results[[i]]$gamma.star
+	        delta.star[i,] <- results[[i]]$delta.star
+	    }
+	}
+	else {
+		cat("Finding nonparametric adjustments\n")
+		results <- bplapply(1:n.batch, function(i) {
+			if (mean.only) {
+				delta.hat[i, ] = 1
+			}
+            temp <- int.eprior(as.matrix(s.data[, batches[[i]]]),
+				gamma.hat[i, ], delta.hat[i, ])
+	        list(gamma.star=temp[1,], delta.star=temp[2,])
+	    })
+	    for (i in 1:n.batch) {
+	        gamma.star[i,] <- results[[i]]$gamma.star
+	        delta.star[i,] <- results[[i]]$delta.star
+	    }
+	}
+	cat("Adjusting the Data\n")
+	bayesdata <- s.data
+	j <- 1
+	for (i in batches) {
+        bayesdata[, i] <- (bayesdata[, i] - t(batch.design[i,
+            ] %*% gamma.star))/(sqrt(delta.star[j, ]) %*% t(rep(1,
+			n.batches[j])))
+		j <- j + 1
+	}
+    bayesdata <- (bayesdata * (sqrt(var.pooled) %*% t(rep(1,
+		n.array)))) + stand.mean
+	return(bayesdata)
+}
+environment(BPComBat) <- new.env(parent = environment(ComBat))
+```
+
+# Data Loading and Preprocessing
+
+Now we'll load the RNA-seq data set from an RDS file containing a SummarizedExperiment object, and modify it to use the sample names as column names.
+
+```{r load_data}
+sexpfile <- file.path(params$basedir, "saved_data",
+                      sprintf("SummarizedExperiment_rnaseq_%s.RDS", params$dataset))
+sexp <- readRDS(sexpfile)
+colnames(sexp) <- colData(sexp)$SampleName
+```
+
+We extract the sample metadata from the SummarizedExperiment. Since donor_id is a confounding factor, we tell R to use sum-to-zero contrasts when incorporating it into a design matrix.
+
+```{r extract_samplemeta}
+sample.table <- colData(sexp) %>%
+    as.data.frame %>% autoFactorize %>%
+    rename(batch=technical_batch) %>%
+    mutate(time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
+           group=interaction(cell_type, time_point, sep=""))
+contrasts(sample.table$donor_id) <- contr.sum(nlevels(sample.table$donor_id))
+```
+
+Next we extract the count matrix from the SummarizedExperiment. This is made more complicated than usual by the fact that half of the samples were sequenced with a different protocol than the other half, and the two protocols produce reads with opposite strand orientations. Hence, we need the sense counts for half of the samples and the antisense counts for the other half. The appropriate strand for each sample is documented in the `libType` column of the sample metadata, using the library type abbreviations [established by Salmon](http://salmon.readthedocs.io/en/latest/salmon.html#what-s-this-libtype).
+
+For SummarizedExperiments generated using tximport, this step is skipped, since the quantification tool has already been told which strand to use and only provides counts for that strand.
+
+```{r extract_counts}
+libtype.assayNames <- c(SF="sense.counts", SR="antisense.counts")
+if (all(libtype.assayNames %in% assayNames(sexp))) {
+    message("Selecting stranded counts for each sample")
+    sample.table %<>% mutate(count_type=libtype.assayNames[libType])
+    assay(sexp, "unstranded.counts") <- assay(sexp, "counts")
+    assay(sexp, "counts") <- lapply(seq_len(nrow(sample.table)), function(i) {
+        message("Using ", sample.table[i,]$count_type, " for ", colnames(sexp)[i])
+        assay(sexp, sample.table[i,]$count_type %>% as.character)[,i]
+    }) %>% do.call(what=cbind)
+}
+```
+
+As a sanity check, we make sure that we selected the strand sense with the higher total count for each sample.
+
+```{r strand_sanity_check}
+if (all(libtype.assayNames %in% assayNames(sexp))) {
+    total.counts <- sexp %>% assays %>% sapply(colSums) %>% data.frame %>%
+        mutate(SampleName=row.names(.)) %>%
+        inner_join(sample.table, by="SampleName")
+    total.counts %$% invisible(assert_that(all(counts == pmax(sense.counts, antisense.counts))))
+}
+```
+
+# Model Setup
+
+Before testing for differential expression, we need to normalize the data, filter low-count genes, perform the log transformation with precision weighting, and finally subtract batch effects using ComBat.
+
+First, we create a DGEList from the counts, copying over all the gene metadata.
+
+```{r prepare_dgelist}
+## Extract gene metadata and colapse lists
+all.gene.meta <- mcols(sexp) %>% ensureAtomicColumns %>% as.data.frame
+dge <- DGEList(counts=assay(sexp, "counts"))
+dge$genes <- all.gene.meta
+```
+Next we take care of the initial scaling normalization for sequencing depth and composition bias. We also discard any genes with all zero counts, since there is no meaningful analysis that can be done with these genes.
+
+```{r initial_normalization}
+## Remove all genes with zero counts in all samples
+nonzero <- rowSums(dge$counts) > 0
+dge %<>% .[nonzero,]
+dge %<>% calcNormFactors
+```
+
+In addition, if there is a length assay, we also use that to derive an offset matrix that corrects for differences in effective gene length between samples.
+
+```{r generate_offsets}
+if ("length" %in% assayNames(sexp)) {
+    normMat <- assay(sexp, "length") %>% divide_by(exp(rowMeans(log(.)))) %>%
+        .[nonzero,]
+    normCounts <- dge$counts/normMat
+    lib.offsets <- log(calcNormFactors(normCounts)) + log(colSums(normCounts))
+    dge$offset <- t(t(log(normMat)) + lib.offsets)
+}
+```
+
+We plot the distribution of average log2 CPM values to verify that our chosen presence threshold is appropriate. The distribution is expected to be bimodal, with a low-abundance peak representing non-expressed genes and a high-abundance peak representing expressed genes. The chosen threshold should separate the two peaks of the bimodal distribution.
+
+```{r compute_avelogCPM}
+a <- aveLogCPMWithOffset(dge)
+avelogcpm.presence.threshold <- -1
+```
+
+```{r plot_aveLogCPM, cache=FALSE}
+p <- list(
+    Histogram=ggplot(data.frame(logCPM=a)) +
+        aes(x=logCPM) +
+        geom_histogram(aes(y=100*(..count..)/sum(..count..)), binwidth=0.25, boundary=0) +
+        geom_vline(xintercept=avelogcpm.presence.threshold, color="red", linetype="dashed") +
+        xlab("Average logCPM") + ylab("Percent of genes in bin") +
+        coord_cartesian(xlim=quantile(a, c(0, 0.995)), ylim=c(0,10)) +
+        labs(title="Average gene LogCPM distribution",
+             subtitle="for genes with at least 1 read") +
+        theme(plot.caption = element_text(hjust = 0)),
+    ECDF=ggplot(fortify(ecdf(a))) +
+        aes(x=x, y=y*100) +
+        geom_step() +
+        geom_vline(xintercept=avelogcpm.presence.threshold, color="red", linetype="dashed") +
+        xlab("Average logCPM") + ylab("Percent of genes with smaller average logCPM") +
+        coord_cartesian(xlim=quantile(a, c(0, 0.995))) +
+        labs(title="Empirical Cumulative Distribution Function of gene LogCPM values",
+             subtitle="for genes with at least 1 read") +
+        theme(plot.caption = element_text(hjust = 0)))
+
+ggprint(p)
+```
+
+The red dashed line in each plot indicates the chosen presence threshold. We now subset the DGEList to only those genes above the threshold.
+
+```{r abundance_filter_genes}
+dge %<>% .[a >= avelogcpm.presence.threshold,]
+```
+
+Next, we use the voom method with sample quality weights to prepare the data for model fitting with limma. Note that donor_id is still included in the design matrix even though we subtracted out donor differences using ComBat. This ensures that the model fitting is honest about the number of residual degrees of freedom in the model, with 3 degrees of freedom "spent" modeling the inter-donor effects.
+
+```{r compute_quality_weights, warning=FALSE}
+design <- model.matrix(~0 + group + donor_id, sample.table)
+colnames(design) %<>% str_replace("^group", "")
+elist.nc <- voomWithQualityWeightsAndOffset(dge, design, plot=TRUE)
+```
+
+Next we use ComBat to perform batch correction, which performs empirical Bayes shrinkage of the batch correction parameters.
+
+```{r combat_adjust}
+design.cb <- model.matrix(~cell_type, sample.table)
+elist.cb <- elist.nc
+elist.cb$E %<>% BPComBat(batch=sample.table %$% batch:donor_id, mod=design.cb, par.prior=TRUE)
+```
+
+To make sure that the batch correction worked, we make MDS plots before and after.
+
+```{r plot_mds, cache=FALSE}
+dmat.nc <- suppressPlot(plotMDS(elist.nc)$distance.matrix) %>% as.dist
+mds.nc<- cmdscale(dmat.nc, k=attr(dmat.nc, "Size") - 1, eig=TRUE)
+mds.nc$points %<>% add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
+dmat.cb <- suppressPlot(plotMDS(elist.cb)$distance.matrix) %>% as.dist
+mds.cb <- cmdscale(dmat.cb, k=attr(dmat.cb, "Size") - 1, eig=TRUE)
+mds.cb$points %<>% add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
+
+mdsggbase <- function(df) {
+    ggplot(df) +
+        aes(x=Dim1, y=Dim2, label=SampleName, color=batch, fill=time_point, shape=cell_type, linetype=donor_id, group=cell_type:donor_id) +
+        geom_encircle(aes(group=time_point:cell_type, color=NULL), s_shape=0.75, expand=0.05, color=NA, alpha=0.2) +
+        geom_path(color=hcl(c=0, l=45), aes(color=NULL)) +
+        geom_point(size=4) +
+        scale_shape_manual(values=c(Naive=21, Memory=24)) +
+        scale_color_manual(values=col2hcl(c(B1="green", B2="magenta"), l=80)) +
+        scale_fill_hue(l=55) +
+        scale_linetype_manual(values=c("solid", "dashed", "dotdash", "twodash")) +
+        guides(colour = guide_legend(override.aes = list(shape = 21)),
+               fill = guide_legend(override.aes = list(shape = 21)),
+               shape = guide_legend(override.aes = list(color=hcl(c=0, l=80), fill=hcl(c=0, l=55)))) +
+        labs(title="limma voom Principal Coordinates 1 & 2") +
+        coord_equal()
+}
+
+pbase.nc <- mdsggbase(mds.nc$points)
+pbase.cb <- mdsggbase(mds.cb$points)
+   
+p <- list(NC.PC12=pbase.nc + 
+              labs(subtitle="Before Batch Correction"),
+          NC.PC23=pbase.nc +
+              aes(x=Dim2, y=Dim3) +
+              labs(title="limma voom Principal Coordinates 2 & 3",
+                   subtitle="Before Batch Correction"),
+          CB.PC12=pbase.cb + 
+              labs(subtitle="After ComBat Batch Correction"),
+          CB.PC23=pbase.cb +
+              aes(x=Dim2, y=Dim3) +
+              labs(title="limma voom Principal Coordinates 2 & 3",
+                   subtitle="After ComBat Batch Correction"))
+ggprint(p)
+```
+
+# Model fitting and differential expression testing
+
+We now start by fitting the linear model for each gene:
+
+```{r model_fit}
+fit <- lmFit(elist.cb, design) %>% eBayes(robust=TRUE)
+```
+
+We plot the mean-variance relationship of the data. Since the voom weights should counteract the mean-variance trend, there should me a minimal trend visible in this plot.
+
+```{r plot_meanvar, cache=FALSE}
+p <- ggplot(data_frame(CPM=2^fit$Amean, sigma=fit$sigma)) + 
+    aes(x=CPM, y=sigma) +
+    geom_point(size=0.2) +
+    geom_density2d(color=muted("blue", c=100, l=50)) + 
+    geom_smooth(method="loess", color=muted("red", c=100, l=50)) + 
+    geom_hline(yintercept = sqrt(fit$s2.prior), color=muted("green", c=100, l=50)) +
+    scale_x_continuous(name="Mean Normalized Counts per Million", trans=log10_trans()) +
+    scale_y_continuous(name="Standard Deviation", trans=log2_trans()) + 
+    labs(title="Mean-Variance Trend")
+ggprint(p)
+```
+
+Next, we define the differential expression tests we wish to perform as contrasts. Each contrast is an arithmetic expression in terms of the model coefficients.
+
+```{r define_contrasts}
+celltypes <- unique(sample.table$cell_type)
+all.timepoints <- unique(sample.table$time_point)
+nonzero.timepoints <- setdiff(all.timepoints, "D0")
+
+timepoint.anova.tests <- setNames(llply(celltypes, function(ct) {
+    setNames(sprintf("%s%s - %sD0", ct, nonzero.timepoints, ct),
+             sprintf("%s.D0v%s", ct, nonzero.timepoints))
+}), nm=str_c(celltypes, ".AllT"))
+timepoint.single.tests <- as.list(unlist(unname(timepoint.anova.tests)))
+celltype.singlet.tests <-
+    as.list(setNames(sprintf("Memory%s - Naive%s", all.timepoints, all.timepoints),
+                     sprintf("NvM.%s", all.timepoints)))
+celltype.allt.test <- list(NvM.AllT=unlist(celltype.singlet.tests))
+factorial.singlet.tests <-
+    as.list(setNames(sprintf("(Memory%s - MemoryD0) - (Naive%s - NaiveD0)",
+                             nonzero.timepoints, nonzero.timepoints),
+                     sprintf("Fac.%s", nonzero.timepoints)))
+factorial.allt.test <- list(Fac.AllT=unlist(factorial.singlet.tests))
+mi.vs.nf.test <- list(MD0vND14="MemoryD0 - NaiveD14")
+donor.var.test <- list(InterDonor=sprintf("donor_id%s", 1:3) %>% set_names(sprintf("Coef%s", seq_along(.))))
+alltests <- c(timepoint.anova.tests, timepoint.single.tests,
+              celltype.allt.test, celltype.singlet.tests,
+              factorial.allt.test, factorial.singlet.tests,
+              mi.vs.nf.test, donor.var.test)
+print(alltests)
+```
+
+We now perform the differential expression tests for each contrast or set of contrasts. For a single contrast, this performs a t-test. For a multi-contrast test, an F-test is performed. We also add q-values and Bayesian posterior probability statistics to the output, as alternative measures of significance.
+
+```{r test_contrasts}
+results.tables <- bplapply(alltests, function(ct) {
+    ctmat <- makeContrasts(contrasts = ct, levels=design) %>% set_colnames(names(ct))
+    cfit <- contrasts.fit(fit, ctmat) %>% eBayes(robust=TRUE)
+    tt <- topTable(cfit, n=Inf, sort.by="none")
+    # Fix logFC columns names
+    if (ncol(ctmat) > 1) {
+        bad.logfc.colnames <- make.names(colnames(ctmat))
+        good.logfc.colnames <- paste0("logFC.", colnames(ctmat))
+        cols.to.fix <- match(bad.logfc.colnames, names(tt))
+        names(tt)[cols.to.fix] <- good.logfc.colnames
+    }
+    tt %<>% 
+        rename(logCPM=AveExpr,
+               PValue=P.Value,
+               FDR=adj.P.Val) %>%
+        arrange(PValue) %>%
+        add.bfdr %>% add.qvalue(pfdr=TRUE)
+    annot.cols <- intersect(names(tt), c("ENSEMBL", "ENTREZID", "SYMBOL", "GENENAME"))
+    logfc.cols <- names(tt) %>% .[str_detect(.,"^logFC(\\.|$)")]
+    teststat.cols <- intersect(names(tt), c("F", "t"))
+    bfdr.cols <- intersect(names(tt), c("B", "PP", "BayesFDR"))
+    qval.cols <- intersect(names(tt), c("QValue", "LocFDR"))
+    selected.cols <- c(annot.cols, "PValue", "FDR", "logCPM", logfc.cols, teststat.cols, bfdr.cols, qval.cols)
+    remaining.cols <- setdiff(names(tt), selected.cols)
+    tt[c(selected.cols, remaining.cols)]
+})
+```
+
+We save the full result tables to an R data file and the tables of significant results only (FDR 10% or less) to an Excel file. We also save the entire workspace for later follow-up analysis.
+
+```{r save_results}
+dir.create(file.path(params$basedir, "saved_data", "RNA-seq"), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(params$basedir, "results", "RNA-seq"), recursive = TRUE, showWarnings = FALSE)
+saveRDS(results.tables, file.path(params$basedir, 'saved_data', 'RNA-seq', sprintf('%s-diffexp-tables.RDS', params$dataset)))
+save.image(file.path(params$basedir, 'saved_data', 'RNA-seq', sprintf('%s-diffexp.rda', params$dataset)))
+write.xlsx(results.tables, file.path(params$basedir, "results", "RNA-seq",sprintf('%s-diffexp.xlsx', params$dataset)))
+```
+
+To have confidence in the significance measures returned, we should verify that the p-value distributions for each test look reasonable.
+
+```{r pval_hist, cache=FALSE}
+p <- bplapply(names(results.tables), function(testname) {
+    pvals <- results.tables[[testname]]$PValue
+    pi0 <- pi0est(pvals)$pi0
+    p <- plotpvals(pvals, ptn = pi0) + labs(title=sprintf("P-value histogram for %s", testname))
+})
+ggprint(p)
+```
+
+We can look at the number of significant genes as an FDR of 10% for the various significance measures, as well as the estimated number of truly differentially expressed genes based on estimates of pi0.
+
+```{r number_sig_table}
+results.tables %>% sapply(function(tt) {
+    ndiff <- (1-pi0est(tt$PValue)$pi0) %>% multiply_by(nrow(tt)) %>% floor
+    nsig.fdr <- sum(tt$FDR <= 0.1)
+    nsig.qval <- sum(tt$QValue <= 0.1)
+    if ("BayesFDR" %in% names(tt)) {
+        nsig.bfdr <- sum(tt$BayesFDR <= 0.1)    
+    } else {
+        nsig.bfdr <- NA
+    }
+    c(Pi0Est=ndiff, FDR=nsig.fdr, QValue=nsig.qval, BayesFDR=nsig.bfdr)
+}) %>% data.frame
+```
+
+We can see that the results for Day 5 tend to have fewer significant genes than Day 1 or Day 14. This is likely related to the fact that Day 5 is in the low-quality batch 1 and therefore the Day 5 samples have been substantially down-weighted, as shown by modeling the log of the sample weight as a function of either batch or time point. (By comparison, the weights are not substantially different between cell types or donors.)
+
+```{r weights_by_day}
+c("time_point", "batch", "cell_type", "donor_id") %>% setNames(.,.) %>% 
+    lapply(. %>% sample.table[.] %>% cbind(Weight=elist.cb$sample.weights) %>% 
+               lm(log2(Weight) ~ 0 + ., data=.) %>% 
+               coef %>% {2^.})
+```
+
+The odd-shaped p-value histogram for the donor variability test is expected because ComBat was used to subtract out the donor effects.
+
+To get an idea of how the various significance measures compare to each other, we can plot them against each other. We can see that the QValue is smaller than the BH FDR by a constant factor up to a certian lower bound, while the FDR derived from Bayesian posterior probabilities is generally more conservative than either one.
+
+```{r test_fdr_plot, cache=FALSE}
+p <- results.tables$Naive.D0vD1 %$% list(
+    qplot(FDR, QValue, log="xy") + geom_abline(slope=1, intercept=0, linetype="dashed", alpha=0.5) + coord_fixed(),
+    qplot(FDR, BayesFDR, log="xy") + geom_abline(slope=1, intercept=0, linetype="dashed", alpha=0.5) + coord_fixed(),
+    qplot(BayesFDR, QValue, log="xy") + geom_abline(slope=1, intercept=0, linetype="dashed", alpha=0.5) + coord_fixed(),
+    qplot(LocFDR, 1-PP, log="xy") + geom_abline(slope=1, intercept=0, linetype="dashed", alpha=0.5) + coord_fixed())
+ggprint(p)
+```
