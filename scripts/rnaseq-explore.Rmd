@@ -112,11 +112,12 @@ rasterpdf <- function(pdffile, outfile=pdffile, resolution=600, verbose=FALSE) {
     wd=getwd()
     td=file.path(tempdir(),"pdf")
     if(!file.exists(td))
-        dir.create(td)
-    file.copy(pdffile, file.path(td,"test.pdf"))
+        dir.create(td, recursive = TRUE)
+    file.copy(pdffile, file.path(td,"toraster.pdf"))
     setwd(td)
     on.exit(setwd(wd))
-    system2("pdftk", args=c("test.pdf", "burst"))
+    assert_that(file.exists("toraster.pdf"))
+    system2("pdftk", args=c("toraster.pdf", "burst"))
     files=list.files(pattern="pg_")
 
     vmessage(paste0("Rasterizing ",length(files)," pages:  (",paste(files,collapse=","),")"))
@@ -131,7 +132,7 @@ rasterpdf <- function(pdffile, outfile=pdffile, resolution=600, verbose=FALSE) {
         return()
     })
     vmessage("Compiling the final pdf")
-    file.remove("test.pdf")
+    file.remove("toraster.pdf")
     file.remove(list.files(pattern="png"))
     setwd(wd)
     system2("gs", args=c("-dBATCH", "-dNOPAUSE", "-q", "-sDEVICE=pdfwrite",
@@ -504,60 +505,6 @@ BPComBat <- function (dat, batch, mod = NULL, par.prior = TRUE, prior.plots = FA
 environment(BPComBat) <- new.env(parent = environment(ComBat))
 ```
 
-Lastly, we define a convenience function for alternating voom and duplicateCorrelation.
-
-```{r voom_and_dupcor_function}
-voomWithDuplicateCorrelation <- function(counts, design = NULL, plot = FALSE, block = NULL, trim = 0.15, voom.fun=voom, dupCor.fun=duplicateCorrelation, initial.correlation=0, niter=2, tol=1e-6, verbose=TRUE, ...) {
-    assert_that(niter >= 1)
-    assert_that(is.finite(niter))
-    
-    if (niter < 2) {
-        warning("Using less than 2 iterations of voom and duplicateCorrelation is not recommended.")
-    }
-    # Do first iteration
-    prev.cor <- 0
-    iter.num <- 0
-    if (initial.correlation != 0 && !is.null(block)) {
-        elist <- voom.fun(counts, design=design, plot=FALSE, block=block, correlation=initial.correlation, ...)
-    } else {
-        elist <- voom.fun(counts, design=design, plot=FALSE, ...)
-    }
-    if (is.null(block)) {
-        warning("Not running duplicateCorrelation because block is NULL.")
-    }
-    if (verbose) {
-        message(sprintf("Initial guess for duplicate correlation before 1st iteration: %s", initial.correlation))
-    }
-    dupcor <- dupCor.fun(elist, design, block=block, trim=trim)
-    iter.num <- iter.num + 1
-    if (verbose) {
-        message(sprintf("Duplicate correlation after %s iteration: %s", toOrdinal(iter.num), dupcor$consensus.correlation))
-    }
-    while (iter.num < niter) {
-        if (!is.null(tol) && is.finite(tol)) {
-            if (abs(dupcor$consensus.correlation - prev.cor) <= tol) {
-                if (verbose) {
-                    message(sprintf("Stopping after %s iteration because tolerance threshold was reached.", toOrdinal(iter.num)))
-                }
-                break
-            }
-        }
-        prev.cor <- dupcor$consensus.correlation
-        elist <- voom.fun(counts, design=design, plot=FALSE, block=block, correlation=prev.cor, ...)
-        dupcor <- dupCor.fun(elist, design, block=block, trim=trim)
-        iter.num <- iter.num + 1
-        if (verbose) {
-            message(sprintf("Duplicate correlation after %s iteration: %s", toOrdinal(iter.num), dupcor$consensus.correlation))
-        }
-    }
-    elist <- voom.fun(counts, design=design, plot=plot, block=block, correlation=dupcor$consensus.correlation, ...)
-    for (i in names(dupcor)) {
-        elist[[i]] <- dupcor[[i]]
-    }
-    return(elist)
-}
-```
-
 # Data Loading and Preprocessing
 
 Now we'll load the RNA-seq data set from an RDS file containing a SummarizedExperiment object, and modify it to use the sample names as column names.
@@ -762,14 +709,8 @@ rasterpdf(file.path(plotdir, "disp-plots.pdf"), resolution=600)
 Next, we use limma's sample weight calculating methods to investigate possible quality issues. To confirm our results, we also split the samples into treatment groups and use edgeR to estimate the dispersion within each group. This is a crude method, and these group-specific dispersion estimate would be too unstable for use in a differential expression analysis, but comparing the overall mean dispersion for each sample to the sample quality weights determined by limma provides a useful sanity check.
 
 ```{r compute_quality_weights, message=FALSE, warning=FALSE}
+elist.w <- voomWithQualityWeightsAndOffset(dge, design)
 dbg <- estimateDispByGroup(dge, sample.table$group, sample.table$batch)
-
-## We need to exclude time point from this design for
-## duplicateCorrelation to avoid a degenerate design. If I understand
-## correctly, this will underestimate the true correlation, but that's
-## still better than leaving it out entirely (i.e. assuming cor=0).
-design.NoTime <- model.matrix(~1 + cell_type + donor_id, sample.table)
-elist.w <- voomWithDuplicateCorrelation(dge, design.NoTime, block=sample.table$batch, niter=10, voom.fun=voomWithQualityWeightsAndOffset)
 ```
 
 To see whether the weights are correlated with specific experimental factors, we create a boxplot of the weights and group dispersions against each relevant covariate.
@@ -822,6 +763,8 @@ Next we perform several methods of batch correction on the voom-transformed data
 
 ```{r batch_subtract}
 elist.bc <- elist.w
+# Batch is confounded with time point, so we leave it out of the design for this step
+design.NoTime <- model.matrix(~0 + cell_type + donor_id, sample.table)
 elist.bc$E %<>%
     removeBatchEffect(batch=sample.table$batch, design=design.NoTime,
                       weights=elist.bc$weights)
