@@ -555,15 +555,17 @@ rule all_chipseq:
         targets['site_profile_plot'],
         targets['csaw_qc_plots'],
 
-rule all_rnaseq_eda:
-    input: targets['rnaseq_eda']
-
 rule all_rnaseq_counts:
     input: targets['rnaseq_counts']
 
+rule all_rnaseq_eda:
+    input: targets['rnaseq_eda']
 
 rule all_rnaseq_quant:
     input: targets['rnaseq_quant']
+
+rule all_rnaseq_diffexp:
+    input: targets['rnaseq_diffexp']
 
 rule all_macs_callpeak:
     input:
