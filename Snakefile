@@ -18,6 +18,7 @@ from rpy2 import robjects
 from rpy2.robjects import r, pandas2ri
 from rpy2.robjects import globalenv as r_env
 from warnings import warn
+from tempfile import TemporaryDirectory
 
 from snakemake.io import expand
 from snakemake.utils import min_version
@@ -300,7 +301,11 @@ def rmd_render(input, output_file, output_format=None, **kwargs):
     for (k, convfun) in arg_converters.items():
         if k in kwargs:
             kwargs[k] = convfun(kwargs[k])
-    call_R_external('rmarkdown::render', input=input, output_file=output_file, output_format=output_format, **kwargs)
+    with TemporaryDirectory() as tmpdir:
+        out_basename = os.path.basename(output_file)
+        tmp_outfile = os.path.join(tmpdir, out_basename)
+        call_R_external('rmarkdown::render', input=input, output_file=tmp_outfile, output_format=output_format, **kwargs)
+        shutil.move(tmp_outfile, output_file)
 
 # Run a separate Snakemake workflow (if needed) to fetch the sample
 # metadata, which must be avilable before evaluating the rules below.
