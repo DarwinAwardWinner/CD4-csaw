@@ -7,7 +7,7 @@ def get_rule(name):
 def is_target_rule(name):
     return not get_rule(name).has_wildcards()
 
-targets = [ 'all', 'all_rnaseq', 'all_chipseq', 'all_rnaseq_eda', 'all_rnaseq_quant', 'all_rnaseq_counts', 'all_macs_callpeak', 'all_epic_callpeak', 'all_idr', 'all_idr_filtered_peaks', 'all_csaw_qc', ]
+targets = [ 'all', 'all_rnaseq', 'all_chipseq', 'all_rnaseq_eda', 'all_rnaseq_quant', 'all_rnaseq_counts', 'all_rnaseq_diffexp', 'all_macs_callpeak', 'all_epic_callpeak', 'all_idr', 'all_idr_filtered_peaks', 'all_csaw_qc', ]
 
 rule all_rulegraphs:
     input:
