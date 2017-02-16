@@ -773,15 +773,14 @@ elist.bc$E %<>%
 Second, we use ComBat, which performs empirical Bayes shrinkage of the batch correction parameters. First, we run ComBat in parametric prior mode in order to produce a diagnostic plot of the priors. Note that we use ComBat here to subtract both the batch and donor effects, so that the MDS plots will be more reflective of the desired biological effects.
 
 ```{r combat_plot}
-design.cb <- model.matrix(~cell_type, sample.table)
 # Right now we're just running ComBat to produce the plot, so we discard the output.
-invisible(capture.output(BPComBat(elist.w$E, batch=sample.table %$% batch:donor_id, mod=design.cb, par.prior=TRUE, prior.plots = TRUE)))
+invisible(capture.output(BPComBat(elist.w$E, batch=sample.table$batch, mod=design.NoTime, par.prior=TRUE, prior.plots = TRUE)))
 ```
 
 ```{r combat_plot_pdf, echo=TRUE, message=FALSE, cache=FALSE}
 cairo_pdf(file.path(plotdir, "rnaseq-ComBat-qc.pdf"))
 # Run the same thing again to output the plot to the PDF file
-invisible(BPComBat(elist.w$E, batch=sample.table %$% batch:donor_id, mod=design.cb, par.prior=TRUE, prior.plots = TRUE))
+invisible(BPComBat(elist.w$E, batch=sample.table$batch, mod=design.NoTime, par.prior=TRUE, prior.plots = TRUE))
 invisible(dev.off())
 ```
 
@@ -791,7 +790,7 @@ These plots look similar to the ones in dataset 1 of the ComBat paper, for which
 # Now perform the actual batch correction using non-parametric prior
 design.cb <- model.matrix(~cell_type, sample.table)
 elist.cb <- elist.w
-elist.cb$E %<>% BPComBat(batch=sample.table %$% batch:donor_id, mod=design.cb, par.prior=TRUE)
+elist.cb$E %<>% BPComBat(batch=sample.table$batch, mod=design.NoTime, par.prior=TRUE)
 ```
 
 For each of the batch correction methods, we compute the sample distance matrix using multidimensional scaling and plot the first 3 principal coordinates. We reflect all the principal coordinates so as to make the mean of the Naive D0 samples negative in all dimensions, so that MDS plots will be oriented consistently between different reports. 
