@@ -2,15 +2,13 @@
 title: "Differential expression analysis of CD4 RNA-Seq Dataset"
 author: "Ryan C. Thompson"
 date: '`r gsub("[[:space:]]+", " ", format(Sys.time(), "%B %e, %Y"))`'
-output:
-  html_document: default
-  html_notebook: default
+output: html_notebook
 subtitle: '`r paste0("Using Dataset ", params$dataset)`'
 params:
   basedir:
-    value: /home/ryan/Projects/CD4-csaw
+    value: "/home/ryan/Projects/CD4-csaw"
   dataset:
-    value: shoal_hg38.analysisSet_ensembl.85
+    value: "shoal_hg38.analysisSet_ensembl.85"
 ---
 
 # Preliminary Setup
