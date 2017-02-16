@@ -701,7 +701,7 @@ a <- aveLogCPMWithOffset(dge)
 avelogcpm.presence.threshold <- -1
 ```
 
-```{r plot_aveLogCPM, cache=FALSE}
+```{r plot_aveLogCPM}
 p <- list(
     Histogram=ggplot(data.frame(logCPM=a)) +
         aes(x=logCPM) +
@@ -749,7 +749,7 @@ elist.cb$E %<>% BPComBat(batch=sample.table$batch, mod=design.cb, par.prior=TRUE
 
 To make sure that the batch correction worked, we make MDS plots before and after.
 
-```{r plot_mds, cache=FALSE}
+```{r plot_mds}
 dmat.nc <- suppressPlot(plotMDS(elist.nc)$distance.matrix) %>% as.dist
 mds.nc<- cmdscale(dmat.nc, k=attr(dmat.nc, "Size") - 1, eig=TRUE)
 mds.nc$points %<>% add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
@@ -802,7 +802,7 @@ fit <- lmFit(elist.cb, design) %>% eBayes(robust=TRUE)
 
 We plot the mean-variance relationship of the data. Since the voom weights should counteract the mean-variance trend, there should me a minimal trend visible in this plot.
 
-```{r plot_meanvar, cache=FALSE}
+```{r plot_meanvar}
 p <- ggplot(data_frame(CPM=2^fit$Amean, sigma=fit$sigma)) + 
     aes(x=CPM, y=sigma) +
     geom_point(size=0.2) +
@@ -888,7 +888,7 @@ write.xlsx(results.tables, file.path(params$basedir, "results", "RNA-seq",sprint
 
 To have confidence in the significance measures returned, we should verify that the p-value distributions for each test look reasonable.
 
-```{r pval_hist, cache=FALSE}
+```{r pval_hist}
 p <- bplapply(names(results.tables), function(testname) {
     pvals <- results.tables[[testname]]$PValue
     pi0 <- pi0est(pvals)$pi0
@@ -924,7 +924,7 @@ c("time_point", "batch", "cell_type", "donor_id") %>% setNames(.,.) %>%
 
 To get an idea of how the various significance measures compare to each other, we can plot them against each other. We can see that the QValue is smaller than the BH FDR by a constant factor up to a certian lower bound, while the FDR derived from Bayesian posterior probabilities is generally more conservative than either one.
 
-```{r test_fdr_plot, cache=FALSE}
+```{r test_fdr_plot}
 p <- results.tables$Naive.D0vD1 %$% list(
     qplot(FDR, QValue, log="xy") + geom_abline(slope=1, intercept=0, linetype="dashed", alpha=0.5) + coord_fixed(),
     qplot(FDR, BayesFDR, log="xy") + geom_abline(slope=1, intercept=0, linetype="dashed", alpha=0.5) + coord_fixed(),
