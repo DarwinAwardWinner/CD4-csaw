@@ -742,9 +742,9 @@ elist.nc <- voomWithQualityWeightsAndOffset(dge, design, plot=TRUE)
 Next we use ComBat to perform batch correction, which performs empirical Bayes shrinkage of the batch correction parameters.
 
 ```{r combat_adjust}
-design.cb <- model.matrix(~cell_type, sample.table)
+design.cb <- model.matrix(~cell_type + donor_id, sample.table)
 elist.cb <- elist.nc
-elist.cb$E %<>% BPComBat(batch=sample.table %$% batch:donor_id, mod=design.cb, par.prior=TRUE)
+elist.cb$E %<>% BPComBat(batch=sample.table$batch, mod=design.cb, par.prior=TRUE, prior.plots = TRUE)
 ```
 
 To make sure that the batch correction worked, we make MDS plots before and after.
@@ -913,7 +913,7 @@ results.tables %>% sapply(function(tt) {
 }) %>% data.frame
 ```
 
-We can see that the results for Day 5 tend to have fewer significant genes than Day 1 or Day 14. This is likely related to the fact that Day 5 is in the low-quality batch 1 and therefore the Day 5 samples have been substantially down-weighted, as shown by modeling the log of the sample weight as a function of either batch or time point. (By comparison, the weights are not substantially different between cell types or donors.)
+We can see that the results for Day 5 tend to have fewer significant genes than Day 1 or Day 14. This is likely related to the fact that Day 5 is in the low-quality first batch and therefore the Day 5 samples have been substantially down-weighted, as shown by modeling the log of the sample weight as a function of either batch or time point. (By comparison, the weights are not substantially different between cell types or donors.)
 
 ```{r weights_by_day}
 c("time_point", "batch", "cell_type", "donor_id") %>% setNames(.,.) %>% 
@@ -921,8 +921,6 @@ c("time_point", "batch", "cell_type", "donor_id") %>% setNames(.,.) %>%
                lm(log2(Weight) ~ 0 + ., data=.) %>% 
                coef %>% {2^.})
 ```
-
-The odd-shaped p-value histogram for the donor variability test is expected because ComBat was used to subtract out the donor effects.
 
 To get an idea of how the various significance measures compare to each other, we can plot them against each other. We can see that the QValue is smaller than the BH FDR by a constant factor up to a certian lower bound, while the FDR derived from Bayesian posterior probabilities is generally more conservative than either one.
 

@@ -766,11 +766,11 @@ elist.bc <- elist.w
 # Batch is confounded with time point, so we leave it out of the design for this step
 design.NoTime <- model.matrix(~0 + cell_type + donor_id, sample.table)
 elist.bc$E %<>%
-    removeBatchEffect(batch=sample.table$batch, design=design.NoTime,
+    removeBatchEffect(batch=sample.table %$% batch:donor_id, design=design.NoTime,
                       weights=elist.bc$weights)
 ```
 
-Second, we use ComBat, which performs empirical Bayes shrinkage of the batch correction parameters. First, we run ComBat in parametric prior mode in order to produce a diagnostic plot of the priors.
+Second, we use ComBat, which performs empirical Bayes shrinkage of the batch correction parameters. First, we run ComBat in parametric prior mode in order to produce a diagnostic plot of the priors. Note that we use ComBat here to subtract both the batch and donor effects, so that the MDS plots will be more reflective of the desired biological effects.
 
 ```{r combat_plot}
 design.cb <- model.matrix(~cell_type, sample.table)
