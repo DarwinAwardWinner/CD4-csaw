@@ -363,7 +363,7 @@ for (dset in names(sexps)) {
 }
 ```
 
-We extract the sample metadata from the SummarizedExperiment (it's the same for all datasets). Since donor_id is a confounding factor, we tell R to use sum-to-zero contrasts when incorporating it into a design matrix.
+We extract the sample metadata from the SummarizedExperiment (we only do this once since it's the same for all datasets).
 
 ```{r extract_samplemeta}
 sample.table <- colData(sexps[[1]]) %>%
@@ -371,7 +371,6 @@ sample.table <- colData(sexps[[1]]) %>%
     rename(batch=technical_batch) %>%
     mutate(time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
            group=interaction(cell_type, time_point, sep=""))
-contrasts(sample.table$donor_id) <- contr.sum(nlevels(sample.table$donor_id))
 ```
 
 Next we extract the count matrix from each SummarizedExperiment. This is made more complicated than usual by the fact that half of the samples were sequenced with a different protocol than the other half, and the two protocols produce reads with opposite strand orientations. Hence, we need the sense counts for half of the samples and the antisense counts for the other half. The appropriate strand for each sample is documented in the `libType` column of the sample metadata, using the library type abbreviations [established by Salmon](http://salmon.readthedocs.io/en/latest/salmon.html#what-s-this-libtype).
