@@ -39,6 +39,7 @@ library(reshape2)
 library(assertthat)
 library(ggfortify)
 library(broom)
+library(codingMatrices)
 
 library(doParallel)
 ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
@@ -516,7 +517,7 @@ sexp <- readRDS(sexpfile)
 colnames(sexp) <- colData(sexp)$SampleName
 ```
 
-We extract the sample metadata from the SummarizedExperiment. Since donor_id is a confounding factor, we tell R to use sum-to-zero contrasts when incorporating it into a design matrix.
+We extract the sample metadata from the SummarizedExperiment. We also tell R to use a coding matrix for each factor that puts the intercept at the mean of all factor levels when incorporating it into a design matrix.
 
 ```{r extract_samplemeta}
 sample.table <- colData(sexp) %>%
@@ -524,7 +525,11 @@ sample.table <- colData(sexp) %>%
     rename(batch=technical_batch) %>%
     mutate(time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
            group=interaction(cell_type, time_point, sep=""))
-contrasts(sample.table$donor_id) <- contr.sum(nlevels(sample.table$donor_id))
+for (i in names(sample.table)) {
+    if (is.factor(sample.table[[i]]) && nlevels(sample.table[[i]]) > 1) {
+        contrasts(sample.table[[i]]) <- code_control_named(levels(sample.table[[i]]))
+    }
+}
 ```
 
 Next we extract the count matrix from the SummarizedExperiment. This is made more complicated than usual by the fact that half of the samples were sequenced with a different protocol than the other half, and the two protocols produce reads with opposite strand orientations. Hence, we need the sense counts for half of the samples and the antisense counts for the other half. The appropriate strand for each sample is documented in the `libType` column of the sample metadata, using the library type abbreviations [established by Salmon](http://salmon.readthedocs.io/en/latest/salmon.html#what-s-this-libtype).
@@ -556,6 +561,8 @@ if (all(libtype.assayNames %in% assayNames(sexp))) {
 ```
 
 # Exploratory Analysis
+
+## Normalization & Filtering
 
 Now we create a DGEList from the counts.
 
@@ -626,6 +633,8 @@ The red dashed line in each plot indicates the chosen presence threshold. We now
 ```{r abundance_filter_genes}
 dge %<>% .[aveLogCPMWithOffset(.) >= avelogcpm.presence.threshold,]
 ```
+
+## Variance & Heteroskedasticity
 
 Now we estimate the dispersions for each gene, to get an idea of what the variability of this data set is like. In order to evaluate the effect of empirical Bayes shrinkage on the dispersions, we estimate the gene dispersions in 3 different ways: once with no inter-gene information sharing, once with ordinary shrinkage, and once with robust shrinkage, which reduces the strength of shrinkage for outlier genes whose dispersion is farthest away from the trend.
 
@@ -759,12 +768,14 @@ ggprint(p)
 ggprint(p, device=cairo_pdf(file.path(plotdir, "weights-vs-covars.pdf"), onefile = TRUE))
 ```
 
+## Batch correction
+
 Next we perform several methods of batch correction on the voom-transformed data. First, we try direct batch subtraction using limma's `removeBatchEffect` function, which fits a linear model with the batches as sum-to-zero coefficients and then subtracts the batch coefficients from the data.
 
 ```{r batch_subtract}
 elist.bc <- elist.w
 # Batch is confounded with time point, so we leave it out of the design for this step
-design.NoTime <- model.matrix(~0 + cell_type + donor_id, sample.table)
+design.NoTime <- model.matrix(~ cell_type + donor_id, sample.table)
 elist.bc$E %<>%
     removeBatchEffect(batch=sample.table %$% batch:donor_id, design=design.NoTime,
                       weights=elist.bc$weights)
@@ -784,13 +795,13 @@ invisible(BPComBat(elist.w$E, batch=sample.table$batch, mod=design.NoTime, par.p
 invisible(dev.off())
 ```
 
-These plots look similar to the ones in dataset 1 of the ComBat paper, for which the parametric prior was chosen. So this analysis will do likewise.
+Since the parametric fit for the variance is not a good match for the empirical distribution, we now perform the actual batch correction using the non-parametric mode of ComBat.
 
 ```{r combat_adjust}
 # Now perform the actual batch correction using non-parametric prior
 design.cb <- model.matrix(~cell_type, sample.table)
 elist.cb <- elist.w
-elist.cb$E %<>% BPComBat(batch=sample.table$batch, mod=design.NoTime, par.prior=TRUE)
+elist.cb$E %<>% BPComBat(batch=sample.table$batch, mod=design.NoTime, par.prior=FALSE)
 ```
 
 For each of the batch correction methods, we compute the sample distance matrix using multidimensional scaling and plot the first 3 principal coordinates. We reflect all the principal coordinates so as to make the mean of the Naive D0 samples negative in all dimensions, so that MDS plots will be oriented consistently between different reports. 
@@ -849,6 +860,8 @@ ggprint(p)
 ggprint(p, device=cairo_pdf(file.path(plotdir, "rnaseq-MDSPlots-BatchCorrect.pdf"), width=12, height=12, onefile = TRUE))
 ```
 
+## MDS Plots
+
 Choosing ComBat as the best-looking batch correction, we make more MDS plots for this data, this time plotting the first 5 PCs and adding the experimental information to the plot as colors and shapes.
 
 ```{r mds_plot}
@@ -885,3 +898,9 @@ ggprint(p)
 ```{r mds_plot_pdf, cache=FALSE, include=FALSE}
 ggprint(p, device=cairo_pdf(file.path(plotdir, "rnaseq-MDSPlots.pdf"), onefile = TRUE))
 ```
+
+## Variance Partitioning
+
+TODO: pvca
+
+TODO: variancePartition

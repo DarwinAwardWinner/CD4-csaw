@@ -42,6 +42,8 @@ library(ggfortify)
 library(broom)
 library(toOrdinal)
 library(qvalue)
+library(codingMatrices)
+library(rex)
 
 library(doParallel)
 ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
@@ -157,6 +159,55 @@ autoFactorize <- function(df) {
     df
 }
 
+code_control_named <- function (n, contrasts = TRUE, sparse = FALSE)
+{
+    if (is.numeric(n) && length(n) == 1L) {
+        if (n > 1L)
+            levels <- .zf(seq_len(n))
+        else stop("not enough degrees of freedom to define contrasts")
+    }
+    else {
+        levels <- as.character(n)
+        n <- length(n)
+    }
+    B <- diag(n)
+    dimnames(B) <- list(1:n, levels)
+    if (!contrasts) {
+        if (sparse)
+            B <- .asSparse(B)
+        return(B)
+    }
+    B <- B - 1/n
+    B <- B[, -1, drop=FALSE]
+    colnames(B) <- paste(levels[1], levels[-1], sep = ".vs.")
+    if (sparse) {
+        .asSparse(B)
+    }
+    else {
+        B
+    }
+}
+environment(code_control_named) <- new.env(parent = environment(code_control))
+
+strip.design.names <- function(design, prefixes=names(attr(design, "contrasts"))) {
+    if (!is.null(prefixes)) {
+        regex.to.delete <- rex(or(prefixes) %if_prev_is% or(start, ":") %if_next_isnt% end)
+        colnames(design) %<>% str_replace_all(regex.to.delete, "")
+        if (anyDuplicated(colnames(design))) {
+            warning("Stripping design names resulted in non-unique names")
+        }
+    }
+    design
+}
+
+model.matrix <- function(..., strip.prefixes=FALSE) {
+    design <- stats::model.matrix(...)
+    if (strip.prefixes) {
+        design <- strip.design.names(design)
+    }
+    return(design)
+}
+
 estimateDispByGroup <- function(dge, group=as.factor(dge$samples$group), batch, ...) {
     assert_that(nlevels(group) > 1)
     assert_that(length(group) == ncol(dge))
@@ -197,7 +248,7 @@ cairo_pdf <- function(..., onefile=TRUE) {
 
 collapseToAtomic <- function(x, sep=",") {
     if (is.atomic(x)) {
-        return(x) 
+        return(x)
     } else {
         y <- lapply(x, str_c, collapse=sep)
         y[lengths(y) == 0] <- NA
@@ -620,7 +671,7 @@ sexp <- readRDS(sexpfile)
 colnames(sexp) <- colData(sexp)$SampleName
 ```
 
-We extract the sample metadata from the SummarizedExperiment. Since donor_id is a confounding factor, we tell R to use sum-to-zero contrasts when incorporating it into a design matrix.
+We extract the sample metadata from the SummarizedExperiment. Since donor_id is a confounding factor, we tell R to use a factor coding that puts the intercept at the simple mean of all donors when incorporating it into a design matrix.
 
 ```{r extract_samplemeta}
 sample.table <- colData(sexp) %>%
@@ -628,7 +679,11 @@ sample.table <- colData(sexp) %>%
     rename(batch=technical_batch) %>%
     mutate(time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
            group=interaction(cell_type, time_point, sep=""))
-contrasts(sample.table$donor_id) <- contr.sum(nlevels(sample.table$donor_id))
+for (i in names(sample.table)) {
+    if (is.factor(sample.table[[i]]) && nlevels(sample.table[[i]]) > 1) {
+        contrasts(sample.table[[i]]) <- code_control_named(levels(sample.table[[i]]))
+    }
+}
 ```
 
 Next we extract the count matrix from the SummarizedExperiment. This is made more complicated than usual by the fact that half of the samples were sequenced with a different protocol than the other half, and the two protocols produce reads with opposite strand orientations. Hence, we need the sense counts for half of the samples and the antisense counts for the other half. The appropriate strand for each sample is documented in the `libType` column of the sample metadata, using the library type abbreviations [established by Salmon](http://salmon.readthedocs.io/en/latest/salmon.html#what-s-this-libtype).
@@ -732,17 +787,17 @@ dge %<>% .[a >= avelogcpm.presence.threshold,]
 Next, we use the voom method with sample quality weights to prepare the data for model fitting with limma. Note that donor_id is still included in the design matrix even though we subtracted out donor differences using ComBat. This ensures that the model fitting is honest about the number of residual degrees of freedom in the model, with 3 degrees of freedom "spent" modeling the inter-donor effects.
 
 ```{r compute_quality_weights, warning=FALSE}
-design <- model.matrix(~0 + group + donor_id, sample.table)
-colnames(design) %<>% str_replace("^group", "")
+design <- model.matrix(~0 + group + donor_id, sample.table, strip.prefixes = TRUE)
 elist.nc <- voomWithQualityWeightsAndOffset(dge, design, plot=TRUE)
 ```
 
-Next we use ComBat to perform batch correction, which performs empirical Bayes shrinkage of the batch correction parameters.
+Next we use ComBat to perform batch correction, which performs empirical Bayes shrinkage of the batch correction parameters. We use a ComBat's non-parametric mode due to the poor fit of the parametric assumptions for the variance distribution shown by the QC plot.
 
 ```{r combat_adjust}
-design.cb <- model.matrix(~cell_type + donor_id, sample.table)
+design.cb <- model.matrix(~cell_type + donor_id, sample.table, strip.prefixes = TRUE)
 elist.cb <- elist.nc
-elist.cb$E %<>% BPComBat(batch=sample.table$batch, mod=design.cb, par.prior=TRUE, prior.plots = TRUE)
+invisible(suppressMessages(BPComBat(elist.cb$E, batch=sample.table$batch, mod=design.cb, par.prior=TRUE, prior.plots=TRUE)))
+elist.cb$E <- BPComBat(elist.cb$E, batch=sample.table$batch, mod=design.cb, par.prior=FALSE)
 ```
 
 To make sure that the batch correction worked, we make MDS plots before and after.
@@ -774,14 +829,14 @@ mdsggbase <- function(df) {
 
 pbase.nc <- mdsggbase(mds.nc$points)
 pbase.cb <- mdsggbase(mds.cb$points)
-   
-p <- list(NC.PC12=pbase.nc + 
+
+p <- list(NC.PC12=pbase.nc +
               labs(subtitle="Before Batch Correction"),
           NC.PC23=pbase.nc +
               aes(x=Dim2, y=Dim3) +
               labs(title="limma voom Principal Coordinates 2 & 3",
                    subtitle="Before Batch Correction"),
-          CB.PC12=pbase.cb + 
+          CB.PC12=pbase.cb +
               labs(subtitle="After ComBat Batch Correction"),
           CB.PC23=pbase.cb +
               aes(x=Dim2, y=Dim3) +
@@ -801,14 +856,14 @@ fit <- lmFit(elist.cb, design) %>% eBayes(robust=TRUE)
 We plot the mean-variance relationship of the data. Since the voom weights should counteract the mean-variance trend, there should me a minimal trend visible in this plot.
 
 ```{r plot_meanvar}
-p <- ggplot(data_frame(CPM=2^fit$Amean, sigma=fit$sigma)) + 
+p <- ggplot(data_frame(CPM=2^fit$Amean, sigma=fit$sigma)) +
     aes(x=CPM, y=sigma) +
     geom_point(size=0.2) +
-    geom_density2d(color=muted("blue", c=100, l=50)) + 
-    geom_smooth(method="loess", color=muted("red", c=100, l=50)) + 
+    geom_density2d(color=muted("blue", c=100, l=50)) +
+    geom_smooth(method="loess", color=muted("red", c=100, l=50)) +
     geom_hline(yintercept = sqrt(fit$s2.prior), color=muted("green", c=100, l=50)) +
     scale_x_continuous(name="Mean Normalized Counts per Million", trans=log10_trans()) +
-    scale_y_continuous(name="Standard Deviation", trans=log2_trans()) + 
+    scale_y_continuous(name="Standard Deviation", trans=log2_trans()) +
     labs(title="Mean-Variance Trend")
 ggprint(p)
 ```
@@ -835,7 +890,7 @@ factorial.singlet.tests <-
                      sprintf("Fac.%s", nonzero.timepoints)))
 factorial.allt.test <- list(Fac.AllT=unlist(factorial.singlet.tests))
 mi.vs.nf.test <- list(MD0vND14="MemoryD0 - NaiveD14")
-donor.var.test <- list(InterDonor=sprintf("donor_id%s", 1:3) %>% set_names(sprintf("Coef%s", seq_along(.))))
+donor.var.test <- list(InterDonor=sample.table$donor_id %>% levels %>% {sprintf("%s.vs.%s", .[1], .[-1]) %>% set_names(., .)})
 alltests <- c(timepoint.anova.tests, timepoint.single.tests,
               celltype.allt.test, celltype.singlet.tests,
               factorial.allt.test, factorial.singlet.tests,
@@ -857,7 +912,7 @@ results.tables <- bplapply(alltests, function(ct) {
         cols.to.fix <- match(bad.logfc.colnames, names(tt))
         names(tt)[cols.to.fix] <- good.logfc.colnames
     }
-    tt %<>% 
+    tt %<>%
         rename(logCPM=AveExpr,
                PValue=P.Value,
                FDR=adj.P.Val) %>%
@@ -890,7 +945,9 @@ To have confidence in the significance measures returned, we should verify that 
 p <- bplapply(names(results.tables), function(testname) {
     pvals <- results.tables[[testname]]$PValue
     pi0 <- pi0est(pvals)$pi0
-    p <- plotpvals(pvals, ptn = pi0) + labs(title=sprintf("P-value histogram for %s", testname))
+    p <- plotpvals(pvals, ptn = pi0) +
+        labs(title=sprintf("P-value histogram for %s", testname),
+             subtitle=sprintf("Est. Non-Null Prop.: %g%%", (1 - pi0) * 100))
 })
 ggprint(p)
 ```
@@ -903,7 +960,7 @@ results.tables %>% sapply(function(tt) {
     nsig.fdr <- sum(tt$FDR <= 0.1)
     nsig.qval <- sum(tt$QValue <= 0.1)
     if ("BayesFDR" %in% names(tt)) {
-        nsig.bfdr <- sum(tt$BayesFDR <= 0.1)    
+        nsig.bfdr <- sum(tt$BayesFDR <= 0.1)
     } else {
         nsig.bfdr <- NA
     }
@@ -914,9 +971,9 @@ results.tables %>% sapply(function(tt) {
 We can see that the results for Day 5 tend to have fewer significant genes than Day 1 or Day 14. This is likely related to the fact that Day 5 is in the low-quality first batch and therefore the Day 5 samples have been substantially down-weighted, as shown by modeling the log of the sample weight as a function of either batch or time point. (By comparison, the weights are not substantially different between cell types or donors.)
 
 ```{r weights_by_day}
-c("time_point", "batch", "cell_type", "donor_id") %>% setNames(.,.) %>% 
-    lapply(. %>% sample.table[.] %>% cbind(Weight=elist.cb$sample.weights) %>% 
-               lm(log2(Weight) ~ 0 + ., data=.) %>% 
+c("time_point", "batch", "cell_type", "donor_id") %>% setNames(.,.) %>%
+    lapply(. %>% sample.table[.] %>% cbind(Weight=elist.cb$sample.weights) %>%
+               lm(log2(Weight) ~ 0 + ., data=.) %>%
                coef %>% {2^.})
 ```
 
