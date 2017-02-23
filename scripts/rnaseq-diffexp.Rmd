@@ -449,14 +449,14 @@ BPComBat <- function (dat, batch, mod = NULL, par.prior = TRUE, prior.plots = FA
                       mean.only = FALSE, BPPARAM = bpparam())
 {
     if (mean.only == TRUE) {
-        cat("Using the 'mean only' version of ComBat\n")
+        message("Using the 'mean only' version of ComBat\n")
     }
     if (length(dim(batch)) > 1) {
         stop("This version of ComBat only allows one batch variable")
     }
     batch <- as.factor(batch)
     batchmod <- model.matrix(~-1 + batch)
-    cat("Found", nlevels(batch), "batches\n")
+    message("Found ", nlevels(batch), " batches\n")
     n.batch <- nlevels(batch)
     batches <- list()
     for (i in 1:n.batch) {
@@ -465,13 +465,13 @@ BPComBat <- function (dat, batch, mod = NULL, par.prior = TRUE, prior.plots = FA
     n.batches <- sapply(batches, length)
     if (any(n.batches == 1)) {
         mean.only = TRUE
-        cat("Note: one batch has only one sample, setting mean.only=TRUE\n")
+        message("Note: one batch has only one sample, setting mean.only=TRUE\n")
     }
     n.array <- sum(n.batches)
     design <- cbind(batchmod, mod)
     check <- apply(design, 2, function(x) all(x == 1))
     design <- as.matrix(design[, !check])
-    cat("Adjusting for", ncol(design) - ncol(batchmod), "covariate(s) or covariate level(s)\n")
+    message("Adjusting for ", ncol(design) - ncol(batchmod), " covariate(s) or covariate level(s)\n")
     if (qr(design)$rank < ncol(design)) {
         if (ncol(design) == (n.batch + 1)) {
             stop("The covariate is confounded with batch! Remove the covariate and rerun ComBat")
@@ -488,10 +488,10 @@ BPComBat <- function (dat, batch, mod = NULL, par.prior = TRUE, prior.plots = FA
     }
     NAs = any(is.na(dat))
     if (NAs) {
-        cat(c("Found", sum(is.na(dat)), "Missing Data Values\n"),
+        message(c("Found", sum(is.na(dat)), "Missing Data Values\n"),
             sep = " ")
     }
-    cat("Standardizing Data across genes\n")
+    message("Standardizing Data across genes\n")
     if (!NAs) {
         B.hat <- solve(t(design) %*% design) %*% t(design) %*%
             t(as.matrix(dat))
@@ -517,7 +517,7 @@ BPComBat <- function (dat, batch, mod = NULL, par.prior = TRUE, prior.plots = FA
 	}
     s.data <- (dat - stand.mean)/(sqrt(var.pooled) %*% t(rep(1,
 		n.array)))
-	cat("Fitting L/S model and finding priors\n")
+	message("Fitting L/S model and finding priors\n")
 	batch.design <- design[, 1:n.batch]
 	if (!NAs) {
         gamma.hat <- solve(t(batch.design) %*% batch.design) %*%
@@ -558,7 +558,7 @@ BPComBat <- function (dat, batch, mod = NULL, par.prior = TRUE, prior.plots = FA
 	}
 	gamma.star <- delta.star <- matrix(NA, nrow=n.batch, ncol=nrow(s.data))
 	if (par.prior) {
-		cat("Finding parametric adjustments\n")
+		message("Finding parametric adjustments\n")
 	    results <- bplapply(1:n.batch, function(i) {
 	        if (mean.only) {
 				gamma.star <- postmean(gamma.hat[i,], gamma.bar[i], 1, 1, t2[i])
@@ -579,7 +579,7 @@ BPComBat <- function (dat, batch, mod = NULL, par.prior = TRUE, prior.plots = FA
 	    }
 	}
 	else {
-		cat("Finding nonparametric adjustments\n")
+		message("Finding nonparametric adjustments\n")
 		results <- bplapply(1:n.batch, function(i) {
 			if (mean.only) {
 				delta.hat[i, ] = 1
@@ -593,7 +593,7 @@ BPComBat <- function (dat, batch, mod = NULL, par.prior = TRUE, prior.plots = FA
 	        delta.star[i,] <- results[[i]]$delta.star
 	    }
 	}
-	cat("Adjusting the Data\n")
+	message("Adjusting the Data\n")
 	bayesdata <- s.data
 	j <- 1
 	for (i in batches) {
