@@ -2030,7 +2030,7 @@ rule rnaseq_explore:
                                'rnaseq-MDSPlots-BatchCorrect.pdf',
                                'weights-vs-covars.pdf']),
     version: R_package_version('rmarkdown')
-    threads: 8
+    threads: 2
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
@@ -2050,7 +2050,7 @@ rule rnaseq_compare:
     output:
         html='reports/RNA-seq/rnaseq-compare.html',
     version: R_package_version('rmarkdown')
-    threads: 8
+    threads: 10
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
@@ -2067,7 +2067,7 @@ rule rnaseq_diffexp:
         rds='saved_data/RNA-seq/{dataset}-diffexp-tables.RDS',
         rda='saved_data/RNA-seq/{dataset}-diffexp.rda',
     version: (R_package_version('rmarkdown'), R_package_version('limma'))
-    threads: 8
+    threads: 2
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
