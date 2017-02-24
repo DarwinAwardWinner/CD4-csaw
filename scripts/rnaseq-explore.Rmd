@@ -20,12 +20,11 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
                       cache.path = paste0(file.path(params$basedir, "cache", "rnaseq-explore", params$dataset), .Platform$file.sep))
 ```
 
-First we load the necessary libraries.
+First we load the necessary libraries, along with a set of utility functions.
 
 ```{r load_packages, message=FALSE, cache=FALSE}
 library(stringr)
 library(magrittr)
-library(openxlsx)
 library(SummarizedExperiment)
 library(dplyr)
 library(edgeR)
@@ -46,469 +45,20 @@ ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
 registerDoParallel(cores=ncores)
 library(BiocParallel)
 register(DoparParam())
+
+source(file.path(params$basedir, "scripts/utilities.R"))
 ```
 
-Next we define some utility functions.
+We also set the output directory for all plot files.
 
-```{r utility_functions, echo=FALSE}
-# Useful to wrap functions that both produce a plot and return a useful value,
-# when you only want the return value and not the plot.
-suppressPlot <- function(arg) {
-    png("/dev/null")
-    result <- arg
-    dev.off()
-    result
-}
-
-ggprint <- function(plots, device=dev.cur(), closedev, printfun=print) {
-  orig.device <- dev.cur()
-  new.device <- device
-  # Functions that create devices don't generally return them, they just set
-  # them as the new current device, so get the actual device from dev.cur()
-  # instead.
-  if (is.null(new.device)) {
-    new.device <- dev.cur()
-  }
-  if (missing(closedev)) {
-    closedev = orig.device != new.device && new.device != 1
-  }
-  if (!is.null(device) && !is.na(device)) {
-      dev.set(new.device)
-      on.exit({
-          if (closedev) {
-              dev.off(new.device)
-          }
-          if (new.device != orig.device) {
-              dev.set(orig.device)
-          }
-      })
-  }
-  assertthat::assert_that(is(plots, "gg") ||
-                          is.list(plots))
-  if (is(plots, "gg")) {
-      printfun(plots)
-  } else if (is.list(plots)) {
-    lapply(plots, ggprint, device=NA, closedev=FALSE, printfun=printfun)
-  } else {
-    stop("Argument is not a ggplot or list of ggplots")
-  }
-  invisible(NULL)
-}
-
-# ggplotly.printer <- function(...) {
-#     dots <- list(...)
-#     function(p) {
-#         args <- c(list(p=p), dots)
-#         print(do.call(ggplotly, args))
-#     }
-# }
-
-## Based on this: https://www.r-bloggers.com/shrinking-rs-pdf-output/
-## Requires some command-line image and PDF manip tools.
-rasterpdf <- function(pdffile, outfile=pdffile, resolution=600, verbose=FALSE) {
-    vmessage <- function(...) {
-        if (verbose) message(...)
-    }
-    require(parallel)
-    wd=getwd()
-    td=file.path(tempdir(),"pdf")
-    if(!file.exists(td))
-        dir.create(td, recursive = TRUE)
-    file.copy(pdffile, file.path(td,"toraster.pdf"))
-    setwd(td)
-    on.exit(setwd(wd))
-    assert_that(file.exists("toraster.pdf"))
-    system2("pdftk", args=c("toraster.pdf", "burst"))
-    files=list.files(pattern="pg_")
-
-    vmessage(paste0("Rasterizing ",length(files)," pages:  (",paste(files,collapse=","),")"))
-    bplapply(files,function(f){
-        system2("gs", args=c("-dBATCH", "-dTextAlphaBits=4", "-dNOPAUSE",
-                             paste0("-r", resolution), "-q", "-sDEVICE=png16m",
-                             paste0("-sOutputFile=",f,".png"),f))
-        system2("convert", args=c("-quality", "100", "-density", resolution,
-                                  paste0(f,".png"),
-                                  paste0(strsplit(f,".",fixed=T)[[1]][1],".pdf")))
-        vmessage(paste0("Finished page ",f))
-        return()
-    })
-    vmessage("Compiling the final pdf")
-    file.remove("toraster.pdf")
-    file.remove(list.files(pattern="png"))
-    setwd(wd)
-    system2("gs", args=c("-dBATCH", "-dNOPAUSE", "-q", "-sDEVICE=pdfwrite",
-                         paste0("-sOutputFile=",outfile),
-                         list.files(path=td, pattern=glob2rx("*.pdf"), full.names=TRUE)))
-    file.remove(list.files(td,full=T))
-    vmessage("Finished!!")
-}
-
-add.numbered.colnames <- function(x, prefix="C") {
-    x %>% set_colnames(sprintf("%s%i", prefix, seq(from=1, length.out=ncol(x))))
-}
-
-autoFactorize <- function(df) {
-    for (i in colnames(df)) {
-        if (is.character(df[[i]]) && anyDuplicated(df[[i]])) {
-            df[[i]] %<>% factor
-        }
-    }
-    df
-}
-
-estimateDispByGroup <- function(dge, group=as.factor(dge$samples$group), batch, ...) {
-    assert_that(nlevels(group) > 1)
-    assert_that(length(group) == ncol(dge))
-    if (!is.list(batch)) {
-        batch <- list(batch=batch)
-    }
-    batch <- as.data.frame(batch)
-    assert_that(nrow(batch) == ncol(dge))
-    colnames(batch) %>% make.names(unique=TRUE)
-    igroup <- seq_len(ncol(dge)) %>% split(group)
-    bplapply(igroup, function(i) {
-        group.dge <- dge[,i]
-        group.batch <- droplevels(batch[i,, drop=FALSE])
-        group.batch <- group.batch[sapply(group.batch, . %>% unique %>% length %>% is_greater_than(1))]
-        group.vars <- names(group.batch)
-        if (length(group.vars) == 0)
-            group.vars <- "1"
-        group.batch.formula <- as.formula(str_c("~", str_c(group.vars, collapse="+")))
-        des <- model.matrix(group.batch.formula, group.batch)
-        estimateDisp(group.dge, des, ...)
-    })
-}
-
-ggduo.dataXY <- function(dataX, dataY, extraData=NULL, ...) {
-    assert_that(ncol(dataX) > 0)
-    assert_that(ncol(dataY) > 0)
-    alldata <- cbind(dataX, dataY)
-    if (!is.null(extraData)) {
-        alldata <- cbind(alldata, extraData)
-    }
-    ggduo(alldata, columnsX=colnames(dataX), columnsY=colnames(dataY), ...)
-}
-
-# Make cairo_pdf use onefile=TRUE by default
-cairo_pdf <- function(..., onefile=TRUE) {
-    grDevices::cairo_pdf(..., onefile = onefile)
-}
-
-## Version of cpm that uses an offset matrix instead of lib sizes
-cpmWithOffset <- function(dge, offset=expandAsMatrix(getOffset(dge), dim(dge)),
-                          log = FALSE, prior.count = 0.25, ...) {
-    x <- dge$counts
-    effective.lib.size <- exp(offset)
-    if (log) {
-        prior.count.scaled <- effective.lib.size/mean(effective.lib.size) * prior.count
-        effective.lib.size <- effective.lib.size + 2 * prior.count.scaled
-    }
-    effective.lib.size <- 1e-06 * effective.lib.size
-    if (log)
-        log2((x + prior.count.scaled) / effective.lib.size)
-    else x / effective.lib.size
-}
-
-aveLogCPMWithOffset <- function(y, ...) {
-    UseMethod("aveLogCPM")
-}
-
-aveLogCPMWithOffset.default <- function (y, offset = NULL, prior.count = 2,
-                                         dispersion = NULL, weights = NULL, ...)
-{
-    aveLogCPM(y, lib.size = NULL, offset = offset, prior.count = prior.count, dispersion = dispersion, weights = weights, ...)
-}
-
-aveLogCPMWithOffset.DGEList <- function (
-    y, offset = expandAsMatrix(getOffset(y), dim(y)),
-    prior.count = 2, dispersion = NULL, ...) {
-    if (is.null(dispersion)) {
-        dispersion <- y$common.dispersion
-    }
-    aveLogCPMWithOffset(
-        y$counts, offset = y$offset, prior.count = prior.count,
-        dispersion = dispersion, weights = y$weights)
-}
-
-
-## Version of voom that uses an offset matrix instead of lib sizes
-voomWithOffset <- function (
-    dge, design = NULL, offset=expandAsMatrix(getOffset(dge), dim(dge)),
-    normalize.method = "none", plot = FALSE, span = 0.5, ...)
-{
-    out <- list()
-    out$genes <- dge$genes
-    out$targets <- dge$samples
-    if (is.null(design) && diff(range(as.numeric(counts$sample$group))) >
-        0)
-        design <- model.matrix(~group, data = counts$samples)
-    counts <- dge$counts
-    if (is.null(design)) {
-        design <- matrix(1, ncol(counts), 1)
-        rownames(design) <- colnames(counts)
-        colnames(design) <- "GrandMean"
-    }
-
-    effective.lib.size <- exp(offset)
-
-    y <- log2((counts + 0.5)/(effective.lib.size + 1) * 1e+06)
-    y <- normalizeBetweenArrays(y, method = normalize.method)
-    fit <- lmFit(y, design, ...)
-    if (is.null(fit$Amean))
-        fit$Amean <- rowMeans(y, na.rm = TRUE)
-    sx <- fit$Amean + mean(log2(effective.lib.size + 1)) - log2(1e+06)
-    sy <- sqrt(fit$sigma)
-    allzero <- rowSums(counts) == 0
-    if (any(allzero)) {
-        sx <- sx[!allzero]
-        sy <- sy[!allzero]
-    }
-    l <- lowess(sx, sy, f = span)
-    if (plot) {
-        plot(sx, sy, xlab = "log2( count size + 0.5 )", ylab = "Sqrt( standard deviation )",
-            pch = 16, cex = 0.25)
-        title("voom: Mean-variance trend")
-        lines(l, col = "red")
-    }
-    f <- approxfun(l, rule = 2)
-    if (fit$rank < ncol(design)) {
-        j <- fit$pivot[1:fit$rank]
-        fitted.values <- fit$coef[, j, drop = FALSE] %*% t(fit$design[,
-            j, drop = FALSE])
-    }
-    else {
-        fitted.values <- fit$coef %*% t(fit$design)
-    }
-    fitted.cpm <- 2^fitted.values
-    ## fitted.count <- 1e-06 * t(t(fitted.cpm) * (lib.size + 1))
-    fitted.count <- 1e-06 * fitted.cpm * (effective.lib.size + 1)
-    fitted.logcount <- log2(fitted.count)
-    w <- 1/f(fitted.logcount)^4
-    dim(w) <- dim(fitted.logcount)
-    out$E <- y
-    out$weights <- w
-    out$design <- design
-    out$effective.lib.size <- effective.lib.size
-    if (is.null(out$targets))
-        out$targets <- data.frame(lib.size = exp(colMeans(offset)))
-    else out$targets$lib.size <- exp(colMeans(offset))
-    new("EList", out)
-}
-
-## Version of voom that uses an offset matrix instead of lib sizes
-voomWithQualityWeightsAndOffset <-function (
-    dge, design = NULL,
-    offset=expandAsMatrix(getOffset(dge), dim(dge)),
-    normalize.method = "none",
-    plot = FALSE, span = 0.5, var.design = NULL, method = "genebygene",
-    maxiter = 50, tol = 1e-10, trace = FALSE, replace.weights = TRUE,
-    col = NULL, ...)
-{
-    counts <- dge$counts
-    if (plot) {
-        oldpar <- par(mfrow = c(1, 2))
-        on.exit(par(oldpar))
-    }
-    v <- voomWithOffset(dge, design = design, offset = offset, normalize.method = normalize.method,
-        plot = FALSE, span = span, ...)
-    aw <- arrayWeights(v, design = design, method = method, maxiter = maxiter,
-        tol = tol, var.design = var.design)
-    v <- voomWithOffset(dge, design = design, weights = aw, offset = offset,
-        normalize.method = normalize.method, plot = plot, span = span,
-        ...)
-    aw <- arrayWeights(v, design = design, method = method, maxiter = maxiter,
-        tol = tol, trace = trace, var.design = var.design)
-    wts <- asMatrixWeights(aw, dim(v)) * v$weights
-    attr(wts, "arrayweights") <- NULL
-    if (plot) {
-        barplot(aw, names = 1:length(aw), main = "Sample-specific weights",
-            ylab = "Weight", xlab = "Sample", col = col)
-        abline(h = 1, col = 2, lty = 2)
-    }
-    if (replace.weights) {
-        v$weights <- wts
-        v$sample.weights <- aw
-        return(v)
-    }
-    else {
-        return(wts)
-    }
-}
-
+```{r set_plotdir}
 plotdir <- file.path(params$basedir, "plots/RNA-seq", params$dataset)
 dir.create(plotdir, recursive = TRUE, showWarnings = FALSE)
 ```
 
-We also define a parallelized version of `sva::ComBat`, which takes the runtime of ComBat from about an hour to just over 10 minutes.
-
-```{r define_parallel_combat}
-BPComBat <- function (dat, batch, mod = NULL, par.prior = TRUE, prior.plots = FALSE,
-                      mean.only = FALSE, BPPARAM = bpparam())
-{
-    if (mean.only == TRUE) {
-        cat("Using the 'mean only' version of ComBat\n")
-    }
-    if (length(dim(batch)) > 1) {
-        stop("This version of ComBat only allows one batch variable")
-    }
-    batch <- as.factor(batch)
-    batchmod <- model.matrix(~-1 + batch)
-    cat("Found", nlevels(batch), "batches\n")
-    n.batch <- nlevels(batch)
-    batches <- list()
-    for (i in 1:n.batch) {
-        batches[[i]] <- which(batch == levels(batch)[i])
-    }
-    n.batches <- sapply(batches, length)
-    if (any(n.batches == 1)) {
-        mean.only = TRUE
-        cat("Note: one batch has only one sample, setting mean.only=TRUE\n")
-    }
-    n.array <- sum(n.batches)
-    design <- cbind(batchmod, mod)
-    check <- apply(design, 2, function(x) all(x == 1))
-    design <- as.matrix(design[, !check])
-    cat("Adjusting for", ncol(design) - ncol(batchmod), "covariate(s) or covariate level(s)\n")
-    if (qr(design)$rank < ncol(design)) {
-        if (ncol(design) == (n.batch + 1)) {
-            stop("The covariate is confounded with batch! Remove the covariate and rerun ComBat")
-        }
-        if (ncol(design) > (n.batch + 1)) {
-            if ((qr(design[, -c(1:n.batch)])$rank < ncol(design[,
-                                                                -c(1:n.batch)]))) {
-                stop("The covariates are confounded! Please remove one or more of the covariates so the design is not confounded")
-            }
-            else {
-                stop("At least one covariate is confounded with batch! Please remove confounded covariates and rerun ComBat")
-            }
-        }
-    }
-    NAs = any(is.na(dat))
-    if (NAs) {
-        cat(c("Found", sum(is.na(dat)), "Missing Data Values\n"),
-            sep = " ")
-    }
-    cat("Standardizing Data across genes\n")
-    if (!NAs) {
-        B.hat <- solve(t(design) %*% design) %*% t(design) %*%
-            t(as.matrix(dat))
-    }
-    else {
-        B.hat = apply(dat, 1, Beta.NA, design)
-    }
-    grand.mean <- t(n.batches/n.array) %*% B.hat[1:n.batch,
-                                                 ]
-    if (!NAs) {
-        var.pooled <- ((dat - t(design %*% B.hat))^2) %*% rep(1/n.array,
-                                                              n.array)
-    }
-    else {
-        var.pooled <- apply(dat - t(design %*% B.hat), 1, var,
-                              na.rm = T)
-	}
-	stand.mean <- t(grand.mean) %*% t(rep(1, n.array))
-	if (!is.null(design)) {
-		tmp <- design
-		tmp[, c(1:n.batch)] <- 0
-		stand.mean <- stand.mean + t(tmp %*% B.hat)
-	}
-    s.data <- (dat - stand.mean)/(sqrt(var.pooled) %*% t(rep(1,
-		n.array)))
-	cat("Fitting L/S model and finding priors\n")
-	batch.design <- design[, 1:n.batch]
-	if (!NAs) {
-        gamma.hat <- solve(t(batch.design) %*% batch.design) %*%
-			t(batch.design) %*% t(as.matrix(s.data))
-	}
-	else {
-		gamma.hat = apply(s.data, 1, Beta.NA, batch.design)
-	}
-	delta.hat <- matrix(1, nrow=length(batches), ncol=nrow(s.data))
-	if (mean.only == FALSE) {
-	  for (i in seq_along(batches)) {
-	    bi <- batches[[i]]
-	    delta.hat[i,] <- apply(s.data[, bi], 1, var, na.rm = T)
-	  }
-	}
-	gamma.bar <- apply(gamma.hat, 1, mean)
-	t2 <- apply(gamma.hat, 1, var)
-	a.prior <- apply(delta.hat, 1, aprior)
-	b.prior <- apply(delta.hat, 1, bprior)
-	if (prior.plots & par.prior) {
-		par(mfrow = c(2, 2))
-		tmp <- density(gamma.hat[1, ])
-		plot(tmp, type = "l", main = "Density Plot")
-		xx <- seq(min(tmp$x), max(tmp$x), length = 100)
-		lines(xx, dnorm(xx, gamma.bar[1], sqrt(t2[1])), col = 2)
-		qqnorm(gamma.hat[1, ])
-		qqline(gamma.hat[1, ], col = 2)
-		tmp <- density(delta.hat[1, ])
-		invgam <- 1/rgamma(ncol(delta.hat), a.prior[1], b.prior[1])
-		tmp1 <- density(invgam)
-        plot(tmp, typ = "l", main = "Density Plot", ylim = c(0,
-			max(tmp$y, tmp1$y)))
-		lines(tmp1, col = 2)
-        qqplot(delta.hat[1, ], invgam, xlab = "Sample Quantiles",
-			ylab = "Theoretical Quantiles")
-		lines(c(0, max(invgam)), c(0, max(invgam)), col = 2)
-		title("Q-Q Plot")
-	}
-	gamma.star <- delta.star <- matrix(NA, nrow=n.batch, ncol=nrow(s.data))
-	if (par.prior) {
-		cat("Finding parametric adjustments\n")
-	    results <- bplapply(1:n.batch, function(i) {
-	        if (mean.only) {
-				gamma.star <- postmean(gamma.hat[i,], gamma.bar[i], 1, 1, t2[i])
-				delta.star <- rep(1, nrow(s.data))
-			}
-			else {
-                temp <- it.sol(s.data[, batches[[i]]], gamma.hat[i,
-                    ], delta.hat[i, ], gamma.bar[i], t2[i], a.prior[i],
-					b.prior[i])
-				gamma.star <- temp[1, ]
-				delta.star <- temp[2, ]
-			}
-	        list(gamma.star=gamma.star, delta.star=delta.star)
-	    })
-	    for (i in 1:n.batch) {
-	        gamma.star[i,] <- results[[i]]$gamma.star
-	        delta.star[i,] <- results[[i]]$delta.star
-	    }
-	}
-	else {
-		cat("Finding nonparametric adjustments\n")
-		results <- bplapply(1:n.batch, function(i) {
-			if (mean.only) {
-				delta.hat[i, ] = 1
-			}
-            temp <- int.eprior(as.matrix(s.data[, batches[[i]]]),
-				gamma.hat[i, ], delta.hat[i, ])
-	        list(gamma.star=temp[1,], delta.star=temp[2,])
-	    })
-	    for (i in 1:n.batch) {
-	        gamma.star[i,] <- results[[i]]$gamma.star
-	        delta.star[i,] <- results[[i]]$delta.star
-	    }
-	}
-	cat("Adjusting the Data\n")
-	bayesdata <- s.data
-	j <- 1
-	for (i in batches) {
-        bayesdata[, i] <- (bayesdata[, i] - t(batch.design[i,
-            ] %*% gamma.star))/(sqrt(delta.star[j, ]) %*% t(rep(1,
-			n.batches[j])))
-		j <- j + 1
-	}
-    bayesdata <- (bayesdata * (sqrt(var.pooled) %*% t(rep(1,
-		n.array)))) + stand.mean
-	return(bayesdata)
-}
-environment(BPComBat) <- new.env(parent = environment(ComBat))
-```
-
 # Data Loading and Preprocessing
 
-Now we'll load the RNA-seq data set from an RDS file containing a SummarizedExperiment object, and modify it to use the sample names as column names.
+Now we load the RNA-seq data set from an RDS file containing a SummarizedExperiment object and edit it to use the sample names as column names.
 
 ```{r load_data}
 sexpfile <- file.path(params$basedir, "saved_data",
@@ -785,13 +335,13 @@ Second, we use ComBat, which performs empirical Bayes shrinkage of the batch cor
 
 ```{r combat_plot}
 # Right now we're just running ComBat to produce the plot, so we discard the output.
-invisible(capture.output(BPComBat(elist.w$E, batch=sample.table$batch, mod=design.NoTime, par.prior=TRUE, prior.plots = TRUE)))
+invisible(capture.output(ComBat(elist.w$E, batch=sample.table$batch, mod=design.NoTime, par.prior=TRUE, prior.plots = TRUE)))
 ```
 
 ```{r combat_plot_pdf, echo=TRUE, message=FALSE, cache=FALSE}
 cairo_pdf(file.path(plotdir, "rnaseq-ComBat-qc.pdf"))
 # Run the same thing again to output the plot to the PDF file
-invisible(BPComBat(elist.w$E, batch=sample.table$batch, mod=design.NoTime, par.prior=TRUE, prior.plots = TRUE))
+invisible(ComBat(elist.w$E, batch=sample.table$batch, mod=design.NoTime, par.prior=TRUE, prior.plots = TRUE))
 invisible(dev.off())
 ```
 
@@ -801,10 +351,10 @@ Since the parametric fit for the variance is not a good match for the empirical 
 # Now perform the actual batch correction using non-parametric prior
 design.cb <- model.matrix(~cell_type, sample.table)
 elist.cb <- elist.w
-elist.cb$E %<>% BPComBat(batch=sample.table$batch, mod=design.NoTime, par.prior=FALSE)
+elist.cb$E %<>% ComBat(batch=sample.table$batch, mod=design.NoTime, par.prior=FALSE)
 ```
 
-For each of the batch correction methods, we compute the sample distance matrix using multidimensional scaling and plot the first 3 principal coordinates. We reflect all the principal coordinates so as to make the mean of the Naive D0 samples negative in all dimensions, so that MDS plots will be oriented consistently between different reports. 
+For each of the batch correction methods, we compute the sample distance matrix using multidimensional scaling and plot the first 3 principal coordinates. We reflect all the principal coordinates so as to make the mean of the Naive D0 samples negative in all dimensions, so that MDS plots have a greater chance of being oriented consistently with each other.
 
 ```{r batch_correction_mds_plot, warning=FALSE}
 naive.d0.samples <- sample.table$group == "NaiveD0"
