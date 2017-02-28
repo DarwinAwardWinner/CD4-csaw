@@ -516,3 +516,27 @@ add.qvalue <- function(ttab, ...) {
         ttab
     })
 }
+
+# Functions for reading and writing narrowPeak files
+read.narrowPeak <- function(file, ...) {
+    peaks.df <- read.table(file, sep="\t", row.names=NULL, ...)
+    names(peaks.df) <- c("chr", "start", "end", "name", "score", "strand", "signalValue", "pValue", "qValue", "summit")
+    peaks.df$name <- as.character(peaks.df$name)
+    ## havenames <- !any(peaks.df$name == ".")
+    ## res <- data.frame2GRanges(peaks.df, keepColumns=TRUE, startOffset=1, endOffset=0)
+    ## ## Eliminate the dummy row names from the data
+    ## if (havenames)
+    ##     names(res) <- res$name
+    ## else
+    ##     names(res) <- NULL
+    ## res
+    peaks.df
+}
+
+write.narrowPeak <- function(x, file, ...) {
+    x <- as(x, "data.frame")
+    if("seqnames" %in% names(x))
+        names(x)[names(x) == "seqnames"] <- "chr"
+    x <- x[c("chr", "start", "end", "name", "score", "strand", "signalValue", "pValue", "qValue", "summit")]
+    write.table(x, file, sep="\t", row.names=FALSE, col.names=FALSE, ...)
+}
