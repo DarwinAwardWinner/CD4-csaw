@@ -37,3 +37,4 @@ temp-core-*
 *_cache/
 /cache/
 *.nb.html
+.Rproj.user
