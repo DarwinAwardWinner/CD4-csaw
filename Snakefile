@@ -2037,6 +2037,7 @@ rule rnaseq_explore:
                                'weights-vs-covars.pdf']),
     version: R_package_version('rmarkdown')
     threads: 2
+    resources: mem_gb=10
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
@@ -2057,6 +2058,7 @@ rule rnaseq_compare:
         html='reports/RNA-seq/rnaseq-compare.html',
     version: R_package_version('rmarkdown')
     threads: 10
+    resources: mem_gb=10
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
@@ -2074,6 +2076,7 @@ rule rnaseq_diffexp:
         rda='saved_data/RNA-seq/{dataset}-diffexp.rda',
     version: (R_package_version('rmarkdown'), R_package_version('limma'))
     threads: 2
+    resources: mem_gb=10
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
