@@ -2,6 +2,23 @@ library(magrittr)
 library(dplyr)
 library(assertthat)
 library(BiocParallel)
+library(rex)
+library(lazyeval)
+library(future)
+
+withGC <- function(expr) {
+    on.exit(gc())
+    return(expr)
+}
+
+# Use to assign to complex sub-expressions in the middle of a dplyr pipeline.
+# For example, you can't easily do the following in the middle of a pipeline:
+# "assays(x[[1]])$counts[3,5] <- 45". But now you can do it like: "x %>%
+# assign_into(assays(.[[1]])$counts[3,5], 45) %>% another_fun() %>% ..."
+assign_into <- function(x, expr, value) {
+    expr <- lazy(expr)$expr
+    f_eval(f_interp(~ x %>% { uq(expr) <- uq(value); . }))
+}
 
 # Useful to wrap functions that both produce a plot and return a useful value,
 # when you only want the return value and not the plot.
@@ -158,8 +175,14 @@ estimateDispByGroup <- function(dge, group=as.factor(dge$samples$group), batch, 
 
 ## Versions of cpm and aveLogCPM that use an offset matrix instead of lib sizes
 cpmWithOffset <- function(dge, offset=expandAsMatrix(getOffset(dge), dim(dge)),
-                          log = FALSE, prior.count = 0.25, ...) {
+                          log = FALSE, prior.count = 0.25, preserve.mean=TRUE, ...) {
     x <- dge$counts
+    if (preserve.mean) {
+        # Ensure that the mean logcpm is not changed by the offsets, by setting
+        # each row mean to the mean offset derived from the library sizes
+        mean.lib.size.offset <- dge %>% assign_into(.$offset, NULL) %>% getOffset %>% mean
+        offset %<>% subtract(rowMeans(.)) %>% add(mean.lib.size.offset)
+    }
     effective.lib.size <- exp(offset)
     if (log) {
         prior.count.scaled <- effective.lib.size/mean(effective.lib.size) * prior.count
@@ -539,4 +562,125 @@ write.narrowPeak <- function(x, file, ...) {
         names(x)[names(x) == "seqnames"] <- "chr"
     x <- x[c("chr", "start", "end", "name", "score", "strand", "signalValue", "pValue", "qValue", "summit")]
     write.table(x, file, sep="\t", row.names=FALSE, col.names=FALSE, ...)
+}
+
+# Like lapply, but returns future objects. The results can be fetched all at
+# once with values().
+future.lapply <- function(X, FUN, ...) {
+    FUTUREFUN <- function(x) future(FUN(x, ...))
+    lapply(X, FUTUREFUN, ...)
+}
+
+# Additional args passed to estimateDisp(), except for rawdisp, which can either be a vector of raw dispersions or
+getBCVTable <- function(y, design, ..., rawdisp) {
+    assert_that(is(y, "DGEList"))
+    design.passed <- !missing(design)
+    if (!design.passed) {
+        # Can be NULL
+        design <- y$design
+    }
+    # Estimate dispersions now if they are not already present
+    if (! all(c("common.dispersion", "trended.dispersion", "tagwise.dispersion") %in%
+              names(y))) {
+        if (is.null(design) && !design.passed) {
+            warning("Estimating dispersions with no design matrix")
+        }
+        y %<-% estimateDisp(y, design=design, ...)
+    }
+    assert_that(!is.null(y$prior.df))
+    if (all(y$prior.df == 0)) {
+        if (missing(rawdisp) || is.null(rawdisp)) {
+            rawdisp <- y
+        }
+        y %<-% estimateDisp(y, design=design, ...)
+    }
+    # Get raw (unsqueezed dispersions)
+    if (missing(rawdisp) || is.na(rawdisp)) {
+        # Estimate raw disperions using given design
+        y.raw %<-% estimateDisp(y, design=design, prior.df=0)
+    } else if (is.null(rawdisp)) {
+        # Explicitly passing NULL means no raw disperions are desired.
+        y.raw <- NULL
+    } else if (is(rawdisp, "DGEList")) {
+        # Assume DGEList already contains raw dispersions
+        assert_that(all(dim(rawdisp) == dim(y)))
+        y.raw <- rawdisp
+    } else {
+        # Assume anything else is a numeric vector of raw dispersions
+        assert_that(is.numeric(rawdisp),
+                    length(rawdisp) == nrow(y))
+        y.raw <- y
+        y.raw$tagwise.dispersion <- rawdisp
+        y.raw$prior.df <- y.raw$prior.n <- rep(0, length(rawdisp))
+    }
+    assert_that(all(y.raw$prior.df == 0))
+    disptable <- y %>% as.list %$% data.frame(
+        logCPM=AveLogCPM,
+        CommonBCV=common.dispersion %>% sqrt,
+        TrendBCV=trended.dispersion %>% sqrt,
+        PriorDF=prior.df,
+        eBayesBCV=tagwise.dispersion %>% sqrt)
+    if (!is.null(y.raw)) {
+        disptable$RawBCV <- y.raw$tagwise.dispersion %>% sqrt
+    }
+    return(disptable)
+}
+
+
+# ggplot version of edgeR::plotBCV. Additional arguments passed to getBCVTable
+ggplotBCV <- function(y, xlab="Average log CPM", ylab="Biological coefficient of variation", rawdisp=NULL, ...) {
+    if (is(y, "DGEList")) {
+        disptable <- getBCVTable(y, ..., rawdisp=rawdisp)
+    } else {
+        disptable <- as.data.frame(y)
+        assert_that(all(c("logCPM", "CommonBCV", "TrendBCV", "eBayesBCV") %in% names(disptable)))
+    }
+
+    ## Reduce the number of points to plot for each line for performance
+    ## reasons
+    npoints <- c(Common=2, Trend=500)
+    disp.line.table <-
+        disptable %>%
+        select(logCPM, TrendBCV, CommonBCV) %>%
+        melt(id.vars="logCPM", variable.name="DispType", value.name = "BCV") %>%
+        mutate(DispType=str_replace(DispType, "BCV$", "")) %>%
+        group_by(DispType) %>%
+        do({
+            approx(x=.$logCPM, y=.$BCV, n=npoints[.$DispType[1]]) %>%
+                data.frame(logCPM=.$x, BCV=.$y)
+        })
+
+    p <- ggplot(disptable) +
+        aes(x=logCPM)
+    if ("RawBCV" %in% names(disptable)) {
+        p <- p +
+            geom_point(aes(y=RawBCV), size=0.4, color="black") +
+            geom_density2d(aes(y=RawBCV), color="gray30", n=512) +
+            labs(subtitle="Raw BCV (black) and eBayes-squeezed (blue)")
+    }
+    p <- p +
+        geom_point(aes(y=eBayesBCV), size=0.1, color="darkblue") +
+        geom_density2d(aes(y=eBayesBCV), color="blue", n=512) +
+        geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, group=DispType), color="white", size=1.5, alpha=0.5) +
+        geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, linetype=DispType), color="darkred", size=0.5) +
+        scale_linetype_manual(name="Dispersion Type", values=c(Trend="solid", Common="dashed")) +
+        labs(title="BCV plot", x=xlab, y=ylab)
+    p
+}
+
+# Utilities for ggplot2 corrdinate transformation
+power_trans <- function(pow) {
+    name <- sprintf("^%s", pow)
+    trans_new(name,
+              transform=function(x) x ^ pow,
+              inverse=function(x) x ^ (1/pow),
+              domain =c(0,Inf))
+}
+
+clamp_trans <- function(lower_threshold=0, upper_threshold=1) {
+    name <- sprintf("Clamp values outside of [%s, %s]", lower_threshold, upper_threshold)
+    trans_new(name,
+              transform=function(x) pmin(upper_threshold, pmax(lower_threshold, x)),
+              ## transform is only invertible for part of the range
+              inverse=identity)
 }
