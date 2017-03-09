@@ -424,6 +424,10 @@ targets = {
             'shoal_hg38.analysisSet',
         ],
         transcriptome=['ensembl.85', 'knownGene']),
+    'chipseq_eda' : expand(
+        'reports/ChIP-seq/{chip_antibody}-exploration.html',
+        chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
+    ),
     'macs_predictd' : 'results/macs_predictd/output.log',
     'idr_peaks_epic' :expand(
         'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
@@ -532,6 +536,7 @@ rule all:
         targets['rnaseq_eda'],
         targets['rnaseq_compare'],
         targets['rnaseq_diffexp'],
+        targets['chipseq_eda'],
         targets['macs_predictd'],
         targets['idr_peaks_epic'],
         targets['idr_peaks_macs'],
@@ -551,6 +556,7 @@ rule all_rnaseq:
 rule all_chipseq:
     '''This rule aggregates all the final outputs of the pipeline.'''
     input:
+        targets['chipseq_eda'],
         targets['macs_predictd'],
         targets['idr_peaks_epic'],
         targets['idr_peaks_macs'],
@@ -2067,6 +2073,23 @@ rule rnaseq_diffexp:
         rds='saved_data/RNA-seq/{dataset}-diffexp-tables.RDS',
         rda='saved_data/RNA-seq/{dataset}-diffexp.rda',
     version: (R_package_version('rmarkdown'), R_package_version('limma'))
+    threads: 2
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
+                   output_format='html_document',
+                   params={ 'basedir': os.getcwd(), 'dataset': wildcards.dataset, })
+
+rule chipseq_explore:
+    '''Perform exploratory data analysis on ChIP-seq dataset'''
+    input:
+        rmd='scripts/chipseq-explore.Rmd',
+        sexp='saved_data/csaw-window-counts-{chip_antibody}-150bp.RDS',
+        bigbin_sexp='saved_data/csaw-bigbin-counts-{chip_antibody}-10kb.RDS',
+        peaks='peak_calls/epic_hg38.analysisSet/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
+    output:
+        html='reports/ChIP-seq/{chip_antibody}-exploration.html',
+    version: R_package_version('rmarkdown')
     threads: 2
     run:
         os.environ['MC_CORES'] = str(threads)

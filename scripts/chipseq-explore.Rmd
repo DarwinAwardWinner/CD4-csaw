@@ -42,16 +42,27 @@ library(reshape2)
 library(assertthat)
 library(ggfortify)
 library(broom)
+library(ks)
+library(RColorBrewer)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
 
 library(doParallel)
 ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
+options(mc.cores=ncores)
 registerDoParallel(cores=ncores)
 library(BiocParallel)
 register(DoparParam())
 
+library(future)
+plan(multicore)
+
 source(file.path(params$basedir, "scripts/utilities.R"))
+
+# Required in order to use DGEList objects with future
+length.DGEList <- function(x) {
+    length(unclass(x))
+}
 ```
 
 # Data Loading and Preprocessing
@@ -60,80 +71,30 @@ First we load the consensus peaks called from the reads pooled from all samples.
 
 ```{r load_peaks}
 peakfile <- file.path(
-    params$basedir, "peak_calls", "epic_hg38.analysisSet", 
-    str_c(params$histone_mark, "_condition.ALL_donor.ALL"), 
+    params$basedir, "peak_calls", "epic_hg38.analysisSet",
+    str_c(params$histone_mark, "_condition.ALL_donor.ALL"),
     "peaks_noBL_IDR.narrowPeak")
 allpeaks <- read.narrowPeak(peakfile) %>% as("GRanges")
 seqinfo(allpeaks) <- seqinfo(BSgenome.Hsapiens.UCSC.hg38)[seqlevels(allpeaks)]
 ```
 
-Now we'll load the ChIP-seq read count data set from RDS files containing SummarizedExperiment objects, and modify them to use the sample names as column names. We also ensure that the column order is identical between the two objects. Lastly, we filter out any windows with fewer than one count per sample. This is a very mild filtering criterion, but it eliminates around 75% of all the windows, greatly easing the subsequent computational burden of computing the *real* filtering threshold. 
+Now we'll load the ChIP-seq read count data set from RDS files containing SummarizedExperiment objects, and modify them to use the sample names as column names. We also ensure that the column order is identical between the two objects. Lastly, we filter out any windows with fewer than one count per sample. This is a very mild filtering criterion, but it eliminates around 75% of all the windows, greatly easing the subsequent computational burden of computing the *real* filtering threshold.
 
 ```{r load_counts}
 sexpfile <- file.path(params$basedir, "saved_data",
                       sprintf("csaw-window-counts-%s-150bp.RDS", params$histone_mark))
 bigbin.sexpfile <- file.path(params$basedir, "saved_data",
                              sprintf("csaw-bigbin-counts-%s-10kb.RDS", params$histone_mark))
-sexp <- readRDS(sexpfile)
+full.sexp <- readRDS(sexpfile)
 bigbin.sexp <- readRDS(bigbin.sexpfile)
-colnames(sexp) <- colData(sexp)$SampleName
+colnames(full.sexp) <- colData(full.sexp)$SampleName
 colnames(bigbin.sexp) <- colData(bigbin.sexp)$SampleName
-bigbin.sexp %<>% .[,colnames(sexp)]
-assert_that(all(colnames(sexp) == colnames(bigbin.sexp)))
-sexp %<>% .[rowSums(assay(.)) >= ncol(.),]
-```
-
-# Peak and Window Filtering
-
-We begin by selecting only peaks  with an IDR value of 0.05 or less.
-```{r initial_filter_peaks}
-idr.threshold <- 0.05
-genome.size <- seqlengths(seqinfo(allpeaks)) %>% as.numeric %>% sum
-peaks <- allpeaks[allpeaks$qValue >= -log10(idr.threshold)]
-pct.covered <- width(peaks) %>% sum %>% divide_by(genome.size) %>% multiply_by(100)
-message(sprintf("Selected %i peaks at an IDR threshold of %.3g, with an average width of %.0f nucleotides and covering a total of %.3g%% of the genome", length(peaks), idr.threshold, mean(width(peaks)), pct.covered))
-```
-
-Now we need a strategy to filter out uninformative windows representing background regions of the genome where no specific binding is observed. First, we examine the overall distribution of average logCPM values, as well as the average logCPM distribution within called peaks:
-
-```{r compute_aveLogCPM}
-a <- aveLogCPM(asDGEList(sexp), prior.count = 2)
-peak.overlap <- overlapsAny(sexp, peaks)
-a.peaks <- a[peak.overlap]
-```
-
-```{r plot_aveLogCPM}
-p <- ggplot(data.frame(logCPM=a, PeakOverlap=peak.overlap)) + 
-    aes(x=logCPM, fill=PeakOverlap) +
-    geom_histogram(aes(y=100*(..count..)/sum(..count..)), binwidth=0.1, boundary=0) +
-    xlab("Average logCPM") + ylab("Percent of windows in bin") + 
-    coord_cartesian(xlim=quantile(a, c(0, 0.999)), ylim=c(0,2))
-ggprint(p)
-```
-
-From this plot, we conclude that a purely count-based filter is not desirable. Because the peaks represent only a small fraction of the genome, a majority of windows at any abundance level are outside peaks. This is because the random variation in coverage depth of the background reads is at least as large as the difference between peaks and unbound regions. Hence, we will simply select all windows that overlap called peaks after selecting a larger set of peaks using a more relaxed IDR threshold in order to maximize the probability of including peaks that are present in only one or a few conditions and are therefore more weakly represented in the all-sample consensus. The trade-off of including more false positive peaks is acceptable here, since false positive peaks are not expected to show evidence of differential binding.
-
-```{r filter_peaks}
-idr.threshold <- 0.2
-peaks <- allpeaks[allpeaks$qValue >= -log10(idr.threshold)]
-pct.covered <- width(peaks) %>% sum %>% divide_by(genome.size) %>% multiply_by(100)
-message(sprintf("Selected %i peaks at an IDR threshold of %.3g, with an average width of %.0f nucleotides and covering a total of %.3g%% of the genome", length(peaks), idr.threshold, mean(width(peaks)), pct.covered))
-```
-
-```{r filter_windows_by_peak_overlap}
-sexp %<>% subsetByOverlaps(peaks)
-```
-
-Lastly, we plot the resulting aveLogCPM distribution.
-
-```{r replot_aveLogCPM}
-a <- aveLogCPM(asDGEList(sexp), prior.count = 2)
-p <- ggplot(data.frame(logCPM=a)) + 
-    aes(x=logCPM) +
-    geom_histogram(aes(y=100*(..count..)/sum(..count..)), binwidth=0.1, boundary=0) +
-    xlab("Average logCPM") + ylab("Percent of windows in bin") + 
-    coord_cartesian(xlim=quantile(a, c(0, 0.999))) +
-ggprint(p)
+bigbin.sexp %<>% .[,colnames(full.sexp)]
+assert_that(all(colnames(full.sexp) == colnames(bigbin.sexp)))
+sexp <- full.sexp %>% .[rowSums(assay(.)) >= ncol(.),]
+# Exepected number of counts per read, based on overlapping multiple windows.
+# NOTE: Assumes windows that exactly tile the genome (no overlaps, no gaps).
+colData(sexp)$CountDupFactor <- (colData(sexp)$ext - 1) / median(width(rowRanges(sexp))) + 1
 ```
 
 We extract the sample metadata from the SummarizedExperiment. Since donor_id is a confounding factor, we tell R to use a factor coding that puts the intercept at the simple mean of all donors when incorporating it into a design matrix.
@@ -147,334 +108,365 @@ sample.table <- colData(sexp) %>%
 contrasts(sample.table$donor_id) <- code_control(nlevels(sample.table$donor_id))
 ```
 
+# Peak and Window Filtering
+
+We begin by selecting only peaks  with an IDR value of 0.05 or less.
+```{r initial_filter_peaks}
+idr.threshold <- 0.05
+genome.size <- seqlengths(seqinfo(allpeaks)) %>% as.numeric %>% sum
+peaks <- allpeaks[allpeaks$qValue >= -log10(idr.threshold)]
+pct.covered <- width(peaks) %>% sum %>% divide_by(genome.size) %>% multiply_by(100)
+mean.pct.reads <- sexp %>% subsetByOverlaps(peaks) %>% assay("counts") %>%
+    colSums %>% divide_by(colData(sexp) %$% {totals * CountDupFactor}) %>% multiply_by(100) %>%
+    mean
+message(sprintf("Selected %i peaks at an IDR threshold of %.3g, with an average width of %.0f nucleotides and covering a total of %.3g%% of the genome, containing on average %.3g%% of reads", length(peaks), idr.threshold, mean(width(peaks)), pct.covered, mean.pct.reads))
+```
+
+Now we need a strategy to filter out uninformative windows representing background regions of the genome where no specific binding is observed. First, we examine the overall distribution of average logCPM values, as well as the average logCPM distribution within called peaks:
+
+```{r compute_aveLogCPM}
+a <- aveLogCPM(asDGEList(sexp), prior.count = 2)
+peak.overlap <- overlapsAny(sexp, peaks)
+a.peaks <- a[peak.overlap]
+```
+
+```{r plot_aveLogCPM}
+adata <- data.frame(logCPM=a, PeakOverlap=peak.overlap)
+p <- list(
+    Histogram=ggplot(adata) +
+        aes(x=logCPM, fill=PeakOverlap) +
+        geom_histogram(aes(y=100*(..count..)/sum(..count..)), binwidth=0.1, boundary=0) +
+        xlab("Average logCPM") + ylab("Percent of windows in bin") +
+        coord_cartesian(xlim=quantile(a, c(0, 0.999)), ylim=c(0,2)) +
+        labs(title="Histogram of average window logCPM values",
+             subtitle="Colored by peak overlap"),
+    Violin=ggplot(adata) +
+        aes(x=PeakOverlap, y=logCPM) +
+        geom_violin() +
+        labs(title="Violing plot of average window logCPM values",
+             subtitle="Grouped by peak overlap"))
+ggprint(p)
+summary(lm(logCPM ~ PeakOverlap, data=adata))
+```
+
+From the linear model and violin plot, we can see that peaks are clearly significantly enriched for high-abundance windows relative to the background. However, from the histogram plot, we conclude that a purely count-based filter is not desirable. Because the peaks represent only a small fraction of the genome, a majority of windows at any abundance level are still outside peaks. This is because the random variation in coverage depth of the background reads is at least as large as the difference between peaks and unbound regions. Hence, we will simply select all windows that overlap called peaks after selecting a larger set of peaks using a more relaxed IDR threshold in order to maximize the probability of including peaks that are present in only one or a few conditions and are therefore more weakly represented in the all-sample consensus. The trade-off of including more false positive peaks is acceptable here, since false positive peaks are not expected to show evidence of differential binding.
+
+```{r filter_peaks}
+idr.threshold <- 0.2
+peaks <- allpeaks[allpeaks$qValue >= -log10(idr.threshold)]
+pct.covered <- width(peaks) %>% sum %>% divide_by(genome.size) %>% multiply_by(100)
+mean.pct.reads <- sexp %>% subsetByOverlaps(peaks) %>% assay("counts") %>%
+    colSums %>% divide_by(colData(sexp) %$% {totals * CountDupFactor}) %>% multiply_by(100) %>%
+    mean
+message(sprintf("Selected %i peaks at an IDR threshold of %.3g, with an average width of %.0f nucleotides and covering a total of %.3g%% of the genome, containing on average %.3g%% of reads", length(peaks), idr.threshold, mean(width(peaks)), pct.covered, mean.pct.reads))
+```
+
+```{r filter_windows_by_peak_overlap}
+sexp %<>% subsetByOverlaps(peaks)
+```
+
+Lastly, we plot the resulting aveLogCPM distribution.
+
+```{r replot_aveLogCPM}
+a <- aveLogCPM(asDGEList(sexp), prior.count = 2)
+p <- ggplot(data.frame(logCPM=a)) +
+    aes(x=logCPM) +
+    geom_histogram(aes(y=100*(..count..)/sum(..count..)), binwidth=0.1, boundary=0) +
+    xlab("Average logCPM") + ylab("Percent of windows in bin") +
+    coord_cartesian(xlim=quantile(a, c(0, 0.999))) +
+ggprint(p)
+```
+
 # Exploratory Analysis
 
 Now we create a DGEList from the counts.
 
 ```{r prepare_dgelist}
 ## Extract gene metadata and colapse lists
-all.gene.meta <- mcols(sexp) %>% as.data.frame
+all.window.meta <- rowRanges(sexp) %>% as.data.frame %>%
+    select(-width, -strand) %>% rename(chr=seqnames)
 # Convert list columns to character vectors
-all.gene.meta[] %<>% lapply(function(x) if (is.list(x)) sapply(x, str_c, collapse=",") else x)
-dge <- DGEList(counts=assay(sexp, "counts"))
-dge$genes <- all.gene.meta
-```
-Next we take care of the initial scaling normalization for sequencing depth and composition bias. We also discard any genes with all zero counts, since there is no meaningful analysis that can be done with these genes.
-
-```{r initial_normalization}
-## Remove all genes with zero counts in all samples
-nonzero <- rowSums(dge$counts) > 0
-dge %<>% .[nonzero,]
-dge %<>% calcNormFactors
+all.window.meta[] %<>% lapply(function(x) if (is.list(x)) sapply(x, str_c, collapse=",") else x)
+rownames(all.window.meta) <- all.window.meta %$% sprintf("%s:%s-%s", chr, start, end)
+dge <- asDGEList(sexp)
+dge$genes <- all.window.meta
+rownames(dge) <- rownames(all.window.meta)
 ```
 
-In addition, if there is a length assay, we also use that to derive an offset matrix that corrects for sample-specific biases detected by Salmon or Kallisto.
+## Normalization
 
-```{r generate_offsets}
-if ("length" %in% assayNames(sexp)) {
-    normMat <- assay(sexp, "length") %>% divide_by(exp(rowMeans(log(.)))) %>%
-        .[nonzero,]
-    normCounts <- dge$counts/normMat
-    lib.offsets <- log(calcNormFactors(normCounts)) + log(colSums(normCounts))
-    dge$offset <- t(t(log(normMat)) + lib.offsets)
-}
+Normalization is a non-trivial issue for ChIP-Seq data. We will test three normalizations, one scaling normalization based on background read coverage, another based on coverage in the selected peak regions, and finally a non-linear loess-curve normalization. We also compute the number and fraction of reads in peaks for each sample.
+
+```{r compute_norm_factors_and_frip}
+# Compute these in parallel
+bgnf %<-% normOffsets(bigbin.sexp, type="scaling", weighted=FALSE)
+pnf %<-% normOffsets(sexp, type="scaling", weighted=TRUE)
+loff %<-% { normOffsets(sexp, type="loess") + mean(getOffset(dge)) }
+colData(sexp)$BGNormFactors <- bgnf
+colData(sexp)$PeakNormFactors <- pnf
+assay(sexp, "offsets.loess")  <- loff
+
+# Exepected number of counts per read, based on overlapping multiple windows
+count.dup.factor <- (colData(sexp)$ext - 1) / median(width(rowRanges(sexp))) + 1
+colData(sexp)$RiP <- assay(sexp) %>%
+    colSums %>%
+    divide_by(count.dup.factor)
+colData(sexp)$FRiP <- colData(sexp) %$% { RiP / totals }
+
 ```
 
-We plot the distribution of average log2 CPM values to verify that our chosen presence threshold is appropriate. The distribution is expected to be bimodal, with a low-abundance peak representing non-expressed genes and a high-abundance peak representing expressed genes. The chosen threshold should separate the two peaks of the bimodal distribution.
+We plot both normalizations against all relevant experimental factors:
 
-```{r aveLogCPM_plots}
-a <- aveLogCPM(dge)
-avelogcpm.presence.threshold <- -1
-
-p <- list(
-    Histogram=ggplot(data.frame(logCPM=a)) +
-        aes(x=logCPM) +
-        geom_histogram(aes(y=100*(..count..)/sum(..count..)), binwidth=0.25, boundary=0) +
-        geom_vline(xintercept=avelogcpm.presence.threshold, color="red", linetype="dashed") +
-        xlab("Average logCPM") + ylab("Percent of genes in bin") +
-        coord_cartesian(xlim=quantile(a, c(0, 0.995)), ylim=c(0,10)) +
-        labs(title="Average gene LogCPM distribution",
-             subtitle="for genes with at least 1 read") +
-        theme(plot.caption = element_text(hjust = 0)),
-    ECDF=ggplot(fortify(ecdf(a))) +
-        aes(x=x, y=y*100) +
-        geom_step() +
-        geom_vline(xintercept=avelogcpm.presence.threshold, color="red", linetype="dashed") +
-        xlab("Average logCPM") + ylab("Percent of genes with smaller average logCPM") +
-        coord_cartesian(xlim=quantile(a, c(0, 0.995))) +
-        labs(title="Empirical Cumulative Distribution Function of gene LogCPM values",
-             subtitle="for genes with at least 1 read") +
-        theme(plot.caption = element_text(hjust = 0)))
-
+```{r initial_disp_est}
+p <- list(ggduo(as.data.frame(colData(sexp)),
+                columnsX=c("cell_type", "time_point", "donor_id", "totals", "FRiP"),
+                columnsY=c("BGNormFactors", "PeakNormFactors")),
+         ggpairs(as.data.frame(colData(sexp)[c("totals", "RiP", "FRiP", "BGNormFactors", "PeakNormFactors")])))
 ggprint(p)
 ```
 
-```{r avelogCPM_plots_pdf, cache=FALSE, include=FALSE}
-ggprint(p, device=cairo_pdf(file.path(plotdir, "AveLogCPM-plots.pdf"), onefile=TRUE))
-```
+The strongest associations are between the FRiP values and both normalization factors, with the peak-based normalization factors being positively correlated with FRiP and the background normalization being negatively correlated. This indicates that the peak-based normalization factors are counteracting differences in pulldown efficiency between samples, while composition normalizationfactors are preserving, and perhaps even reinforcing these differences. This is the expected behavior for both normalization methods. There is also a visible, but weaker, negative correlation between total read counts and FRiP: sample with more total reads tend to have a greater fraction of reads not overlapping peaks.
 
-The red dashed line in each plot indicates the chosen presence threshold. We now subset the DGEList to only those genes above the threshold.
+To test these normalizations, we will look at their effect on the dispersion estimation step. But first, we must generate the design matrix in order to estimate dispersions.
 
-```{r abundance_filter_genes}
-dge %<>% .[aveLogCPMWithOffset(.) >= avelogcpm.presence.threshold,]
-```
-
-Now we estimate the dispersions for each gene, to get an idea of what the variability of this data set is like. In order to evaluate the effect of empirical Bayes shrinkage on the dispersions, we estimate the gene dispersions in 3 different ways: once with no inter-gene information sharing, once with ordinary shrinkage, and once with robust shrinkage, which reduces the strength of shrinkage for outlier genes whose dispersion is farthest away from the trend.
-
-```{r estimate_disp}
-design <- model.matrix(~0 + group + donor_id, sample.table)
-colnames(design) %<>% str_replace("^group", "")
-
-dge %<>% estimateDisp(design, robust=TRUE)
-
-message("Common dispersion: ", dge$common.dispersion)
-message("BCV: ", sqrt(dge$common.dispersion))
-
-dge.with.eBayes <- dge %>% estimateDisp(design, robust=FALSE)
-dge.with.robust.eBayes <- dge %>% estimateDisp(design, robust=TRUE)
-dge.without.eBayes <- dge %>% estimateDisp(design, prior.df=0)
-```
-
-We now plot all 3 dispersion estimates, along with the overall average and estimated trend. Each plot includes the points from the previous plots in lighter colors for comparison.
-
-```{r plot_disp}
-disptable <- data.frame(
-    logCPM=dge.without.eBayes$AveLogCPM,
-    CommonBCV=dge.with.eBayes$common.dispersion %>% sqrt,
-    TrendBCV=dge.with.eBayes$trended.dispersion %>% sqrt,
-    GeneWiseBCV=dge.without.eBayes$tagwise.dispersion %>% sqrt,
-    eBayesBCV=dge.with.eBayes$tagwise.dispersion %>% sqrt,
-    RobustBCV=dge.with.robust.eBayes$tagwise.dispersion %>% sqrt) %>%
-    cbind(dge$genes)
-
-## Reduce the number of points to plot for each line for performance
-## reasons
-npoints <- c(Common=2, Trend=500)
-disp.line.table <-
-    disptable %>%
-    select(logCPM, TrendBCV, CommonBCV) %>%
-    melt(id.vars="logCPM", variable.name="DispType", value.name = "BCV") %>%
-    mutate(DispType=str_replace(DispType, "BCV$", "")) %>%
-    group_by(DispType) %>%
-    do({
-        spline(x=.$logCPM, y=.$BCV, n=npoints[.$DispType[1]]) %>% data.frame(logCPM=.$x, BCV=.$y)
-    })
-
-baseplot <- ggplot(disptable) +
-    aes(x=logCPM)
-raw.disp.plot <- baseplot +
-    geom_point(aes(y=GeneWiseBCV), size=0.1, color="black") +
-    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, group=DispType), color="white", size=1.5, alpha=0.5) +
-    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, linetype=DispType), color="darkred", size=0.5) +
-    scale_linetype_manual(name="Dispersion Type", values=c(Trend="solid", Common="dashed")) +
-    ylab("Biological coefficient of variation") +
-    ggtitle("BCV plot (Raw dispersions)")
-
-eBayes.disp.plot <- baseplot +
-    geom_point(aes(y=GeneWiseBCV), size=0.4, color="gray") +
-    geom_point(aes(y=eBayesBCV), size=0.1, color="darkblue") +
-    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, group=DispType), color="white", size=1.5, alpha=0.5) +
-    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, linetype=DispType), color="darkred", size=0.5) +
-    scale_linetype_manual(name="Dispersion Type", values=c(Trend="solid", Common="dashed")) +
-    ylab("Biological coefficient of variation") +
-    ggtitle("BCV plot (Raw & squeezed dispersions)")
-
-robust.eBayes.disp.plot <- baseplot +
-    geom_point(aes(y=GeneWiseBCV), size=0.4, color="gray") +
-    geom_point(aes(y=eBayesBCV), size=0.4, color="deepskyblue") +
-    geom_point(aes(y=RobustBCV), size=0.1, color="darkgreen") +
-    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, group=DispType), color="white", size=1.5, alpha=0.5) +
-    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, linetype=DispType), color="darkred", size=0.5) +
-    scale_linetype_manual(name="Dispersion Type", values=c(Trend="solid", Common="dashed")) +
-    ylab("Biological coefficient of variation") +
-    ggtitle("BCV plot (Raw & squeezed & robust dispersions)")
-
-p <- list(raw.disp.plot, eBayes.disp.plot, robust.eBayes.disp.plot)
-ggprint(p)
-```
-
-```{r plot_disp_pdf, cache=FALSE, include=FALSE}
-ggprint(p, device=cairo_pdf(file.path(plotdir, "disp-plots.pdf"), onefile=TRUE))
-rasterpdf(file.path(plotdir, "disp-plots.pdf"), resolution=600)
-```
-
-Next, we use limma's sample weight calculating methods to investigate possible quality issues. To confirm our results, we also split the samples into treatment groups and use edgeR to estimate the dispersion within each group. This is a crude method, and these group-specific dispersion estimate would be too unstable for use in a differential expression analysis, but comparing the overall mean dispersion for each sample to the sample quality weights determined by limma provides a useful sanity check.
-
-```{r compute_quality_weights, message=FALSE, warning=FALSE}
-elist.w <- voomWithQualityWeightsAndOffset(dge, design)
-dbg <- estimateDispByGroup(dge, sample.table$group, sample.table$batch)
-```
-
-To see whether the weights are correlated with specific experimental factors, we create a boxplot of the weights and group dispersions against each relevant covariate.
-
-```{r plot_quality_weights}
-covars <- sample.table %>% dplyr::select(group, time_point, donor_id, batch, cell_type)
-qcmetrics <- data.frame(Weight=elist.w$sample.weights,
-                        GroupBCV=sapply(dbg, `[[`, "common.dispersion")[as.character(covars$group)])
-
-p <- ggduo.dataXY(covars, qcmetrics %>% transmute(Log2Weight=log2(Weight), GroupBCV)) +
-  ggtitle("Weights and dispersions by group") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5))
-ggprint(p)
-```
-
-```{r plot_quality_weights_pdf, cache=FALSE, include=FALSE}
-ggprint(p, device=cairo_pdf(file.path(plotdir, "qc-weights.pdf"), onefile = TRUE))
-```
-We also make plots of the individual weights against each covariate, and compute the ANOVA p-value for the relationship between the weights and each covariate separately.
-
-(Note for later: It would be good to try all covariates in the same model as random effects.)
-
-```{r plot_weights_vs_covars}
-awdf <- data.frame(covars, qcmetrics)
-anovas <- lapply(colnames(covars), function(x) {
-    formula <- as.formula(str_c("log2(Weight) ~ ", x))
-    lm(formula, awdf) %>% aov %>% tidy %>% filter(term == x)
-}) %>%
-    do.call(what=rbind) %>%
-    mutate(padj=p.adjust(p.value, method="BH"))
-pvals <- anovas %$% setNames(p.value, term)
-aw.plot.base <- ggplot(awdf) +
-    aes(y=Weight) +
-    scale_y_continuous(trans=log_trans(2)) +
-    geom_dotplot(binaxis = "y", stackdir="center", binwidth=0.1)
-p <- lapply(colnames(covars), function(x) {
-    pretty.covar.name <- x %>% str_replace_all("_", " ") %>% str_to_title
-    aw.plot.base + aes_string(x=x) +
-        labs(title=str_c("Array weights by ", pretty.covar.name),
-             subtitle=sprintf("ANOVA p-value = %0.3g", pvals[x]))
-})
-ggprint(p)
-```
-
-```{r plot_weights_vs_covars_pdf, cache=FALSE, include=FALSE}
-ggprint(p, device=cairo_pdf(file.path(plotdir, "weights-vs-covars.pdf"), onefile = TRUE))
-```
-
-Next we perform several methods of batch correction on the voom-transformed data. First, we try direct batch subtraction using limma's `removeBatchEffect` function, which fits a linear model with the batches as sum-to-zero coefficients and then subtracts the batch coefficients from the data.
-
-```{r batch_subtract}
-elist.bc <- elist.w
-# Batch is confounded with time point, so we leave it out of the design for this step
-design.NoTime <- model.matrix(~0 + cell_type + donor_id, sample.table)
-elist.bc$E %<>%
-    removeBatchEffect(batch=sample.table %$% batch:donor_id, design=design.NoTime,
-                      weights=elist.bc$weights)
-```
-
-Second, we use ComBat, which performs empirical Bayes shrinkage of the batch correction parameters. First, we run ComBat in parametric prior mode in order to produce a diagnostic plot of the priors. Note that we use ComBat here to subtract both the batch and donor effects, so that the MDS plots will be more reflective of the desired biological effects.
-
-```{r combat_plot}
-design.cb <- model.matrix(~cell_type, sample.table)
-# Right now we're just running ComBat to produce the plot, so we discard the output.
-invisible(capture.output(BPComBat(elist.w$E, batch=sample.table %$% batch:donor_id, mod=design.cb, par.prior=TRUE, prior.plots = TRUE)))
-```
-
-```{r combat_plot_pdf, echo=TRUE, message=FALSE, cache=FALSE}
-cairo_pdf(file.path(plotdir, "rnaseq-ComBat-qc.pdf"))
-# Run the same thing again to output the plot to the PDF file
-invisible(BPComBat(elist.w$E, batch=sample.table %$% batch:donor_id, mod=design.cb, par.prior=TRUE, prior.plots = TRUE))
-invisible(dev.off())
-```
-
-These plots look similar to the ones in dataset 1 of the ComBat paper, for which the parametric prior was chosen. So this analysis will do likewise.
-
-```{r combat_adjust}
-# Now perform the actual batch correction using non-parametric prior
-design.cb <- model.matrix(~cell_type, sample.table)
-elist.cb <- elist.w
-elist.cb$E %<>% BPComBat(batch=sample.table %$% batch:donor_id, mod=design.cb, par.prior=TRUE)
-```
-
-For each of the batch correction methods, we compute the sample distance matrix using multidimensional scaling and plot the first 3 principal coordinates. We reflect all the principal coordinates so as to make the mean of the Naive D0 samples negative in all dimensions, so that MDS plots will be oriented consistently between different reports. 
-
-```{r batch_correction_mds_plot, warning=FALSE}
-naive.d0.samples <- sample.table$group == "NaiveD0"
-dmat <- suppressPlot(plotMDS(elist.w)$distance.matrix) %>% as.dist
-mds <- cmdscale(dmat, k=attr(dmat, "Size") - 1, eig=TRUE)
-mds$points %<>% scale(center=FALSE, scale=-sign(colMeans(.[naive.d0.samples,]))) %>%
-    add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
-dmat.bc <- suppressPlot(plotMDS(elist.bc)$distance.matrix) %>% as.dist
-mds.bc <- cmdscale(dmat.bc, k=attr(dmat, "Size") - 1, eig=TRUE)
-mds.bc$points %<>% scale(center=FALSE, scale=sign(colMeans(.[naive.d0.samples,]))) %>%
-    add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
-dmat.cb <- suppressPlot(plotMDS(elist.cb)$distance.matrix) %>% as.dist
-mds.cb <- cmdscale(dmat.cb, k=attr(dmat, "Size") - 1, eig=TRUE)
-mds.cb$points %<>% scale(center=FALSE, scale=sign(colMeans(.[naive.d0.samples,]))) %>%
-     add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
-
-ggmdsbatch <- function(dat, dims=1:2) {
-    if (length(dims) == 1) {
-        dims <- dims + c(0,1)
+```{r build_design_matrix}
+sample.table <- colData(sexp) %>%
+    as.data.frame %>%
+    mutate(group=interaction(cell_type, time_point, sep="", lex.order = TRUE) %>%
+               `levels<-`(str_replace_all(levels(.), "Day", "D"))) %>%
+    autoFactorize
+# Use sum-to-zero coding matrices
+for (i in names(sample.table)) {
+    if (is.factor(sample.table[[i]]) && nlevels(sample.table[[i]]) > 1) {
+        contrasts(sample.table[[i]]) <- code_control_named(levels(sample.table[[i]]))
     }
-    assert_that(length(dims) == 2)
-    ggplot(dat) +
-        aes_string(x=str_c("Dim", dims[1]), y=str_c("Dim", dims[2])) +
-        aes(color=batch, label=SampleName) +
-        geom_text() +
-        scale_x_continuous(expand=c(0.15, 0)) +
-        coord_equal()
+}
+design <- model.matrix(~0 + group + donor_id, sample.table, strip.prefixes = TRUE)
+```
+
+## Dispersion estimation
+
+Now we estimate the dispersions with and without empirical Bayes shrinkage. We also try an additional normalization based on only the windows that are both peak-overlapping and have a mean count greater than 5.
+
+```{r estimate_disp_normtest}
+filter.threshold <- aveLogCPM(5, lib.size=mean(dge$samples$lib.size))
+filt <- aveLogCPM(dge) >= filter.threshold
+message(sprintf("Excluding %i out of %i windows (%.3g%%) with average count below 5.",
+                sum(filt == FALSE), length(filt), 100*(1-mean(filt))))
+dgefilt <- dge[filt,]
+dges <- list(
+    BGNorm=dgefilt %>% assign_into(.$samples$norm.factors, colData(sexp)$CompNormFactors),
+    PeakNorm=dgefilt %>% assign_into(.$samples$norm.factors, colData(sexp)$PeakNormFactors),
+    PeakHANorm=dgefilt %>% calcNormFactors(),
+    LoessNorm=dgefilt %>% assign_into(.$offset, assay(sexp, "offsets.loess")[filt,]))
+dges.noebayes <- lapply(dges, function(d) future(estimateDisp(d, design, prior.df=0)))
+dges <- lapply(dges, function(d) future(estimateDisp(d, design, robust=TRUE)))
+dges.noebayes %<>% values
+dges %<>% values
+```
+
+We now inspect the dispersion plot for each of the normalizations.
+
+```{r plot_disp_normtest}
+xlims <- lapply(dges, . %$% AveLogCPM %>% range) %>%
+    unlist %>% range %>% expand_range(mul=0.05)
+ylims <- lapply(dges, . %$% c(tagwise.dispersion, trended.dispersion, common.dispersion) %>% range) %>%
+    unlist %>% range %>% expand_range(mul=0.05)
+p <- list()
+for (i in names(dges)) {
+    prior.df <- dges[[i]]$prior.df %>% median
+    p[[i]] <- ggplotBCV(dges[[i]], rawdisp=dges.noebayes[[i]]) +
+        coord_cartesian(xlim = xlims, ylim=ylims) +
+        labs(title=sprintf("BCV Plot with %s", i),
+             subtitle=sprintf("Prior d.f. = %.3g", prior.df))
+}
+ggprint(p)
+```
+
+The composition normalization results in a poor fit (indicated by the infinite prior d.f.). The loess normalization seems to perform well, and the two peak-based normalizations perform moderately well, with the normalization based on only high-abundance windows apparently working a little bit better. Next, we examine the effect of each normalization on the MDS plot.
+
+## MDS Plots
+
+```{r compute_mds_normtest}
+mdsdist <- dges %>% bplapply(. %>% {suppressPlot(plotMDS(.))} %$% distance.matrix %>% as.dist)
+mdspoints <- mdsdist %>% bplapply(function(dmat) {
+    suppressWarnings(cmdscale(dmat, k=ncol(sexp)-1)) %>%
+        add.numbered.colnames(prefix = "Dim") %>%
+        as.data.frame
+})
+maxabs <- max(abs(unlist(mdspoints)))
+mdstabs <- lapply(mdspoints, cbind, sample.table)
+p12 <- p23 <- list()
+for (i in names(mdstabs)) {
+    p12[[i]] <- ggplot(mdstabs[[i]] %>% arrange(cell_type, time_point, donor_id)) +
+        aes(x=Dim1, y=Dim2, label=SampleName, color=time_point,
+            shape=cell_type, linetype=donor_id, group=cell_type:donor_id) +
+        geom_encircle(aes(group=time_point:cell_type, color=NULL, fill=time_point), s_shape=0.75, expand=0.05, color=NA, alpha=0.2) +
+        geom_path(color=hcl(c=0, l=45), aes(color=NULL)) +
+        geom_point(size=4) +
+        scale_shape_manual(values=c(Naive=16, Memory=17)) +
+        scale_fill_hue(l=55) +
+        scale_linetype_manual(values=c("solid", "dashed", "dotdash", "twodash")) +
+        guides(colour = guide_legend(override.aes = list(shape = 16)),
+               shape = guide_legend(override.aes = list(color=hcl(c=0, l=80), fill=hcl(c=0, l=55)))) +
+        labs(title="Principal Coordinates 1 & 2",
+             subtitle=sprintf("With %s normalization", i)) +
+        coord_equal(xlim=c(-maxabs, maxabs), ylim=c(-maxabs, maxabs))
+    p23[[i]] <- p12[[i]] + aes(x=Dim2, y=Dim3) +
+        labs(title="Principal Coordinates 2 & 3")
+}
+```
+
+```{r mds_pc12}
+ggprint(p12)
+```
+
+```{r mds_pc23}
+ggprint(p23)
+```
+
+From the MDS plots, we can see that the two variants on peak normalization produce similar results, as expected. However, it seems that the background normalization and loess normalization also produce similar MDS plots, which is somewhat unexpected based on the very different dispersion plots for these two normalizations. This is likely the case because the loess normalization effectively interpolates between background normalization for low-count windows and peak-based normalization for high-count windows. Since the majority of windows have low counts, the loess normalization will be similar to the background normalization for a majority of windows, and therefore the MDS plots will look similar.
+
+In any case, neither normalization is obviously better than the others at separating the sample groups.
+
+## MA plots
+
+Now we examine the effect of each normalization on the MA plots between samples. We will order the samples from smallest to largest ratio between the peak and background normalization factors, and then pair them up with the opposite: first with last, second with second-to-last, and so on. This will yield a range of MA plots, some between samples with very different normalizations and some with very similar normalizations.
+
+```{r prep_ma_plots}
+colData(sexp)$nf.logratio <- colData(sexp) %$% log2(PeakNormFactors/BGNormFactors)
+middle.samples <- colData(sexp)$nf.logratio %>% abs %>% order
+bn.higher.samples <- colData(sexp)$nf.logratio %>% order
+pn.higher.samples <- rev(bn.higher.samples)
+
+logcpm <- cpm(dgefilt, log=TRUE, prior.count=0.5)
+# The same measure used for the loess normalization
+AveLogCPM <- aveLogCPM(dgefilt, dispersion = 0.05, prior.count = 0.5)
+logcpm.loess <- cpmWithOffset(dges$LoessNorm, log=TRUE, prior.count=0.5)
+bigbin.logcpm <- cpm(asDGEList(bigbin.sexp), log=TRUE, prior.count=0.5)
+
+getLineData <- function(s1, s2) {
+    c(BG="BGNorm",
+      Peaks="PeakNorm",
+      PeaksHA="PeakHANorm") %>%
+        sapply(. %>% {dges[[.]]$samples$norm.factors} %>% log2 %>% {.[s2] - .[s1]}) %>%
+        data.frame(NormFactor=., NormType=names(.))
 }
 
-p <- list(
-    ggmdsbatch(mds$points) +
-        labs(title="limma voom Principal Coordinates 1 & 2",
-             subtitle="No batch correction"),
-    ggmdsbatch(mds.bc$points) +
-        labs(title="limma voom Principal Coordinates 1 & 2",
-             subtitle="After naive batch subtraction"),
-    ggmdsbatch(mds.cb$points) +
-        ggtitle("limma voom Principal Coordinates 1 & 2",
-             subtitle="After ComBat batch correction"),
-    ggmdsbatch(mds$points, dims=2:3) +
-        ggtitle("limma voom Principal Coordinates 2 & 3",
-             subtitle="No batch correction"),
-    ggmdsbatch(mds.bc$points, dims=2:3) +
-        ggtitle("limma voom Principal Coordinates 2 & 3",
-             subtitle="After naive batch subtraction"),
-    ggmdsbatch(mds.cb$points, dims=2:3) +
-        ggtitle("limma voom Principal Coordinates 2 & 3",
-             subtitle="After ComBat batch correction"))
+getOffsetLineData <- function(s1, s2, n=1000) {
+    x <- data.frame(A=aveLogCPM(dges$LoessNorm, dispersion=0.05, prior.count=0.5),
+                    Offset=dges$LoessNorm$offset %>% {.[,s2] - .[,s1]} %>% divide_by(log(2)))
+    f <- approxfun(x$A, x$Offset)
+    data.frame(A=seq(from=min(x$A), to=max(x$A), length.out = n)) %>%
+        mutate(M=f(A))
+}
+
+doMAPlot <- function(logcpm.matrix, s1, s2, linedata=getLineData(s1, s2), curvedata=NULL,
+                     AveLogCPM, Acutoff=-2) {
+    pointdata <- data.frame(S1=logcpm.matrix[,s1], S2=logcpm.matrix[,s2]) %>%
+        transmute(A=(S1+S2)/2, M=S2-S1)
+    if (!missing(AveLogCPM)) {
+        pointdata$A <- AveLogCPM
+    }
+    pointdata %<>% filter(A >= Acutoff)
+    ## Compute bandwidth and kernel smooth surface
+    H <- pointdata %>% Hbcv.diag(binned=TRUE) %>% divide_by(4)
+    k <- pointdata %>%
+        as.matrix %>%
+        kde(gridsize=1024, bgridsize=rep(1024, 2), verbose=TRUE,
+            H=H, binned=TRUE)
+    ## Sometimes the estimate goes a bit negative, which is no good
+
+    densdata <- melt(k$estimate) %>%
+        transmute(
+            A=k$eval.points[[1]][Var1],
+            M=k$eval.points[[2]][Var2],
+            Density=value %>% pmax(0),
+            ## Part of a hack to make the alpha look less bad
+            AlphaDens=value %>% pmax(1e-15))
+
+    p <- ggplot(pointdata) +
+        ## MA Plot density
+        geom_raster(aes(x=A, y=M, fill=Density, alpha=AlphaDens),
+                    data=densdata,
+                    interpolate=TRUE) +
+        scale_fill_gradientn(colors=suppressWarnings(brewer.pal(Inf, "Blues")),
+                             trans=power_trans(1/8),
+                             name="Density") +
+        scale_alpha_continuous(trans=power_trans(1/40), guide=FALSE)
+    if (!is.null(linedata) && nrow(linedata) > 0) {
+        p <- p +
+            ## Normalization lines
+            geom_hline(data=linedata, aes(yintercept=NormFactor, color=NormType)) +
+            scale_color_discrete(name="Norm Type")
+    }
+    if (!is.null(curvedata)) {
+        p <- p + geom_line(data=curvedata, aes(x=A, y=M))
+    }
+    # p <- p +
+    #     ## Loess curve
+    #     geom_smooth(aes(x=A, y=M), span=0.3, fill=NA, color="black") +
+    #     ## Scales
+    #     scale_x_continuous(name="log2(CPM)", expand=c(0,0)) +
+    #     scale_y_continuous(name="log2(FC)", expand=c(0,0)) +
+    #     coord_fixed(0.5)
+    p
+}
+```
+
+With the preparatory code in place, we can now make the MA plots. First, we make basic MA plots, with log difference (M) on the y-axis and the log mean (A) on the x-axis:
+
+```{r maplot_150bp}
+p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
+    bplapply(function(i) {
+        s1 <- bn.higher.samples[i]
+        s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
+        doMAPlot(logcpm, s1, s2) +
+            labs(title="MA Plot of 150bp Windows",
+                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+    })
 ggprint(p)
 ```
 
-```{r batch_correction_mds_plot_pdf, cache=FALSE, include=FALSE}
-ggprint(p, device=cairo_pdf(file.path(plotdir, "rnaseq-MDSPlots-BatchCorrect.pdf"), width=12, height=12, onefile = TRUE))
-```
+Now, we make the same plots, but for the x-axis, we use the average log2 CPM of the whole dataset, rather than the log mean of the two samples being plotted. The advantage of this is that it puts all the plots on a common x-axis, and it also allows us to add a curve representing the loess normalization, since this normalization is calculated relative to the same average log2 CPM scale. The disadvantage is that this smears the plots horizontally, since windows with similar counts in the two specific samples will have different counts in all the other samples, leading to a spreading of previously similar A values.
 
-Choosing ComBat as the best-looking batch correction, we make more MDS plots for this data, this time plotting the first 5 PCs and adding the experimental information to the plot as colors and shapes.
-
-```{r mds_plot}
-xlims <- range(unlist(mds.cb$points[c("Dim1", "Dim2")]))
-ylims <- range(unlist(mds.cb$points[c("Dim2", "Dim3")]))
-pbase <- ggplot(mds.cb$points) +
-    aes(x=Dim1, y=Dim2, label=SampleName, color=batch, fill=time_point, shape=cell_type, linetype=donor_id, group=cell_type:donor_id) +
-    geom_encircle(aes(group=time_point:cell_type, color=NULL), s_shape=0.75, expand=0.05, color=NA, alpha=0.2) +
-    geom_path(color=hcl(c=0, l=45), aes(color=NULL)) +
-    geom_point(size=4) +
-    scale_shape_manual(values=c(Naive=21, Memory=24)) +
-    scale_color_manual(values=col2hcl(c(B1="green", B2="magenta"), l=80)) +
-    scale_fill_hue(l=55) +
-    scale_linetype_manual(values=c("solid", "dashed", "dotdash", "twodash")) +
-    guides(colour = guide_legend(override.aes = list(shape = 21)),
-           fill = guide_legend(override.aes = list(shape = 21)),
-           shape = guide_legend(override.aes = list(color=hcl(c=0, l=80), fill=hcl(c=0, l=55)))) +
-    labs(title="limma voom Principal Coordinates 1 & 2",
-         subtitle=" (after ComBat batch correction)") +
-    coord_equal(xlim=xlims, ylim=ylims)
-p <- list(PC12=pbase,
-          PC23=pbase +
-              aes(x=Dim2, y=Dim3) +
-              labs(title="limma voom Principal Coordinates 2 & 3"),
-          PC34=pbase +
-              aes(x=Dim3, y=Dim4) +
-              labs(title="limma voom Principal Coordinates 3 & 4"),
-          PC45=pbase +
-              aes(x=Dim4, y=Dim5) +
-              labs(title="limma voom Principal Coordinates 4 & 5"))
+```{r maplot_150bp_Acommon}
+p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
+    bplapply(function(i) {
+        s1 <- bn.higher.samples[i]
+        s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
+        doMAPlot(logcpm, s1, s2, AveLogCPM=AveLogCPM,
+                 curvedata=getOffsetLineData(s1, s2)) +
+            labs(title="MA Plot of 150bp Windows with common A scale",
+                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+    })
 ggprint(p)
 ```
 
-```{r mds_plot_pdf, cache=FALSE, include=FALSE}
-ggprint(p, device=cairo_pdf(file.path(plotdir, "rnaseq-MDSPlots.pdf"), onefile = TRUE))
+Next, instead of plotting the loess normalization line, we make the MA plot using loess-normalized log2 CPM values. Effectively, this should center each entire plot vertically on M = 0, using the loess normalization as a guide.
+
+```{r maplot_150bp_loess_norm}
+p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
+    bplapply(function(i) {
+        s1 <- bn.higher.samples[i]
+        s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
+        doMAPlot(logcpm.loess, s1, s2, linedata = NULL) +
+            labs(title="MA Plot of 150bp Windows, Loess Normalized",
+                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+    })
+ggprint(p)
+```
+
+Last, we make MA plots for the 10kb bins that were used to compute the background normalization.
+
+```{r maplot_bigbin}
+p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
+    bplapply(function(i) {
+        s1 <- bn.higher.samples[i]
+        s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
+        withGC(doMAPlot(bigbin.logcpm, s1, s2) +
+                   labs(title="MA Plot of 10kb Bins",
+                        subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2])))
+    })
+ggprint(p)
 ```
