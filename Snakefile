@@ -2099,4 +2099,4 @@ rule chipseq_explore:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
                    output_format='html_document',
-                   params={ 'basedir': os.getcwd(), 'dataset': wildcards.dataset, })
+                   params={ 'basedir': os.getcwd(), 'histone_mark': wildcards.chip_antibody, })
