@@ -2091,6 +2091,7 @@ rule chipseq_explore:
         html='reports/ChIP-seq/{chip_antibody}-exploration.html',
     version: R_package_version('rmarkdown')
     threads: 2
+    resources: mem_gb=40
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
