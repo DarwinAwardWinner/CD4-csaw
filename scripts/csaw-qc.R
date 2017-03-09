@@ -282,7 +282,7 @@ logcpm <- cpm(dge, log=TRUE)
 bigbin.logcpm <- cpm(asDGEList(bigbin.counts), log=TRUE)
 peak.logcpm <- logcpm[peak.overlap,]
 
-peak.logcpm.loess <- cpmWithOffset(dge[peak.overlap,], offset=offsets + getOffset(dge[peak.overlap,]), log=TRUE)
+peak.logcpm.loess <- cpmWithOffset(dge[peak.overlap,], offset=offsets + mean(getOffset(dge[peak.overlap,])), log=TRUE)
 
 getLineData <- function(s1, s2) {
     c(Comp="CompNormFactors",
