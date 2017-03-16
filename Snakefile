@@ -653,7 +653,7 @@ rule extract_fastq:
     echo "Shuffling fastq for {wildcards.sra_run:q}..."
     fastq-sort --random --seed=1986 {output.temp_unshuffled:q} > {output.temp_shuffled:q}
     echo "Compressing fastq for {wildcards.sra_run:q}..."
-    {compression_cmd} < {output.temp_shuffled:q} > {output:q}
+    {params.compress_cmd} < {output.temp_shuffled:q} > {output:q}
     rm -f {output.temp_unshuffled:q} {output.temp_shuffled:q}
     '''
 
