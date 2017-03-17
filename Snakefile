@@ -460,8 +460,7 @@ targets = {
                                   ' Selected Sample MA Plots',
                                   ' Selected Sample 10KB Bin MA Plots',
                                   ' Selected Sample Peak-Overlap MA Plots',
-                                  ' Selected Sample Peak-Overlap Normalized MA Plots',
-                                  '-norm-eval')),
+                                  ' Selected Sample Peak-Overlap Normalized MA Plots')),
     'macs_peaks_allcond_alldonor': set(expand(
         'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.narrowPeak', zip_longest_recycled,
         genome_build='hg38.analysisSet',
@@ -1813,8 +1812,8 @@ rule csaw_profile_sites:
     threads: 8
     shell: 'MC_CORES={threads:q} scripts/csaw-profile-sites.R'
 
-rule csaw_count_150bp:
-    '''Count ChIP-Seq reads overlapping 150bp windows in each sample.
+rule csaw_count_windows:
+    '''Count ChIP-Seq reads overlapping windows in each sample.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
 
@@ -1826,13 +1825,20 @@ rule csaw_count_150bp:
                          ext=['bam', 'bam.bai']),
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
     output:
-        'saved_data/csaw-window-counts-150bp.RDS'
+        'saved_data/csaw-counts-{window_size,\\d+.*?bp}-windows-{read_ext}-reads.RDS'
     version: R_package_version('csaw')
+    threads: 8
     resources: mem_gb=60
-    shell: 'scripts/csaw-count-150bp.R'
+    shell: '''
+    scripts/csaw-count-windows.R \
+      --window-width {wildcards.window_size:q} \
+      --read-extension {wildcards.read_ext:q} \
+      --threads {threads:q} \
+      --output-file {output:q}
+    '''
 
-rule csaw_count_10kb:
-    '''Count ChIP-Seq reads in 10kb bins in each sample.
+rule csaw_count_bins:
+    '''Count ChIP-Seq reads overlapping windows in each sample.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
 
@@ -1844,28 +1850,53 @@ rule csaw_count_10kb:
                          ext=['bam', 'bam.bai']),
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
     output:
-        'saved_data/csaw-bigbin-counts-10kb.RDS'
+        'saved_data/csaw-counts-{window_size,\\d+.*?bp}-bigbins.RDS'
     version: R_package_version('csaw')
     threads: 8
     resources: mem_gb=20
-    shell: 'MC_CORES={threads:q} scripts/csaw-count-10kb.R'
+    shell: '''
+    scripts/csaw-count-windows.R \
+      --window-width {wildcards.window_size:q} \
+      --bin \
+      --threads {threads:q} \
+      --output-file {output:q}
+    '''
 
-rule split_csaw_counts:
-    '''Split csaw count data by histone mark.
+rule split_csaw_window_counts:
+    '''Split csaw window count data by histone mark.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
 
     '''
     input:
-        'saved_data/csaw-window-counts-150bp.RDS',
-        'saved_data/csaw-bigbin-counts-10kb.RDS',
+        'saved_data/csaw-counts-{window_size}-windows-{read_ext}-reads.RDS',
     output:
-        expand('saved_data/csaw-window-counts-{chip}-150bp.RDS',
-               chip=set(chipseq_samplemeta['chip_antibody'])),
-        expand('saved_data/csaw-bigbin-counts-{chip}-10kb.RDS',
+        expand('saved_data/csaw-counts-{{window_size,\\d+.*?bp}}-windows-{{read_ext,\\d+.*?bp}}-reads-{chip}.RDS',
                chip=set(chipseq_samplemeta['chip_antibody'])),
     version: SOFTWARE_VERSIONS['BIOC']
-    shell: 'scripts/csaw-split.R'
+    shell: '''
+    scripts/split-sexp.R \
+      -i {input:q} \
+      -o 'saved_data/csaw-counts-{wildcards.window_size:q}-windows-{wildcards.read_ext:q}-reads-{{chip_antibody}}.RDS'
+    '''
+
+rule split_csaw_bigbin_counts:
+    '''Split csaw bin count data by histone mark.
+
+    https://bioconductor.org/packages/release/bioc/html/csaw.html
+
+    '''
+    input:
+        'saved_data/csaw-counts-{window_size}-bigbins.RDS',
+    output:
+        expand('saved_data/csaw-counts-{{window_size,\\d+.*?bp}}-bigbins-{chip}.RDS',
+               chip=set(chipseq_samplemeta['chip_antibody'])),
+    version: SOFTWARE_VERSIONS['BIOC']
+    shell: '''
+    scripts/split-sexp.R \
+      -i {input:q} \
+      -o 'saved_data/csaw-counts-{wildcards.window_size:q}-bigbins-{{chip_antibody}}.RDS'
+    '''
 
 rule csaw_qc:
     '''Generate several QC plots for ChIP-Seq data.
@@ -1874,8 +1905,8 @@ rule csaw_qc:
 
     '''
     input:
-        window_counts='saved_data/csaw-window-counts-{chip}-150bp.RDS',
-        bigbin_counts='saved_data/csaw-bigbin-counts-{chip}-10kb.RDS',
+        window_counts='saved_data/csaw-counts-500bp-windows-147bp-reads-{chip}.RDS',
+        bigbin_counts='saved_data/csaw-counts-10kbp-bigbins-{chip}.RDS',
         peaks='peak_calls/epic_hg38.analysisSet/{chip}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
     output:
         normfactor_test_table='results/csaw/{chip}-normfactor-tests.xlsx',
@@ -1890,21 +1921,6 @@ rule csaw_qc:
     version: R_package_version('csaw')
     resources: mem_gb=30
     shell: 'scripts/csaw-qc.R {wildcards.chip:q}'
-
-rule csaw_norm_eval:
-    '''Generate Dispersion and MDS plots using various normalizations for ChIP-Seq data.
-
-    https://bioconductor.org/packages/release/bioc/html/csaw.html
-
-    '''
-    input:
-        window_counts='saved_data/csaw-window-counts-{chip}-150bp.RDS',
-        bigbin_counts='saved_data/csaw-bigbin-counts-{chip}-10kb.RDS',
-        peaks='peak_calls/epic_hg38.analysisSet/{chip}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
-    output: 'plots/csaw/{chip}-norm-eval.pdf',
-    version: R_package_version('csaw')
-    resources: mem_gb=20
-    shell: 'scripts/csaw-norm-eval.R {wildcards.chip:q}'
 
 rule collect_abundance_ensembl:
     '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
@@ -2083,20 +2099,42 @@ rule rnaseq_diffexp:
                    output_format='html_document',
                    params={ 'basedir': os.getcwd(), 'dataset': wildcards.dataset, })
 
-rule chipseq_explore:
-    '''Perform exploratory data analysis on ChIP-seq dataset'''
+rule chipseq_peak_size_analysis:
     input:
-        rmd='scripts/chipseq-explore.Rmd',
-        sexp='saved_data/csaw-window-counts-{chip_antibody}-150bp.RDS',
-        bigbin_sexp='saved_data/csaw-bigbin-counts-{chip_antibody}-10kb.RDS',
+        peaks=expand('peak_calls/epic_hg38.analysisSet/{chip}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
+                     chip=set(chipseq_samplemeta_noinput['chip_antibody'])),
+        rmd='scripts/chipseq-peak-sizes.Rmd'
+    output:
+        html='reports/ChIP-seq/peak-sizes.html'
+    version: R_package_version('rmarkdown')
+    threads: len(set(chipseq_samplemeta_noinput['chip_antibody']))
+    resources: mem_gb=5
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
+                   output_format='html_document',
+                   params={ 'basedir': os.getcwd(), })
+
+rule chipseq_explore:
+    '''Perform exploratory data analysis on {chip_antibody} ChIP-seq dataset'''
+    input:
+        rmd='scripts/chipseq-explore-{chip_antibody}.Rmd',
+        sexp='saved_data/csaw-counts-500bp-windows-147bp-reads-{chip_antibody}.RDS',
+        bigbin_sexp='saved_data/csaw-counts-10kbp-bigbins-{chip_antibody}.RDS',
         peaks='peak_calls/epic_hg38.analysisSet/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
     output:
         html='reports/ChIP-seq/{chip_antibody}-exploration.html',
     version: R_package_version('rmarkdown')
-    threads: 2
+    threads: 4
     resources: mem_gb=40
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
                    output_format='html_document',
-                   params={ 'basedir': os.getcwd(), 'histone_mark': wildcards.chip_antibody, })
+                   params={
+                       'basedir': os.getcwd(),
+                       'histone_mark': wildcards.chip_antibody,
+                       'window_size': '500bp',
+                       'fragment_length': '147bp',
+                       'bigbin_size': '10kbp',
+                   })

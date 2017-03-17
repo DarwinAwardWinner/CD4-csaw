@@ -10,7 +10,13 @@ params:
   basedir:
     value: /home/ryan/Projects/CD4-csaw
   histone_mark:
-    value: H3K27me3
+    value: H3K4me2
+  window_size:
+    value: 500bp
+  fragment_length:
+    value: 147bp
+  bigbin_size:
+    value: 10kbp
 ---
 
 # Preliminary Setup
@@ -42,6 +48,7 @@ library(scales)
 library(GGally)
 library(ggalt)
 library(ggthemes)
+library(splines)
 library(reshape2)
 library(assertthat)
 library(ggfortify)
@@ -52,13 +59,13 @@ library(RColorBrewer)
 library(BSgenome.Hsapiens.UCSC.hg38)
 
 library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
+ncores <- min(2, getOption("mc.cores", default=parallel::detectCores(logical = FALSE)))
 options(mc.cores=ncores)
 registerDoParallel(cores=ncores)
 library(BiocParallel)
 register(DoparParam())
 
-options(future.globals.maxSize=1024^3)
+options(future.globals.maxSize=4 * 1024^3)
 library(future)
 plan(multicore)
 
@@ -88,8 +95,9 @@ allpeaks <- {
 Now we'll load the ChIP-seq read count data set from RDS files containing SummarizedExperiment objects, and modify them to use the sample names as column names. We also ensure that the column order is identical between the two objects. Lastly, we filter out any windows with fewer than one count per sample. This is a very mild filtering criterion, but it eliminates around 75% of all the windows, greatly easing the subsequent computational burden of computing the *real* filtering threshold.
 
 ```{r load_counts}
-sexpfile <- file.path(params$basedir, "saved_data",
-                      sprintf("csaw-window-counts-%s-150bp.RDS", params$histone_mark))
+sexpfile <- 
+    file.path(params$basedir, "saved_data",
+              with(params, sprintf("csaw-counts-%s-windows-%s-reads-%s.RDS", window_size, fragment_length, histone_mark)))
 bigbin.sexpfile <- file.path(params$basedir, "saved_data",
                              sprintf("csaw-bigbin-counts-%s-10kb.RDS", params$histone_mark))
 bigbin.sexp %<-% readRDS(bigbin.sexpfile)
@@ -113,7 +121,8 @@ sample.table <- colData(sexp) %>%
     mutate(days_after_activation=time_point %>% str_extract("\\d+$") %>% as.numeric(),
            time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
            group=interaction(cell_type, time_point, sep="")) %>% 
-    autoFactorize
+    autoFactorize %>%
+    set_rownames(colnames(sexp))
 for (i in names(sample.table)) {
     if (is.factor(sample.table[[i]]) && nlevels(sample.table[[i]]) > 1) {
         sample.table[[i]] %<>% C(code_control_named(levels(.)))
@@ -155,14 +164,15 @@ p <- list(
              subtitle="Colored by peak overlap"),
     Violin=ggplot(adata) +
         aes(x=PeakOverlap, y=logCPM) +
-        geom_violin() + geom_tufteboxplot() + 
+        geom_violin() + 
+        geom_tufteboxplot(median.type = "line", whisker.type = 'line', hoffset = 0, width = 3) +
         labs(title="Violin plot of average window logCPM values",
              subtitle="Grouped by peak overlap"))
 ggprint(p)
 summary(lm(logCPM ~ PeakOverlap, data=adata))
 ```
 
-From the linear model and violin plot, we can see that peaks are clearly significantly enriched for high-abundance windows relative to the background. However, from the histogram plot, we conclude that a purely count-based filter is not desirable. Because the peaks represent only a small fraction of the genome, a majority of windows at any abundance level are still outside peaks. This is because the random variation in coverage depth of the background reads is at least as large as the difference between peaks and unbound regions. Hence, we will simply select all windows that overlap called peaks after selecting a larger set of peaks using a more relaxed IDR threshold in order to maximize the probability of including peaks that are present in only one or a few conditions and are therefore more weakly represented in the all-sample consensus. The trade-off of including more false positive peaks is acceptable here, since false positive peaks are not expected to show evidence of differential binding.
+TODO REPHRASE From the linear model and violin plot, we can see that peaks are clearly significantly enriched for high-abundance windows relative to the background. However, from the histogram plot, we conclude that a purely count-based filter is not desirable. Because the peaks represent only a small fraction of the genome, a majority of windows at any abundance level are still outside peaks. This is because the random variation in coverage depth of the background reads is at least as large as the difference between peaks and unbound regions. Hence, we will simply select all windows that overlap called peaks after selecting a larger set of peaks using a more relaxed IDR threshold in order to maximize the probability of including peaks that are present in only one or a few conditions and are therefore more weakly represented in the all-sample consensus. The trade-off of including more false positive peaks is acceptable here, since false positive peaks are not expected to show evidence of differential binding.
 
 ```{r filter_peaks}
 idr.threshold <- 0.2
@@ -186,7 +196,7 @@ p <- ggplot(data.frame(logCPM=a)) +
     aes(x=logCPM) +
     geom_histogram(aes(y=100*(..count..)/sum(..count..)), binwidth=0.1, boundary=0) +
     xlab("Average logCPM") + ylab("Percent of windows in bin") +
-    coord_cartesian(xlim=quantile(a, c(0, 0.999))) +
+    coord_cartesian(xlim=quantile(a, c(0, 0.999)))
 ggprint(p)
 ```
 
@@ -201,9 +211,10 @@ all.window.meta <- rowRanges(sexp) %>% as.data.frame %>%
 # Convert list columns to character vectors
 all.window.meta[] %<>% lapply(function(x) if (is.list(x)) sapply(x, str_c, collapse=",") else x)
 rownames(all.window.meta) <- all.window.meta %$% sprintf("%s:%s-%s", chr, start, end)
-dge <- asDGEList(sexp)
-dge$genes <- all.window.meta
-rownames(dge) <- rownames(all.window.meta)
+dge <- asDGEList(sexp) %>% 
+    assign_into(.$offset, NULL) %>%
+    assign_into(.$genes, all.window.meta) %>%
+    set_rownames(rownames(all.window.meta))
 ```
 
 ## Normalization
@@ -215,17 +226,16 @@ Normalization is a non-trivial issue for ChIP-Seq data. We will test three norma
 bgnf %<-% normOffsets(bigbin.sexp, type="scaling", weighted=FALSE)
 pnf %<-% normOffsets(sexp, type="scaling", weighted=TRUE)
 loff %<-% { normOffsets(sexp, type="loess") + mean(getOffset(dge)) }
-colData(sexp)$BGNormFactors <- bgnf
-colData(sexp)$PeakNormFactors <- pnf
+sample.table$BGNormFactors <- colData(sexp)$BGNormFactors <- bgnf
+sample.table$PeakNormFactors <- colData(sexp)$PeakNormFactors <- pnf
 assay(sexp, "offsets.loess")  <- loff
 
 # Exepected number of counts per read, based on overlapping multiple windows
 count.dup.factor <- (colData(sexp)$ext - 1) / median(width(rowRanges(sexp))) + 1
-colData(sexp)$RiP <- assay(sexp) %>%
+sample.table$RiP <- colData(sexp)$RiP <- assay(sexp) %>%
     colSums %>%
     divide_by(count.dup.factor)
-colData(sexp)$FRiP <- colData(sexp) %$% { RiP / totals }
-
+sample.table$FRiP <- colData(sexp)$FRiP <- colData(sexp) %$% { RiP / totals }
 ```
 
 We plot both normalizations against all relevant experimental factors:
@@ -243,7 +253,9 @@ The strongest associations are between the FRiP values and both normalization fa
 To test these normalizations, we will look at their effect on the dispersion estimation step. But first, we must generate the design matrix in order to estimate dispersions.
 
 ```{r build_design_matrix}
-design <- model.matrix(~0 + group + donor_id, sample.table, strip.prefixes = TRUE)
+FRiP.NS <- ns(sample.table$FRiP, df=3, intercept = FALSE)
+design <- model.matrix(~0 + group + donor_id + FRiP.NS, sample.table, strip.prefixes = TRUE)
+colnames(design)
 ```
 
 ## Dispersion estimation
@@ -251,10 +263,11 @@ design <- model.matrix(~0 + group + donor_id, sample.table, strip.prefixes = TRU
 Now we estimate the dispersions with and without empirical Bayes shrinkage. We also try an additional normalization based on only the windows that are both peak-overlapping and have a mean count greater than 5.
 
 ```{r estimate_disp_normtest}
-filter.threshold <- aveLogCPM(5, lib.size=mean(dge$samples$lib.size))
+count.threshold <- 5
+filter.threshold <- aveLogCPM(count.threshold, lib.size=mean(dge$samples$lib.size))
 filt <- aveLogCPM(dge) >= filter.threshold
-message(sprintf("Excluding %i out of %i windows (%.3g%%) with average count below 5.",
-                sum(filt == FALSE), length(filt), 100*(1-mean(filt))))
+message(sprintf("Excluding %i out of %i windows (%.3g%%) with average count below %s.",
+                sum(filt == FALSE), length(filt), 100*(1-mean(filt)), count.threshold))
 dgefilt <- dge[filt,]
 dges <- list(
     BGNorm=dgefilt %>% assign_into(.$samples$norm.factors, colData(sexp)$CompNormFactors),
@@ -265,6 +278,11 @@ dges.noebayes <- lapply(dges, function(d) future(estimateDisp(d, design, prior.d
 dges <- lapply(dges, function(d) future(estimateDisp(d, design, robust=TRUE)))
 dges.noebayes %<>% values
 dges %<>% values
+# Hopefully save memory by re-sharing the count matrix after running in separate processes
+for (i in names(dges)) {
+    for (slot in c("counts", "genes")) {}
+    dges.noebayes[[i]][[slot]] <- dges[[i]][[slot]] <- dgefilt[[slot]]
+}
 ```
 
 We now inspect the dispersion plot for each of the normalizations.
@@ -273,7 +291,7 @@ We now inspect the dispersion plot for each of the normalizations.
 xlims <- lapply(dges, . %$% AveLogCPM %>% range) %>%
     unlist %>% range %>% expand_range(mul=0.05)
 ylims <- lapply(dges, . %$% c(tagwise.dispersion, trended.dispersion, common.dispersion) %>% range) %>%
-    unlist %>% range %>% expand_range(mul=0.05)
+    unlist %>% range %>% sqrt %>% pmax(0) %>% expand_range(mul=0.05)
 p <- list()
 for (i in names(dges)) {
     prior.df <- dges[[i]]$prior.df %>% median
@@ -289,14 +307,20 @@ The composition normalization results in a poor fit (indicated by the infinite p
 
 ## MDS Plots
 
+We compute the MDS coordinates after subtracting the batch effects of both FRiP and donor_id. The result is a plot showing the variation attributable to sources other than those batch effects. 
+
 ```{r compute_mds_normtest}
-mdsdist <- dges %>% bplapply(. %>% {suppressPlot(plotMDS(.))} %$% distance.matrix %>% as.dist)
+batch.cols <- str_detect(colnames(design), "^FRiP\\.NS|^D\\d+\\.vs\\.D\\d+$")
+bcdata <- dges %>% bplapply(. %>% voomWithOffset(design=design) %>%
+                                assign_into(.$E, removeBatchEffect(.$E, design = design[,!batch.cols], covariates=design[,batch.cols])))
+# bcdata <- dges %>% bplapply(. %>% cpmWithOffset(log=TRUE, prior.count=0.5) %>% 
+#                                 removeBatchEffect(design = design[,!batch.cols], covariates=design[,batch.cols]))
+mdsdist <- bcdata %>% bplapply(. %>% {suppressPlot(plotMDS(.))} %$% distance.matrix %>% as.dist)
 mdspoints <- mdsdist %>% bplapply(function(dmat) {
     suppressWarnings(cmdscale(dmat, k=ncol(sexp)-1)) %>%
         add.numbered.colnames(prefix = "Dim") %>%
         as.data.frame
 })
-maxabs <- max(abs(unlist(mdspoints)))
 mdstabs <- lapply(mdspoints, cbind, sample.table)
 p12 <- p23 <- list()
 for (i in names(mdstabs)) {
@@ -305,15 +329,19 @@ for (i in names(mdstabs)) {
             shape=cell_type, linetype=donor_id, group=cell_type:donor_id) +
         geom_encircle(aes(group=time_point:cell_type, color=NULL, fill=time_point), s_shape=0.75, expand=0.05, color=NA, alpha=0.2) +
         geom_path(color=hcl(c=0, l=45), aes(color=NULL)) +
-        geom_point(size=4) +
+        # geom_point(   size=4) +
+        geom_point(aes(size=totals)) +
         scale_shape_manual(values=c(Naive=16, Memory=17)) +
         scale_fill_hue(l=55) +
         scale_linetype_manual(values=c("solid", "dashed", "dotdash", "twodash")) +
-        guides(colour = guide_legend(override.aes = list(shape = 16)),
-               shape = guide_legend(override.aes = list(color=hcl(c=0, l=80), fill=hcl(c=0, l=55)))) +
+        guides(shape = guide_legend(order=1, ncol=2, override.aes = list(size=4, color=hcl(c=0, l=80), fill=hcl(c=0, l=55))),
+               fill = guide_legend(order=2, ncol=2, override.aes = list(shape = 16, size=4)),
+               color = guide_legend(order=2, ncol=2),
+               linetype = guide_legend(order=3, ncol=2),
+               size = guide_legend(order=4, title = "total_reads")) +
         labs(title="Principal Coordinates 1 & 2",
              subtitle=sprintf("With %s normalization", i)) +
-        coord_equal(xlim=c(-maxabs, maxabs), ylim=c(-maxabs, maxabs))
+        coord_equal()
     p23[[i]] <- p12[[i]] + aes(x=Dim2, y=Dim3) +
         labs(title="Principal Coordinates 2 & 3")
 }
@@ -327,9 +355,9 @@ ggprint(p12)
 ggprint(p23)
 ```
 
-From the MDS plots, we can see that the two variants on peak normalization produce similar results, as expected. However, it seems that the background normalization and loess normalization also produce similar MDS plots, which is somewhat unexpected based on the very different dispersion plots for these two normalizations. This is likely the case because the loess normalization effectively interpolates between background normalization for low-count windows and peak-based normalization for high-count windows. Since the majority of windows have low counts, the loess normalization will be similar to the background normalization for a majority of windows, and therefore the MDS plots will look similar.
+From the MDS plots, we can see that the two variants on peak normalization and the background normalization all produce similar reasonable-looking results, with good separation between time points and marginal separation between cell types, consistent with previous analysis of this data. The lowess normalization also separates the time points, well, but it also seems to cause some samples, especially those in Day 1, to become outliers, which means that the lowess method may be normalizing too aggressively and distorting the data as a result.
 
-In any case, neither normalization is obviously better than the others at separating the sample groups.
+Based on this, the peak-based normalization seems like the best fit for this data set.
 
 ## MA plots
 
