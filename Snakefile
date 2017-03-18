@@ -1827,7 +1827,7 @@ rule csaw_count_windows:
     output:
         'saved_data/csaw-counts-{window_size,\\d+.*?bp}-windows-{read_ext}-reads.RDS'
     version: R_package_version('csaw')
-    threads: 8
+    threads: 1
     resources: mem_gb=60
     shell: '''
     scripts/csaw-count-windows.R \
