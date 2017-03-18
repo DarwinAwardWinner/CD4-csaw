@@ -454,13 +454,6 @@ targets = {
     'ccf_plots': expand('plots/csaw/CCF-plots{suffix}.pdf',
                         suffix=('', '-relative', '-noBL', '-relative-noBL')),
     'site_profile_plot': 'plots/csaw/site-profile-plots.pdf',
-    'csaw_qc_plots': expand('plots/csaw/{chip}{plot}.pdf',
-                            chip=set(chipseq_samplemeta_noinput['chip_antibody']),
-                            plot=('-window-abundance-vs-peaks', '-normfactors',
-                                  ' Selected Sample MA Plots',
-                                  ' Selected Sample 10KB Bin MA Plots',
-                                  ' Selected Sample Peak-Overlap MA Plots',
-                                  ' Selected Sample Peak-Overlap Normalized MA Plots')),
     'macs_peaks_allcond_alldonor': set(expand(
         'peak_calls/macs_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks.narrowPeak', zip_longest_recycled,
         genome_build='hg38.analysisSet',
@@ -543,7 +536,6 @@ rule all:
         targets['idr_plots_all_cond'],
         targets['ccf_plots'],
         targets['site_profile_plot'],
-        targets['csaw_qc_plots'],
 
 rule all_rnaseq:
     '''This rule aggregates all the final outputs of the pipeline.'''
@@ -563,7 +555,6 @@ rule all_chipseq:
         targets['idr_plots_all_cond'],
         targets['ccf_plots'],
         targets['site_profile_plot'],
-        targets['csaw_qc_plots'],
 
 rule all_rnaseq_counts:
     input: targets['rnaseq_counts']
@@ -600,12 +591,6 @@ rule all_idr_filtered_peaks:
     input:
         targets['all_idr_filtered_peaks_epic'],
         targets['all_idr_filtered_peaks_macs'],
-
-rule all_csaw_qc:
-    input:
-        targets['ccf_plots'],
-        targets['site_profile_plot'],
-        targets['csaw_qc_plots'],
 
 rule fetch_sra_run:
     '''Script to fetch the .sra file for an SRA run.
@@ -1897,30 +1882,6 @@ rule split_csaw_bigbin_counts:
       -i {input:q} \
       -o 'saved_data/csaw-counts-{wildcards.window_size:q}-bigbins-{{chip_antibody}}.RDS'
     '''
-
-rule csaw_qc:
-    '''Generate several QC plots for ChIP-Seq data.
-
-    https://bioconductor.org/packages/release/bioc/html/csaw.html
-
-    '''
-    input:
-        window_counts='saved_data/csaw-counts-500bp-windows-147bp-reads-{chip}.RDS',
-        bigbin_counts='saved_data/csaw-counts-10kbp-bigbins-{chip}.RDS',
-        peaks='peak_calls/epic_hg38.analysisSet/{chip}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
-    output:
-        normfactor_test_table='results/csaw/{chip}-normfactor-tests.xlsx',
-        plots=[
-            'plots/csaw/{chip}-window-abundance-vs-peaks.pdf',
-            'plots/csaw/{chip}-normfactors.pdf',
-            'plots/csaw/{chip} Selected Sample MA Plots.pdf',
-            'plots/csaw/{chip} Selected Sample 10KB Bin MA Plots.pdf',
-            'plots/csaw/{chip} Selected Sample Peak-Overlap MA Plots.pdf',
-            'plots/csaw/{chip} Selected Sample Peak-Overlap Normalized MA Plots.pdf',
-        ],
-    version: R_package_version('csaw')
-    resources: mem_gb=30
-    shell: 'scripts/csaw-qc.R {wildcards.chip:q}'
 
 rule collect_abundance_ensembl:
     '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
