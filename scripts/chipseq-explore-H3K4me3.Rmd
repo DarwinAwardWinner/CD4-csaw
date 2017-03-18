@@ -55,11 +55,12 @@ library(ggfortify)
 library(broom)
 library(ks)
 library(RColorBrewer)
+library(Rtsne)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
 
 library(doParallel)
-ncores <- min(2, getOption("mc.cores", default=parallel::detectCores(logical = FALSE)))
+ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
 options(mc.cores=ncores)
 registerDoParallel(cores=ncores)
 library(BiocParallel)
@@ -99,8 +100,8 @@ sexpfile <-
     file.path(params$basedir, "saved_data",
               with(params, sprintf("csaw-counts-%s-windows-%s-reads-%s.RDS", window_size, fragment_length, histone_mark)))
 bigbin.sexpfile <- file.path(params$basedir, "saved_data",
-                             sprintf("csaw-bigbin-counts-%s-10kb.RDS", params$histone_mark))
-bigbin.sexp %<-% readRDS(bigbin.sexpfile)
+                             with(params, sprintf("csaw-counts-%s-bigbins-%s.RDS", bigbin_size, histone_mark)))
+bigbin.sexp <- readRDS(bigbin.sexpfile)
 full.sexp <- readRDS(sexpfile)
 colnames(full.sexp) <- colData(full.sexp)$SampleName
 colnames(bigbin.sexp) <- colData(bigbin.sexp)$SampleName
@@ -240,7 +241,7 @@ sample.table$FRiP <- colData(sexp)$FRiP <- colData(sexp) %$% { RiP / totals }
 
 We plot both normalizations against all relevant experimental factors:
 
-```{r initial_disp_est}
+```{r plot_frip}
 p <- list(ggduo(as.data.frame(colData(sexp)),
                 columnsX=c("cell_type", "time_point", "donor_id", "totals", "FRiP"),
                 columnsY=c("BGNormFactors", "PeakNormFactors")),
@@ -270,7 +271,7 @@ message(sprintf("Excluding %i out of %i windows (%.3g%%) with average count belo
                 sum(filt == FALSE), length(filt), 100*(1-mean(filt)), count.threshold))
 dgefilt <- dge[filt,]
 dges <- list(
-    BGNorm=dgefilt %>% assign_into(.$samples$norm.factors, colData(sexp)$CompNormFactors),
+    BGNorm=dgefilt %>% assign_into(.$samples$norm.factors, colData(sexp)$BGNormFactors),
     PeakNorm=dgefilt %>% assign_into(.$samples$norm.factors, colData(sexp)$PeakNormFactors),
     PeakHANorm=dgefilt %>% calcNormFactors(),
     LoessNorm=dgefilt %>% assign_into(.$offset, assay(sexp, "offsets.loess")[filt,]))
@@ -355,7 +356,7 @@ ggprint(p12)
 ggprint(p23)
 ```
 
-From the MDS plots, we can see that the two variants on peak normalization and the background normalization all produce similar reasonable-looking results, with good separation between time points and marginal separation between cell types, consistent with previous analysis of this data. The lowess normalization also separates the time points, well, but it also seems to cause some samples, especially those in Day 1, to become outliers, which means that the lowess method may be normalizing too aggressively and distorting the data as a result.
+TODO REWRITE From the MDS plots, we can see that the two variants on peak normalization and the background normalization all produce similar reasonable-looking results, with good separation between time points and marginal separation between cell types, consistent with previous analysis of this data. The lowess normalization also separates the time points, well, but it also seems to cause some samples, especially those in Day 1, to become outliers, which means that the lowess method may be normalizing too aggressively and distorting the data as a result.
 
 Based on this, the peak-based normalization seems like the best fit for this data set.
 
@@ -447,13 +448,13 @@ doMAPlot <- function(logcpm.matrix, s1, s2, linedata=getLineData(s1, s2), curved
 
 With the preparatory code in place, we can now make the MA plots. First, we make basic MA plots, with log difference (M) on the y-axis and the log mean (A) on the x-axis:
 
-```{r maplot_150bp}
+```{r maplot_windows}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
     bplapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm, s1, s2) +
-            labs(title="MA plot of 150bp windows",
+            labs(title=sprintf("MA plot of %s windows", params$window_size),
                  subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
     })
 ggprint(p)
@@ -461,14 +462,14 @@ ggprint(p)
 
 Now, we make the same plots, but for the x-axis, we use the average log2 CPM of the whole dataset, rather than the log mean of the two samples being plotted. The advantage of this is that it puts all the plots on a common x-axis, and it also allows us to add a curve representing the loess normalization, since this normalization is calculated relative to the same average log2 CPM scale. The disadvantage is that this smears the plots horizontally, since windows with similar counts in the two specific samples will have different counts in all the other samples, leading to a spreading of previously similar A values.
 
-```{r maplot_150bp_Acommon}
+```{r maplot_windows_Acommon}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
     bplapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm, s1, s2, AveLogCPM=AveLogCPM,
                  curvedata=getOffsetLineData(s1, s2)) +
-            labs(title="MA plot of 150bp windows with common A scale",
+            labs(title=sprintf("MA plot of %s windows with common A scale", params$window_size),
                  subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
     })
 ggprint(p)
@@ -476,14 +477,14 @@ ggprint(p)
 
 Next, instead of plotting the loess normalization line, we make the MA plot using loess-normalized log2 CPM values. Effectively, this should center each entire plot vertically on M = 0, using the loess normalization as a guide.
 
-```{r maplot_150bp_loess_norm}
+```{r maplot_windows_loess_norm}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
     bplapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm.loess, s1, s2, linedata = NULL) +
             geom_hline(yintercept=0) + 
-            labs(title="MA plot of 150bp windows, loess normalized",
+            labs(title=sprintf("MA plot of %s windows, loess normalized", params$window_size),
                  subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
     })
 ggprint(p)
@@ -491,13 +492,13 @@ ggprint(p)
 
 Last, we make MA plots for the 10kb bins that were used to compute the background normalization.
 
-```{r maplot_bigbin}
+```{r maplot_bigbins}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
-    bplapply(function(i) {
+    lapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(bigbin.logcpm, s1, s2) +
-            labs(title="MA plot of 10kb bins",
+            labs(title=sprintf("MA plot of %s bins", params$bigbin_size),
                  subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
     })
 print(p)
