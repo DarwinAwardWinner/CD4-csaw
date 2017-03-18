@@ -5,6 +5,7 @@ library(BiocParallel)
 library(rex)
 library(lazyeval)
 library(future)
+library(Rtsne)
 
 withGC <- function(expr) {
     on.exit(gc())
@@ -683,4 +684,15 @@ clamp_trans <- function(lower_threshold=0, upper_threshold=1) {
               transform=function(x) pmin(upper_threshold, pmax(lower_threshold, x)),
               ## transform is only invertible for part of the range
               inverse=identity)
+}
+
+## Do multiple runs of t-SNE and pick the one with the lowest final
+## cost. (TODO: Make reproducible)
+Rtsne.multi <- function(..., num.repeats=10, BPPARAM=BPPARAM()) {
+    args <- list(...)
+    results <- bplapply(seq_len(num.repeats), function(i) {
+        do.call(Rtsne, args)
+    })
+    final.costs <- sapply(results, . %$% costs %>% tail(1))
+    results[[which.min(final.costs)]]
 }
