@@ -696,3 +696,15 @@ Rtsne.multi <- function(..., num.repeats=10, BPPARAM=BPPARAM()) {
     final.costs <- sapply(results, . %$% costs %>% tail(1))
     results[[which.min(final.costs)]]
 }
+
+## Alternate interface to removeBatchEffect: provide a single design
+## matrix and specify the coefficient effects to remove. Note: use
+## sum-to-zero contrasts for factors and mean-centered transformations
+## for numerics if you want the grand means to remain unaffected by
+## coefficient subtraction.
+subtractCoefs <- function(x, design, coefsToSubtract, ...) {
+    assert_that(!anyDuplicated(colnames(design)))
+    subtract.design <- design[,coefsToSubtract]
+    keep.design <- design[,setdiff(colnames(design), colnames(subtract.design))]
+    removeBatchEffect(x, design=keep.design, covariates=subtract.design, ...)
+}

@@ -255,6 +255,7 @@ To test these normalizations, we will look at their effect on the dispersion est
 
 ```{r build_design_matrix}
 FRiP.NS <- ns(sample.table$FRiP, df=3, intercept = FALSE)
+design.NoFRiP <- model.matrix(~0 + group + donor_id, sample.table, strip.prefixes = TRUE)
 design <- model.matrix(~0 + group + donor_id + FRiP.NS, sample.table, strip.prefixes = TRUE)
 colnames(design)
 ```
@@ -304,28 +305,35 @@ for (i in names(dges)) {
 ggprint(p)
 ```
 
-The composition normalization results in a poor fit (indicated by the infinite prior d.f.). The loess normalization seems to perform well, and the two peak-based normalizations perform moderately well, with the normalization based on only high-abundance windows apparently working a little bit better. Next, we examine the effect of each normalization on the MDS plot.
+All normalizations produce very similar BCV plots. The largest difference is the slightly higher prior d.f. for the loess normalization. There is no clear preference for one normalization method based on these plots.
+
+Next, we examine the effect of each normalization on the MDS plot.
 
 ## MDS Plots
 
-We compute the MDS coordinates after subtracting the batch effects of both FRiP and donor_id. The result is a plot showing the variation attributable to sources other than those batch effects. 
+We compute the MDS coordinates after subtracting the batch effects of both FRiP and donor_id. The result is a plot showing the variation attributable to sources other than those batch effects. To demonstrate the result of subtracting the FRiP effect, we also do the same with a design that does not include the FRiP effect.
 
 ```{r compute_mds_normtest}
-batch.cols <- str_detect(colnames(design), "^FRiP\\.NS|^D\\d+\\.vs\\.D\\d+$")
-bcdata <- dges %>% bplapply(. %>% voomWithOffset(design=design) %>%
-                                assign_into(.$E, removeBatchEffect(.$E, design = design[,!batch.cols], covariates=design[,batch.cols])))
-# bcdata <- dges %>% bplapply(. %>% cpmWithOffset(log=TRUE, prior.count=0.5) %>% 
-#                                 removeBatchEffect(design = design[,!batch.cols], covariates=design[,batch.cols]))
-mdsdist <- bcdata %>% bplapply(. %>% {suppressPlot(plotMDS(.))} %$% distance.matrix %>% as.dist)
-mdspoints <- mdsdist %>% bplapply(function(dmat) {
-    suppressWarnings(cmdscale(dmat, k=ncol(sexp)-1)) %>%
-        add.numbered.colnames(prefix = "Dim") %>%
-        as.data.frame
-})
-mdstabs <- lapply(mdspoints, cbind, sample.table)
-p12 <- p23 <- list()
-for (i in names(mdstabs)) {
-    p12[[i]] <- ggplot(mdstabs[[i]] %>% arrange(cell_type, time_point, donor_id)) +
+batch.cols <- colnames(design) %>% .[str_detect(., "^FRiP\\.NS|^D\\d+\\.vs\\.D\\d+$")]
+bcdata <- dges %>% 
+    bplapply(. %>% voomWithOffset(design=design) %>%
+                 assign_into(.$E, subtractCoefs(.$E, design, coefsToSubtract=intersect(colnames(design), batch.cols))))
+bcdata.NoFRiP <- dges %>% 
+    bplapply(. %>% voomWithOffset(design=design.NoFRiP) %>%
+                 assign_into(.$E, subtractCoefs(.$E, design.NoFRiP, coefsToSubtract=intersect(colnames(design.NoFRiP), batch.cols))))
+prep.mds <- function(x) {
+    mds <- suppressPlot(plotMDS(x))
+    mds.distances <- mds %$% distance.matrix %>% as.dist
+    mds.distances %>% 
+        {suppressWarnings(cmdscale(., k=ncol(x)-1))} %>% 
+        add.numbered.colnames(prefix="Dim") %>%
+        as.data.frame %>%
+        cbind(sample.table)
+}
+mdstabs <- bplapply(bcdata, prep.mds)
+mdstabs.NoFRiP <- bplapply(bcdata.NoFRiP, prep.mds)
+ggmds <- function(x) {
+     ggplot(x %>% arrange(cell_type, time_point, donor_id)) +
         aes(x=Dim1, y=Dim2, label=SampleName, color=time_point,
             shape=cell_type, linetype=donor_id, group=cell_type:donor_id) +
         geom_encircle(aes(group=time_point:cell_type, color=NULL, fill=time_point), s_shape=0.75, expand=0.05, color=NA, alpha=0.2) +
@@ -340,11 +348,20 @@ for (i in names(mdstabs)) {
                color = guide_legend(order=2, ncol=2),
                linetype = guide_legend(order=3, ncol=2),
                size = guide_legend(order=4, title = "total_reads")) +
-        labs(title="Principal Coordinates 1 & 2",
-             subtitle=sprintf("With %s normalization", i)) +
         coord_equal()
+}
+p12 <- p23 <- p12.nf <- p23.nf <- list()
+for (i in names(mdstabs)) {
+    p12[[i]] <- ggmds(mdstabs[[i]]) +
+        labs(title="MDS Principal Coordinates 1 & 2",
+             subtitle=sprintf("With %s normalization; donor & FRiP effects subtracted", i))
     p23[[i]] <- p12[[i]] + aes(x=Dim2, y=Dim3) +
-        labs(title="Principal Coordinates 2 & 3")
+        labs(title="MDS Principal Coordinates 2 & 3")
+    p12.nf[[i]] <- ggmds(mdstabs.NoFRiP[[i]]) +
+        labs(title="MDS Principal Coordinates 1 & 2",
+             subtitle=sprintf("With %s normalization; donor effects subtracted", i))
+    p23.nf[[i]] <- p12.nf[[i]] + aes(x=Dim2, y=Dim3) +
+        labs(title="MDS Principal Coordinates 2 & 3")
 }
 ```
 
@@ -356,9 +373,32 @@ ggprint(p12)
 ggprint(p23)
 ```
 
-TODO REWRITE From the MDS plots, we can see that the two variants on peak normalization and the background normalization all produce similar reasonable-looking results, with good separation between time points and marginal separation between cell types, consistent with previous analysis of this data. The lowess normalization also separates the time points, well, but it also seems to cause some samples, especially those in Day 1, to become outliers, which means that the lowess method may be normalizing too aggressively and distorting the data as a result.
+All normalization methods produce similar looking plots for dimensions 1 and 2 except for the peak-based normalization, which seems to look very different. However, looking at all three dimensions together, it's clear that if dimensions 2 and 3 were swapped for this normalization, the plots would look very similar. Compare the following plots, in which dimensions 2 and 3 have been swwapped:
 
-Based on this, the peak-based normalization seems like the best fit for this data set.
+```{r mds_hanorm_swapdim}
+ggprint(p12$PeakNorm + aes(x=Dim1, y=Dim3) +
+        labs(title="MDS Principal Coordinates 1 & 3"))
+ggprint(p12$PeakNorm + aes(x=Dim3, y=Dim2) +
+        labs(title="MDS Principal Coordinates 3 & 2"))
+```
+
+This swapping of dimensions probably occurred because dimensions 2 & 3 both account for similar proportions of the total variance, so a slight change in normalization was enough to push dimension 3 slightly ahead of dimension 2, causing them to be swapped when ordered by fraction of variance explained. (This is a useful reminder not to assume that the first 2 principal coordinates tell the full story of the data.) 
+
+After accounting for this discrapancy, all 4 normalizations produce similar results. Again, there is little reason to prefer one over the others based on the MDS plots. The "high abundance windows within peaks" normalization method is the simplest to implement, since it is computed from only the count data of the windows being analyzed and does not rely on external data, such as filtered-out low-count windows or a separate count table for large bins. Hence, this normalization method will be used going forward.
+
+## MDS plots without subtracting FRiP effects
+
+Now, we repeat the same plots as above, but with no subtraction of FRiP effects from the data.
+
+```{r mds_pc12_NoFRiP}
+ggprint(p12.nf)
+```
+
+```{r mds_pc23_NoFRiP}
+ggprint(p23.nf)
+```
+
+Without subtracting the effects of FRiP, the results are somewhat different. The same overall patterns of variation are still discernable, but less clearly so compared to the MDS plots with FRiP effects subtracted. From this, we conclude that adding FRiP as a covariate is justified.
 
 ## MA plots
 
@@ -435,22 +475,15 @@ doMAPlot <- function(logcpm.matrix, s1, s2, linedata=getLineData(s1, s2), curved
     if (!is.null(curvedata)) {
         p <- p + geom_line(data=curvedata, aes(x=A, y=M))
     }
-    # p <- p +
-    #     ## Loess curve
-    #     geom_smooth(aes(x=A, y=M), span=0.3, fill=NA, color="black") +
-    #     ## Scales
-    #     scale_x_continuous(name="log2(CPM)", expand=c(0,0)) +
-    #     scale_y_continuous(name="log2(FC)", expand=c(0,0)) +
-    #     coord_fixed(0.5)
     p
 }
 ```
 
-With the preparatory code in place, we can now make the MA plots. First, we make basic MA plots, with log difference (M) on the y-axis and the log mean (A) on the x-axis:
+With the preparatory code in place, we can now make the MA plots. First, we make basic MA plots, with log difference (M) on the y-axis and the log mean (A) on the x-axis. We also plot each normalization factor as a horizontal line, indicating where that normalization method would place the zero line.
 
 ```{r maplot_windows}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
-    bplapply(function(i) {
+    lapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm, s1, s2) +
@@ -464,7 +497,7 @@ Now, we make the same plots, but for the x-axis, we use the average log2 CPM of 
 
 ```{r maplot_windows_Acommon}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
-    bplapply(function(i) {
+    lapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm, s1, s2, AveLogCPM=AveLogCPM,
@@ -479,7 +512,7 @@ Next, instead of plotting the loess normalization line, we make the MA plot usin
 
 ```{r maplot_windows_loess_norm}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
-    bplapply(function(i) {
+    lapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm.loess, s1, s2, linedata = NULL) +
@@ -503,3 +536,5 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
     })
 print(p)
 ```
+
+These plots seem to show that some samples have significant efficiency biases, visible as a trend in the MA plot. This further supports the choice of high-abundance peak-overlapping windows for normalization as well as our choice to regress out the effect of FRiP, which is a measure of ChIP pulldown efficiency.
