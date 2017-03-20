@@ -33,10 +33,10 @@ reproduce the full analysis.
   * Mapping with STAR & HISAT2
   * Counting reads aligned to genes
   * Alignment-free bias-corrected transcript quantification using Salmon & Kallisto
+  * Differential gene expression
 
 ### TODO components
 
-* RNA-seq differential gene expression
 * RNA-seq differential gene/transcript/exon/whatever expression from
   Salmon quantification
 * Variance partitioning: http://bioconductor.org/packages/devel/bioc/html/variancePartition.html
