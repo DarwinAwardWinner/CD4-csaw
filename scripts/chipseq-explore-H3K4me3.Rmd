@@ -93,7 +93,7 @@ allpeaks <- {
 }
 ```
 
-Now we'll load the ChIP-seq read count data set from RDS files containing SummarizedExperiment objects, and modify them to use the sample names as column names. We also ensure that the column order is identical between the two objects. Lastly, we filter out any windows with fewer than one count per sample. This is a very mild filtering criterion, but it eliminates around 75% of all the windows, greatly easing the subsequent computational burden of computing the *real* filtering threshold.
+Now we'll load the ChIP-seq read count data set from RDS files containing SummarizedExperiment objects, and modify them to use the sample names as column names. We also ensure that the column order is identical between the two objects. Lastly, we filter out any windows with fewer than one count per sample. This is a very mild filtering criterion, but it often eliminates many windows, greatly easing the subsequent computational burden of computing the *real* filtering threshold.
 
 ```{r load_counts}
 sexpfile <- 
@@ -114,7 +114,7 @@ sexp <- full.sexp %>% .[rowSums(assay(.)) >= ncol(.),]
 colData(sexp)$CountDupFactor <- (colData(sexp)$ext - 1) / median(width(rowRanges(sexp))) + 1
 ```
 
-We extract the sample metadata from the SummarizedExperiment. Since donor_id is a confounding factor, we tell R to use a factor coding that puts the intercept at the simple mean of all donors when incorporating it into a design matrix.
+We extract the sample metadata from the SummarizedExperiment. We set all factors to use a sum-to-zero variant of the treatment-contrast coding, which will ease the subtraction of batch effects later.
 
 ```{r extract_samplemeta}
 sample.table <- colData(sexp) %>%
@@ -173,7 +173,7 @@ ggprint(p)
 summary(lm(logCPM ~ PeakOverlap, data=adata))
 ```
 
-TODO REPHRASE From the linear model and violin plot, we can see that peaks are clearly significantly enriched for high-abundance windows relative to the background. However, from the histogram plot, we conclude that a purely count-based filter is not desirable. Because the peaks represent only a small fraction of the genome, a majority of windows at any abundance level are still outside peaks. This is because the random variation in coverage depth of the background reads is at least as large as the difference between peaks and unbound regions. Hence, we will simply select all windows that overlap called peaks after selecting a larger set of peaks using a more relaxed IDR threshold in order to maximize the probability of including peaks that are present in only one or a few conditions and are therefore more weakly represented in the all-sample consensus. The trade-off of including more false positive peaks is acceptable here, since false positive peaks are not expected to show evidence of differential binding.
+From the linear model and violin plot, we can see that peaks are clearly significantly enriched for high-abundance windows relative to background regions. However, the histogram shows that a purely count-based filter is not desirable, because any threshold still leaves substantial high-count windows that do no overlap peaks.This is because the peaks represent only a small fraction of the genome and the random variation in background coverage depth is at least as large as the difference between peaks and unbound regions. Hence, we will simply select all windows that overlap called peaks. For this purpose, we will select a larger set of peaks using a more relaxed IDR threshold in order to maximize the probability of including peaks that are present in only one or a few conditions and are therefore more weakly represented in the all-sample consensus. The trade-off of including more false positive peaks is acceptable here, since false positive peaks are not expected to show evidence of differential binding.
 
 ```{r filter_peaks}
 idr.threshold <- 0.2
@@ -231,11 +231,9 @@ sample.table$BGNormFactors <- colData(sexp)$BGNormFactors <- bgnf
 sample.table$PeakNormFactors <- colData(sexp)$PeakNormFactors <- pnf
 assay(sexp, "offsets.loess")  <- loff
 
-# Exepected number of counts per read, based on overlapping multiple windows
-count.dup.factor <- (colData(sexp)$ext - 1) / median(width(rowRanges(sexp))) + 1
 sample.table$RiP <- colData(sexp)$RiP <- assay(sexp) %>%
     colSums %>%
-    divide_by(count.dup.factor)
+    divide_by(sample.table$CountDupFactor)
 sample.table$FRiP <- colData(sexp)$FRiP <- colData(sexp) %$% { RiP / totals }
 ```
 
@@ -268,7 +266,7 @@ Now we estimate the dispersions with and without empirical Bayes shrinkage. We a
 count.threshold <- 5
 filter.threshold <- aveLogCPM(count.threshold, lib.size=mean(dge$samples$lib.size))
 filt <- aveLogCPM(dge) >= filter.threshold
-message(sprintf("Excluding %i out of %i windows (%.3g%%) with average count below %s.",
+message(sprintf("Excluding %i out of %i peak-overlapping windows (%.3g%%) with average count below %s.",
                 sum(filt == FALSE), length(filt), 100*(1-mean(filt)), count.threshold))
 dgefilt <- dge[filt,]
 dges <- list(

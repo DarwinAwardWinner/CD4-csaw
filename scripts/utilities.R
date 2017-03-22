@@ -6,6 +6,7 @@ library(rex)
 library(lazyeval)
 library(future)
 library(Rtsne)
+library(qvalue)
 
 withGC <- function(expr) {
     on.exit(gc())
@@ -546,14 +547,6 @@ read.narrowPeak <- function(file, ...) {
     peaks.df <- read.table(file, sep="\t", row.names=NULL, ...)
     names(peaks.df) <- c("chr", "start", "end", "name", "score", "strand", "signalValue", "pValue", "qValue", "summit")
     peaks.df$name <- as.character(peaks.df$name)
-    ## havenames <- !any(peaks.df$name == ".")
-    ## res <- data.frame2GRanges(peaks.df, keepColumns=TRUE, startOffset=1, endOffset=0)
-    ## ## Eliminate the dummy row names from the data
-    ## if (havenames)
-    ##     names(res) <- res$name
-    ## else
-    ##     names(res) <- NULL
-    ## res
     peaks.df
 }
 

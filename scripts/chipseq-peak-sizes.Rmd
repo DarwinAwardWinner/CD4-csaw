@@ -81,7 +81,7 @@ Now we examine the distribution of peak widths for each histone mark.
 q95 <- quantile(peaktable$width, .95)
 p <- ggplot(peaktable) + 
     aes(x=width) + 
-    geom_histogram(binwidth=200, boundary=0) + 
+    geom_histogram(binwidth=200, boundary=100) + 
     facet_wrap(~HistoneMark, ncol=1) + 
     ggtitle("Histogram of peak widths")
 ggprint(p + labs(subtitle="Full distribution"))

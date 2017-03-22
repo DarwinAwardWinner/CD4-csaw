@@ -93,7 +93,7 @@ allpeaks <- {
 }
 ```
 
-Now we'll load the ChIP-seq read count data set from RDS files containing SummarizedExperiment objects, and modify them to use the sample names as column names. We also ensure that the column order is identical between the two objects. Lastly, we filter out any windows with fewer than one count per sample. This is a very mild filtering criterion, but it eliminates around 75% of all the windows, greatly easing the subsequent computational burden of computing the *real* filtering threshold.
+Now we'll load the ChIP-seq read count data set from RDS files containing SummarizedExperiment objects, and modify them to use the sample names as column names. We also ensure that the column order is identical between the two objects. Lastly, we filter out any windows with fewer than one count per sample. This is a very mild filtering criterion, but it often eliminates many windows, greatly easing the subsequent computational burden of computing the *real* filtering threshold.
 
 ```{r load_counts}
 sexpfile <- 
@@ -114,7 +114,7 @@ sexp <- full.sexp %>% .[rowSums(assay(.)) >= ncol(.),]
 colData(sexp)$CountDupFactor <- (colData(sexp)$ext - 1) / median(width(rowRanges(sexp))) + 1
 ```
 
-We extract the sample metadata from the SummarizedExperiment. Since donor_id is a confounding factor, we tell R to use a factor coding that puts the intercept at the simple mean of all donors when incorporating it into a design matrix.
+We extract the sample metadata from the SummarizedExperiment. We set all factors to use a sum-to-zero variant of the treatment-contrast coding, which will ease the subtraction of batch effects later.
 
 ```{r extract_samplemeta}
 sample.table <- colData(sexp) %>%
@@ -231,11 +231,9 @@ sample.table$BGNormFactors <- colData(sexp)$BGNormFactors <- bgnf
 sample.table$PeakNormFactors <- colData(sexp)$PeakNormFactors <- pnf
 assay(sexp, "offsets.loess")  <- loff
 
-# Exepected number of counts per read, based on overlapping multiple windows
-count.dup.factor <- (colData(sexp)$ext - 1) / median(width(rowRanges(sexp))) + 1
 sample.table$RiP <- colData(sexp)$RiP <- assay(sexp) %>%
     colSums %>%
-    divide_by(count.dup.factor)
+    divide_by(sample.table$CountDupFactor)
 sample.table$FRiP <- colData(sexp)$FRiP <- colData(sexp) %$% { RiP / totals }
 ```
 
@@ -268,7 +266,7 @@ Now we estimate the dispersions with and without empirical Bayes shrinkage. We a
 count.threshold <- 5
 filter.threshold <- aveLogCPM(count.threshold, lib.size=mean(dge$samples$lib.size))
 filt <- aveLogCPM(dge) >= filter.threshold
-message(sprintf("Excluding %i out of %i windows (%.3g%%) with average count below %s.",
+message(sprintf("Excluding %i out of %i peak-overlapping windows (%.3g%%) with average count below %s.",
                 sum(filt == FALSE), length(filt), 100*(1-mean(filt)), count.threshold))
 dgefilt <- dge[filt,]
 dges <- list(
@@ -305,7 +303,7 @@ for (i in names(dges)) {
 ggprint(p)
 ```
 
-All the normalizations seem to perform very similarly here except for the loess normalization, which results in much a larger prior d.f. For this reason, we are incluned to distrust the loess normalization.
+All the normalizations seem to perform very similarly here except for the loess normalization, which results in much a larger prior d.f. For this reason, we are inclined to distrust the loess normalization.
 
 Next, we examine the effect of each normalization on the MDS plot.
 
