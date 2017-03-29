@@ -7,6 +7,7 @@ library(lazyeval)
 library(future)
 library(Rtsne)
 library(qvalue)
+library(fdrtool)
 
 withGC <- function(expr) {
     on.exit(gc())
@@ -466,6 +467,7 @@ plotpvals <- function(pvals, ptn=propTrueNull(pvals)) {
         scale_color_manual(name="Ref. Line", values=c("blue", "red")) +
         xlim(0,1) + ggtitle(sprintf("P-value distribution (Est. %0.2f%% signif.)",
                                     100 * (1-ptn))) +
+        expand_limits(y=c(0, 1.25)) +
         xlab("p-value") + ylab("Relative frequency") +
         theme(legend.position=c(0.95, 0.95),
               legend.justification=c(1,1))
@@ -508,7 +510,11 @@ add.bfdr <- function(ttab) {
         warning("Cannot add BFDR to table with no B statistics")
         return(ttab)
     }
-    cbind(ttab, bfdr(B)[c("PP", "BayesFDR")])
+    btab <- bfdr(B)[c("PP", "BayesFDR")]
+    for (i in names(btab)) {
+        ttab[[i]] <- btab[[i]]
+    }
+    ttab
 }
 
 # limma uses "P.Value", edgeR uses "PValue", so we need an abstraction
@@ -532,14 +538,64 @@ add.qvalue <- function(ttab, ...) {
     tryCatch({
         P <- ttab[[get.pval.colname(ttab)]]
         qobj <- qvalue(P, ...)
-        qobj %$%
-            cbind(ttab,
-                  QValue=qvalues,
-                  LocFDR=lfdr)
+        ttab$QValue <- qobj$qvalues
+        ttab$LocFDR <- qobj$lfdr
+        attr(ttab, "qvalue") <- qobj
     }, error=function(e) {
         warning(str_c("Failed to compute q-values: ", e$message))
-        ttab
     })
+    ttab
+}
+
+# Variant that does not restrict to the range [0,1]. Useful for identifying
+# potential atypical p-value distributions (too many large p-values).
+propTrueNullByLocalFDR.unrestricted <- function (p) {
+    n <- length(p)
+    i <- n:1L
+    p <- sort(p, decreasing = TRUE)
+    q <- n/i * p
+    n1 <- n + 1L
+    sum(i * q)/n/n1 * 2
+}
+
+# Add corrected p-value, q-value, and locfdr columns to any table with a p-value
+# column. Works by the possibly questionable method of converting p-values to
+# equivalent z-scores and running fdrtool on the z-scores.
+add.fdrtool <- function(ttab, verbose=FALSE, plot=TRUE, convert.to.zscores, cutoff.method, ...) {
+    P <- ttab[[get.pval.colname(ttab)]]
+    assert_that(!is.null(P), length(P) > 0, !any(is.na(P)))
+    if (missing(convert.to.zscores)) {
+        # If pval dist is high-biased, use normal modelling instead.
+        ptn <- propTrueNullByLocalFDR.unrestricted(P)
+        convert.to.zscores <- ptn > 1
+    }
+    if (convert.to.zscores) {
+        # Try normal modelling instead
+        Zscore <- qnorm(1-(P/2))
+        if (missing(cutoff.method)) {
+            co <- fndr.cutoff(Zscore, statistic="normal")
+            if (co >= 0.3) {
+                cutoff.method <- "fndr"
+            } else {
+                cutoff.method <- "locfdr"
+            }
+        }
+        fdrmod <- fdrtool(Zscore, statistic="normal", verbose=verbose,
+                          plot=plot, cutoff.method=cutoff.method, ...)
+
+    } else {
+        if (missing(cutoff.method)) {
+            cutoff.method <- "fndr"
+        }
+        fdrmod <- fdrtool(P, statistic="pvalue", verbose=verbose,
+                          plot=plot, cutoff.method=cutoff.method,...)
+    }
+    fdrdf <- do.call(data.frame, fdrmod[c("pval", "qval", "lfdr")])
+    for (i in names(fdrdf)) {
+        ttab[[str_c("fdrtool.", i)]] <- fdrdf[[i]]
+    }
+    attr(ttab, "fdrtool") <- fdrmod
+    ttab
 }
 
 # Functions for reading and writing narrowPeak files
@@ -620,7 +676,6 @@ getBCVTable <- function(y, design, ..., rawdisp) {
     return(disptable)
 }
 
-
 # ggplot version of edgeR::plotBCV. Additional arguments passed to getBCVTable
 ggplotBCV <- function(y, xlab="Average log CPM", ylab="Biological coefficient of variation", rawdisp=NULL, ...) {
     if (is(y, "DGEList")) {
@@ -700,4 +755,59 @@ subtractCoefs <- function(x, design, coefsToSubtract, ...) {
     subtract.design <- design[,coefsToSubtract]
     keep.design <- design[,setdiff(colnames(design), colnames(subtract.design))]
     removeBatchEffect(x, design=keep.design, covariates=subtract.design, ...)
+}
+
+BPselectModel <- function (y, designlist, criterion = "aic", df.prior = 0, s2.prior = NULL,
+          s2.true = NULL, ..., BPPARAM=bpparam())
+{
+    ym <- as.matrix(dge)
+    if (any(is.na(ym)))
+        stop("NAs not allowed")
+    narrays <- ncol(ym)
+    rm(ym)
+    nmodels <- length(designlist)
+    models <- names(designlist)
+    if (is.null(models))
+        models <- as.character(1:nmodels)
+    if (df.prior > 0 & is.null(s2.prior))
+        stop("s2.prior must be set")
+    if (df.prior == 0)
+        s2.prior <- 0
+    criterion <- match.arg(criterion, c("aic", "bic", "mallowscp"))
+    if (criterion == "mallowscp") {
+        if (is.null(s2.true))
+            stop("Need s2.true values")
+        fits <- bplapply(designlist, lmFit, object=y, BPPARAM=BPPARAM)
+        for (i in 1:nmodels) {
+            fit <- fits[[i]]
+            npar <- narrays - fit$df.residual[1]
+            if (i == 1) {
+                IC <- matrix(nrow = nrow(fit), ncol = nmodels,
+                             dimnames = list(Probes = rownames(fit), Models = models))
+                if (length(s2.true) != nrow(fit) && length(s2.true) !=
+                    1)
+                    stop("s2.true wrong length")
+            }
+            IC[, i] <- fit$df.residual * fit$sigma^2/s2.true +
+                npar * 2 - narrays
+        }
+    }
+    else {
+        ntotal <- df.prior + narrays
+        penalty <- switch(criterion, bic = log(narrays), aic = 2)
+        fits <- bplapply(designlist, lmFit, object=y, BPPARAM=BPPARAM)
+        for (i in 1:nmodels) {
+            fit <- fits[[i]]
+            npar <- narrays - fit$df.residual[1] + 1
+            s2.post <- (df.prior * s2.prior + fit$df.residual *
+                            fit$sigma^2)/ntotal
+            if (i == 1)
+                IC <- matrix(nrow = nrow(fit), ncol = nmodels,
+                             dimnames = list(Probes = rownames(fit), Models = models))
+            IC[, i] <- ntotal * log(s2.post) + npar * penalty
+        }
+    }
+    pref <- factor(apply(IC, 1, which.min), levels = 1:nmodels,
+                   labels = models)
+    list(IC = IC, pref = pref, criterion = criterion)
 }

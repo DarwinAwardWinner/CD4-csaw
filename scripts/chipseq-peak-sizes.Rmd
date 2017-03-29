@@ -30,6 +30,7 @@ library(SummarizedExperiment)
 library(ggplot2)
 library(assertthat)
 library(RColorBrewer)
+library(modeest)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
 
@@ -64,6 +65,33 @@ allpeaks <- bplapply(peakfiles, . %>% read.narrowPeak %>% as("GRanges") %>%
 
 # Peak width analysis
 
+First, we look at the granularity of the peak caller in terms of what peak widths it calls, and what positions it calls them at.
+
+```{r peak_width_granularity}
+combined.peaklist <- unlist(GRangesList(allpeaks))
+widths <- width(combined.peaklist) %>% table %>% as.data.frame %>% 
+    set_colnames(c("Width", "Freq")) %>%
+    mutate(Width=as.integer(as.character(Width))) %>%
+    arrange(Width)
+print(widths)
+widths$Width %>% diff %>% table %>% as.data.frame %>% 
+    set_colnames(c("Diff", "Freq")) %>%
+    mutate(Diff=as.integer(as.character(Diff))) %>%
+    arrange(Diff)
+```
+
+We can see that all peaks are called with a width that is a multiple of 200 bp, and no peaks smaller than 800 bp are called. This is expected based on the parameters used in the peak caller. We can also look at the distribution of start positions:
+
+```{r peak_start_granularity}
+start(combined.peaklist) %>% sort %>% diff %>% table %>% as.data.frame %>% 
+    set_colnames(c("Diff", "Freq")) %>%
+    mutate(Diff=as.integer(as.character(Diff))) %>%
+    arrange(Diff)
+```
+
+It appears that the start positions of all peaks are also multiples of 200 bp from each other. Hence, we will use 200 as the bin size for all the histograms below.
+
+## Peak Filtering
 
 We begin by selecting only peaks  with an IDR value of 0.2 or less, then converting them to a data frame in preparation for plotting.
 
@@ -75,7 +103,9 @@ peaktable <- lapply(names(peaks), function(i) cbind(HistoneMark=i, as.data.frame
     do.call(what=rbind)
 ```
 
-Now we examine the distribution of peak widths for each histone mark.
+## Peak width histograms
+
+Now we examine the distribution of peak widths for each histone mark. We zoom in on the lower end of the distribution to get more detail there.
 
 ```{r peak_width_dist}
 q95 <- quantile(peaktable$width, .95)
@@ -92,3 +122,9 @@ ggprint(p + coord_cartesian(xlim=c(0, 10000)) +
 ggprint(p + coord_cartesian(xlim=c(0, 5000)) + 
             labs(subtitle="Truncated at 5000bp"))
 ```
+
+```{r peak_width_dist_summary}
+peaktable %>% group_by(HistoneMark) %>%
+    summarize(Min=min(width), Q25=quantile(width, .25), Mode=mfv(width), Median=median(width), Mean=mean(width), Q75=quantile(width, .75), Max=max(width))
+```
+Based on these distributions, it appears that a "typical" peak width for H3K4me3 and H3K4me2 is between 1500 and 2500 bp, with a long tail of much longer peaks. For H3K27me3, the typical peak size is much larger, with an even larger and fatter tail on the distribution. Based on this, the proposed window width of 500 bp is appropriate for capturing potential within-peak variation, and there is no need to use a smaller window width to capture the bahavior of individual histones within each peak.

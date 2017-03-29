@@ -252,17 +252,18 @@ The strongest associations are between the FRiP values and both normalization fa
 To test these normalizations, we will look at their effect on the dispersion estimation step. But first, we must generate the design matrix in order to estimate dispersions.
 
 ```{r build_design_matrix}
-FRiP.NS <- ns(sample.table$FRiP, df=3, intercept = FALSE)
-design.NoFRiP <- model.matrix(~0 + group + donor_id, sample.table, strip.prefixes = TRUE)
-design <- model.matrix(~0 + group + donor_id + FRiP.NS, sample.table, strip.prefixes = TRUE)
+design <- model.matrix(~0 + group, sample.table, strip.prefixes = TRUE)
 colnames(design)
+# Same design, but with an intercept, because sva requires it
+design.int <- model.matrix(~1 + group, sample.table)
 ```
 
-## Dispersion estimation
 
-Now we estimate the dispersions with and without empirical Bayes shrinkage. We also try an additional normalization based on only the windows that are both peak-overlapping and have a mean count greater than 5.
+## SVA
 
-```{r estimate_disp_normtest}
+To account for the variable effect of donor, efficiency bias, and as any other sources of systematic bias present in the data, we use SVA to estimate surrogate variables. We do so for each normalization method, including an additional method based on only the windows that are both peak-overlapping and have a mean count greater than 5.
+
+```{r sva}
 count.threshold <- 5
 filter.threshold <- aveLogCPM(count.threshold, lib.size=mean(dge$samples$lib.size))
 filt <- aveLogCPM(dge) >= filter.threshold
@@ -274,62 +275,164 @@ dges <- list(
     PeakNorm=dgefilt %>% assign_into(.$samples$norm.factors, colData(sexp)$PeakNormFactors),
     PeakHANorm=dgefilt %>% calcNormFactors(),
     LoessNorm=dgefilt %>% assign_into(.$offset, assay(sexp, "offsets.loess")[filt,]))
-dges.noebayes <- lapply(dges, function(d) future(estimateDisp(d, design, prior.df=0)))
-dges <- lapply(dges, function(d) future(estimateDisp(d, design, robust=TRUE)))
-dges.noebayes %<>% values
-dges %<>% values
-# Hopefully save memory by re-sharing the count matrix after running in separate processes
-for (i in names(dges)) {
-    for (slot in c("counts", "genes")) {}
-    dges.noebayes[[i]][[slot]] <- dges[[i]][[slot]] <- dgefilt[[slot]]
+logcpms <- lapply(dges, cpmWithOffset, prior.count=1)
+# Need a design with an intercept for sva
+svobjs <- bplapply(logcpms, sva, design.int)
+# We are expecting at least 1 SV. If there are no SVs, then the downstream code
+# needs changing.
+for (i in names(svobjs)) {
+    assert_that(svobjs[[i]]$n.sv > 0)
 }
+svmats <- lapply(svobjs, . %$% sv %>% cbind %>% add.numbered.colnames("SV"))
+sv.designs <- lapply(svmats, . %>% cbind(design, .))
+sv.designs.int <- lapply(svmats, . %>% cbind(design.int, .))
+numsv.table <- sapply(svobjs, . %$% n.sv) %>% data_frame(NormType=names(.) , NumSV=.)
+print(numsv.table)
+p <- list()
+for (i in names(svmats)) {
+    d <- cbind(sample.table, svmats[[i]])
+    p[[i]] <- ggduo(d, 
+                    columnsX=c("cell_type", "time_point", "donor_id", "totals", "FRiP"),
+                    columnsY=c(colnames(svmats[[i]]))) + 
+        labs(title="Covariates vs surrogate variables",
+             subtitle=sprintf("For SVs from %s normalization", i))
+}
+ggprint(p)
+```
+
+## Dispersion estimation
+
+Now we estimate the dispersions with and without empirical Bayes shrinkage, with and without surrogate variables.
+
+```{r estimate_disp_normtest}
+dges.noebayes <- bpmapply(estimateDisp, y=dges, design=sv.designs, MoreArgs=list(prior.df=0))
+dges.noebayes.nosv <- bpmapply(estimateDisp, y=dges, MoreArgs=list(design=design, prior.df=0))
+dges <- bpmapply(estimateDisp, y=dges, design=sv.designs, MoreArgs=list(robust=TRUE))
+dges.nosv <- bpmapply(estimateDisp, y=dges, MoreArgs=list(design=design, robust=TRUE))
+# Hopefully save memory by re-sharing common parts after running in separate processes
+for (i in names(dges)) {
+    for (slot in c("counts", "genes")) {
+        dges.noebayes[[i]][[slot]] <- 
+            dges.noebayes.nosv[[i]][[slot]] <- 
+            dges[[i]][[slot]] <- 
+            dges.nosv[[i]][[slot]] <- 
+            dgefilt[[slot]]
+    }
+}
+xlims <- lapply(c(dges, dges.nosv), . %$% AveLogCPM %>% range) %>%
+    unlist %>% range %>% expand_range(mul=0.05)
+ylims <- lapply(c(dges, dges.nosv), . %$% c(quantile(tagwise.dispersion, c(0, 0.975)), trended.dispersion, common.dispersion) %>% range) %>%
+    unlist %>% c(0) %>% range %>% sqrt %>% pmax(0) %>% expand_range(mul=0.05)
 ```
 
 We now inspect the dispersion plot for each of the normalizations.
 
 ```{r plot_disp_normtest}
-xlims <- lapply(dges, . %$% AveLogCPM %>% range) %>%
-    unlist %>% range %>% expand_range(mul=0.05)
-ylims <- lapply(dges, . %$% c(tagwise.dispersion, trended.dispersion, common.dispersion) %>% range) %>%
-    unlist %>% range %>% sqrt %>% pmax(0) %>% expand_range(mul=0.05)
 p <- list()
 for (i in names(dges)) {
     prior.df <- dges[[i]]$prior.df %>% median
     p[[i]] <- ggplotBCV(dges[[i]], rawdisp=dges.noebayes[[i]]) +
-        coord_cartesian(xlim = xlims, ylim=ylims) +
+        coord_cartesian(xlim = xlims, ylim=ylims, expand=FALSE) +
         labs(title=sprintf("BCV Plot with %s", i),
              subtitle=sprintf("Prior d.f. = %.3g", prior.df))
 }
 ggprint(p)
 ```
 
-All the normalizations seem to perform very similarly here except for the loess normalization, which results in much a larger prior d.f. For this reason, we are inclined to distrust the loess normalization.
+Clearly, the peak-based normalizations produce the smallest BCV estimates. This is expected because both have 8 surrogate variables in their models, while the other models have much fewer. Based on these plots, we would lean toward one of the peak-based normalizations, but we can't rule out the other two.
+
+We also inspect the BCV plot without SVA:
+
+```{r plot_disp_normtest_nosv}
+p <- list()
+for (i in names(dges.nosv)) {
+    prior.df <- dges.nosv[[i]]$prior.df %>% median
+    p[[i]] <- ggplotBCV(dges.nosv[[i]], rawdisp=dges.noebayes.nosv[[i]]) +
+        coord_cartesian(xlim = xlims, ylim=ylims, expand=FALSE) +
+        labs(title=sprintf("BCV Plot with %s and no SVA", i),
+             subtitle=sprintf("Prior d.f. = %.3g", prior.df))
+}
+ggprint(p)
+```
+
+It's clear that without SVA, the BCVs are on average much higher for each type or normalization except for the loess normalization. We can quantify this by looking at the distribution of changes in BCV when the surrogate variables are added to the model.
+
+```{r sva_disp_effect}
+disptable <- lapply(names(dges), function(i) {
+    data_frame(NormType = i, Window = rownames(dges[[i]]),
+               DispSVA = dges[[i]]$tagwise.dispersion,
+               DispNoSVA = dges.nosv[[i]]$tagwise.dispersion)
+}) %>% do.call(what = rbind) %>%
+    mutate(BCV_SVA = sqrt(DispSVA), 
+           BCV_NoSVA = sqrt(DispNoSVA),
+           BCV_Change = BCV_SVA - BCV_NoSVA)
+disptable %>% group_by(NormType) %>% do({
+    summary(.$BCV_Change) %>% unclass %>% rbind %>% as_data_frame
+}) %>% inner_join(numsv.table, ., by="NormType")
+bcv_limits <- disptable %>% select(BCV_SVA, BCV_NoSVA) %>% unlist %>% quantile(c(.001, .999)) %>%
+    ifelse(. < 0.1, 0, .)
+ggplot(disptable) + 
+    aes(x=NormType, y=BCV_NoSVA) + 
+    geom_hline(yintercept = 0, linetype="dashed", alpha=0.5) +
+    geom_violin(scale = "area", draw_quantiles = (1:3)/4) +
+    coord_cartesian(ylim=bcv_limits) +
+    labs(title="BCV estimates without SVA") + 
+    xlab("Normalization Type") + 
+    ylab("BCV")
+ggplot(disptable) + 
+    aes(x=NormType, y=BCV_SVA) + 
+    geom_hline(yintercept = 0, linetype="dashed", alpha=0.5) +
+    geom_violin(scale = "area", draw_quantiles = (1:3)/4) +
+    coord_cartesian(ylim=bcv_limits) +
+    labs(title="BCV estimates with SVA") + 
+    xlab("Normalization Type") + 
+    ylab("BCV")
+ggplot(disptable) + 
+    aes(x=NormType, y=BCV_Change) + 
+    geom_hline(yintercept = 0, linetype="dashed", alpha=0.5) +
+    geom_violin(scale="area", draw_quantiles = (1:3)/4) +
+    coord_cartesian(ylim=quantile(disptable$BCV_Change, c(.001, .999))) +
+    labs(title="Effect of SVA on BCV estimates") + 
+    xlab("Normalization Type") + 
+    ylab("Change in BCV with SVA")
+```
+
+We can see that the median change in BCV is about 0.25 downward for all 3 scaling normalizations, while the effect is more modest for the loess normalization. This makes sense, since there were fewer surrogate variables for the loess normalization. Additionally, for all 3 scaling normalizations, the prior degrees of freedom (i.e. the weight given to the trend during empirical Bayes squeezing) are much higher without SVA. For the background, the prior d.f. is actually infinte, which is often indicative of a severe normalization problem. Hence, we can probably eliminate the background normalization here.
 
 Next, we examine the effect of each normalization on the MDS plot.
 
 ## MDS Plots
 
-We compute the MDS coordinates after subtracting the batch effects of both FRiP and donor_id. The result is a plot showing the variation attributable to sources other than those batch effects. To demonstrate the result of subtracting the FRiP effect, we also do the same with a design that does not include the FRiP effect.
+We compute the MDS coordinates after subtracting the effects of the surrogate variables for each normalization. The result is a plot showing the variation attributable to sources other than those unknown batch effects. To demonstrate the difference that batch subtraction makes, we also generate the same plots from the uncorrected data.
 
 ```{r compute_mds_normtest}
-batch.cols <- colnames(design) %>% .[str_detect(., "^FRiP\\.NS|^D\\d+\\.vs\\.D\\d+$")]
-bcdata <- dges %>% 
-    bplapply(. %>% voomWithOffset(design=design) %>%
-                 assign_into(.$E, subtractCoefs(.$E, design, coefsToSubtract=intersect(colnames(design), batch.cols))))
-bcdata.NoFRiP <- dges %>% 
-    bplapply(. %>% voomWithOffset(design=design.NoFRiP) %>%
-                 assign_into(.$E, subtractCoefs(.$E, design.NoFRiP, coefsToSubtract=intersect(colnames(design.NoFRiP), batch.cols))))
+bcdata <- mapply(function(dge, des) { 
+    sv.cols <- colnames(des) %>% .[str_detect(., "^SV\\d+$")]
+    assert_that(length(sv.cols) > 0)
+    v <- voomWithOffset(dge, des)
+    v$E <- suppressMessages(subtractCoefs(v$E, des, coefsToSubtract = sv.cols))
+    v
+}, dge=dges, des=sv.designs.int)
 prep.mds <- function(x) {
     mds <- suppressPlot(plotMDS(x))
     mds.distances <- mds %$% distance.matrix %>% as.dist
-    mds.distances %>% 
-        {suppressWarnings(cmdscale(., k=ncol(x)-1))} %>% 
+    df <- mds.distances %>% 
+    {suppressWarnings(cmdscale(., k=ncol(x)-1))} %>% 
         add.numbered.colnames(prefix="Dim") %>%
         as.data.frame %>%
         cbind(sample.table)
+    # Use Naive D0 as the reference group, and flip the signs of each dimension
+    # such that the mean of this group is negative. This makes it more likely that 
+    mdscols <- colnames(df) %>% .[str_detect(., "Dim\\d+")]
+    needflip <- df %>% filter(group=="NaiveD0") %>%
+        .[mdscols] %>% colMeans %>% is_greater_than(0)
+    for (i in mdscols[needflip]) {
+        df[[i]] %<>% multiply_by(-1)
+    }
+    df
 }
 mdstabs <- bplapply(bcdata, prep.mds)
-mdstabs.NoFRiP <- bplapply(bcdata.NoFRiP, prep.mds)
+mdstabs.nosv <- bplapply(dges, prep.mds)
 ggmds <- function(x) {
      ggplot(x %>% arrange(cell_type, time_point, donor_id)) +
         aes(x=Dim1, y=Dim2, label=SampleName, color=time_point,
@@ -348,17 +451,19 @@ ggmds <- function(x) {
                size = guide_legend(order=4, title = "total_reads")) +
         coord_equal()
 }
-p12 <- p23 <- p12.nf <- p23.nf <- list()
+p12 <- p23 <- p12.nosv <- p23.nosv <- list()
 for (i in names(mdstabs)) {
     p12[[i]] <- ggmds(mdstabs[[i]]) +
         labs(title="MDS Principal Coordinates 1 & 2",
-             subtitle=sprintf("With %s normalization; donor & FRiP effects subtracted", i))
+             subtitle=sprintf("With %s normalization; SVs subtracted", i)) +
+        coord_equal()
     p23[[i]] <- p12[[i]] + aes(x=Dim2, y=Dim3) +
         labs(title="MDS Principal Coordinates 2 & 3")
-    p12.nf[[i]] <- ggmds(mdstabs.NoFRiP[[i]]) +
+    p12.nosv[[i]] <- ggmds(mdstabs.nosv[[i]]) +
         labs(title="MDS Principal Coordinates 1 & 2",
-             subtitle=sprintf("With %s normalization; donor effects subtracted", i))
-    p23.nf[[i]] <- p12.nf[[i]] + aes(x=Dim2, y=Dim3) +
+             subtitle=sprintf("With %s normalization; SVs not subtracted", i)) +
+        coord_equal()
+    p23.nosv[[i]] <- p12.nosv[[i]] + aes(x=Dim2, y=Dim3) +
         labs(title="MDS Principal Coordinates 2 & 3")
 }
 ```
@@ -371,21 +476,85 @@ ggprint(p12)
 ggprint(p23)
 ```
 
-All 4 normalization methods produce similar looking plots for dimensions 1 and 2, in which the day 0 and day 14 samples cluster together on one side while days 1 and 5 cluster together on the other side. In addition, all normalizations give a roughly monotonic progression with time for dimension 3. This makes biological sense, suggesting that there is one set of peaks that are modified from their resting state during activation and then return to their previous state at day 14, while another smaller set of peaks undergo permanent changes between day 1 and day 5. In any case, the MDS plots do not seem to strongly favor or eliminate any of the normalizations. Based on the BCV and MDS plots, any of the proposed scaling normalizations is appropriate. The "high abundance windows within peaks" normalization method is the simplest to implement, since it is computed from only the count data of the windows being analyzed and does not rely on external data, such as filtered-out low-count windows or a separate count table for large bins. Hence, this normalization method will be used going forward.
+The peak-based normalization produce the cleanest, most interpretable MDS plots by far, with both naive and memory cells tracing parallel arcs over time. The background normalization is much more muddled, and the loess normalization seems to be riddled with outliers, even after subtracting surrogate variables. These results definitely favor peak-based normalization with SVA as the best modelling strategy for this data.
 
-## MDS plots without subtracting FRiP effects
+## MDS plots without subtracting SV effects
 
-Now, we repeat the same plots as above, but with no subtraction of FRiP effects from the data.
+Now, we repeat the same plots as above, but with no subtraction of surrogate variable effects from the data.
 
-```{r mds_pc12_NoFRiP}
-ggprint(p12.nf)
+```{r mds_pc12_NoSV}
+ggprint(p12.nosv)
 ```
 
-```{r mds_pc23_NoFRiP}
-ggprint(p23.nf)
+```{r mds_pc23_NoSV}
+ggprint(p23.nosv)
 ```
 
-Without subtracting the effects of FRiP, the results are very different. The only normalizations with any clear separation between time points in the first two dimensions are the background normalization, which weakly separates days 0 and 14 from days 1 and 5 along dimension 1; and the lowess normalization, which separates days 0 and 1 from days 5 and 14 along dimension 2. Furthermore, the 3 types of normalization (peak, background, and loess) all produces markedly different MDS plots, in contrast to the broadly similar plots above. From this, we conclude that adding FRiP as a covariate is justified.
+Without the surrogate variables, the MDS plots look are more or less uninterpretable, with no clean separation between groups. This underscores the importance of modelling unknown sources of variation in the data using SVA. These unknown sources could include ChIP efficiency bias, GC bias, and other technical variables in the ChIP-Seq process that have nothing to do with the biology of the experiment. Because the donor ID was not included in the design, inter-donor variability could also be included in the surrogate variables.
+
+## Variance Partitioning analysis
+
+To further investigate the sources of variance within the data, we can use the `variancePartition` package. We fit 4 models to the data so that we can see how the percent of variance explained changes depending on which terms are included in the model.
+
+```{r run_vpart}
+sample.table.with.sv <- cbind(sample.table, svmats$PeakHANorm)
+vp.formulas <- list(Group_Only = ~group,
+                    Group_and_Covars = ~ group + donor_id + FRiP,
+                    Group_and_SV = as.formula(str_c(c("~ group", colnames(svmats$PeakHANorm)), collapse=" + ")),
+                    Group_and_Covars_and_SV = as.formula(str_c(c("~ group + donor_id + FRiP", colnames(svmats$PeakHANorm)), collapse=" + ")))
+designs <- lapply(vp.formulas, model.matrix, data=sample.table.with.sv)
+elists <- bplapply(designs, voomWithOffset, dge=dges$PeakHANorm)
+# Function is already parallelized, so don't call it in parallel
+varParts <- mapply(function(...) try(fitExtractVarPartModel(...)), exprObj=elists, formula=vp.formulas, 
+                   MoreArgs=list(data=sample.table.with.sv))
+# Collapse SVs to a single column
+varTables <- list()
+for (i in names(varParts)) {
+    if (is(varParts[[i]], "try-error")) {
+        message("Could not run variancePartition for ", i, ", probably due to collinearity of covariates.")
+    } else {
+        x <- as(varParts[[i]], "data.frame")
+        x.sv <- x %>% select(matches("^SV\\d+$"))
+        if (ncol(x.sv) > 0) {
+            x.nosv <- x[setdiff(colnames(x), colnames(x.sv))]
+            x <- data.frame(x.nosv, SV=rowSums(x.sv))
+        }
+        varTables[[i]] <- cbind(select(x, -Residuals), select(x, Residuals))
+    }
+}
+```
+
+```{r plot_vpart}
+p <- list()
+for (i in names(varTables)) {
+    incl <- str_replace_all(i, "_and_", " + ")
+    p[[i]] <- plotVarPart(varTables[[i]]) +
+        labs(title=str_c("Variance Partitions, ", incl))
+}
+ggprint(p)
+```
+
+It is an encouraging sign that no mater which covariates are included, the percent of variance explained by the main experimental effects (group) stays the same. It seems that donor ID and FRiP explain only a small amount of additional variance beyond what the surrogate variables can already explain (visible as a small reduction in the "Residuals" distribution), so there is little reason to include them in the model. This can be justified more rigorously using the Bayesian Information Criterion:
+
+```{r selectModel}
+sm <- BPselectModel(voomWithOffset(dges$PeakHANorm, designs[[1]]), designs, criterion = "bic")
+as.data.frame(table(sm$pref)) %>% rename(Model=Var1)
+ggplot(melt(sm$IC) %>% rename(Model=Models, Probe=Probes, IC=value)) + 
+    aes(x=Model, fill=Model, y=IC) + geom_violin() +
+    geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
+    scale_fill_hue(guide="none") + 
+    ylab("BIC") + 
+    labs(title="Window BIC distribution by model",
+         subtitle="(lower is better)")
+ggplot(sm$IC) + aes(x=Group_and_SV, y=Group_and_Covars_and_SV) + 
+    geom_point(size=0.1) + 
+    geom_abline(slope=1, intercept=0, linetype = "longdash", color=muted("red", l=50, c=90)) + 
+    geom_density2d() +
+    coord_fixed() + 
+    labs(title="Window BIC with vs. without Donor & FRiP covariates")
+```
+
+When the covariates (donor and FRiP) are added into any model, the BIC for the average gene gets larger (i.e. worse), indicating that these covariates are not explaining enough additional variation to justify including them in the model. Note that this does not mean these are unimportant covariates, but that the surrogate variables inferred by SVA are already capturing most of the variation explained by these covariates, making their inclusion mostly redundant. Looking at the scatter plot above, we can see that there is a minority of windows below the identity line for which including group and FRiP improves the model, but the majority lie above the identity line, where the no-covariates model is better.
 
 ## MA plots
 
@@ -495,7 +664,7 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
 ggprint(p)
 ```
 
-Next, instead of plotting the loess normalization line, we make the MA plot using loess-normalized log2 CPM values. Effectively, this should center each entire plot vertically on M = 0, using the loess normalization as a guide.
+Next, instead of plotting the loess normalization line, we make the MA plot using loess-normalized log2 CPM values. If the loess normalization is appropriate, this should center each entire plot vertically on M = 0, using the loess normalization trend as a guide.
 
 ```{r maplot_windows_loess_norm}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
@@ -505,6 +674,21 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         doMAPlot(logcpm.loess, s1, s2, linedata = NULL) +
             geom_hline(yintercept=0) + 
             labs(title=sprintf("MA plot of %s windows, loess normalized", params$window_size),
+                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+    })
+ggprint(p)
+```
+
+Next, we make the same MA plots using the same corrected data used to generate the MDS plots above. This data has been normalized using the peak-based factors and then had surrogate variable effects subtracted out, hopefully leaving only the biologically relevant variation. Since this data should already be normalized, we simply put a horizaontal line at zero for reference.
+
+```{r maplot_sva}
+p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
+    lapply(function(i) {
+        s1 <- bn.higher.samples[i]
+        s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
+        doMAPlot(bcdata$PeakHANorm$E, s1, s2, linedata = NULL) +
+            geom_hline(yintercept=0) + 
+            labs(title=sprintf("MA plot of %s windows, peak-normalized & SVA-corrected", params$window_size),
                  subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
     })
 ggprint(p)
@@ -521,7 +705,7 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
             labs(title=sprintf("MA plot of %s bins", params$bigbin_size),
                  subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
     })
-print(p)
+ggprint(p)
 ```
 
-These plots seem to show that some samples have significant efficiency biases, visible as a trend in the MA plot. This further supports the choice of high-abundance peak-overlapping windows for normalization as well as our choice to regress out the effect of FRiP, which is a measure of ChIP pulldown efficiency.
+These plots seem to show that some samples have significant efficiency biases, visible as a trend in the MA plot. This further supports the choice of high-abundance peak-overlapping windows for normalization, as well as our choice to regress out systematic variation using SVA, since a single scaling normalization is insufficient to remove this trend, as is a single loess curve.
