@@ -428,6 +428,11 @@ targets = {
         'reports/ChIP-seq/{chip_antibody}-exploration.html',
         chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
     ),
+    # TODO: Output tables
+    'chipseq_diffmod' : expand(
+        'reports/ChIP-seq/{chip_antibody}-diffmod.html',
+        chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
+    ),
     'macs_predictd' : 'results/macs_predictd/output.log',
     'idr_peaks_epic' :expand(
         'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
@@ -529,6 +534,7 @@ rule all:
         targets['rnaseq_compare'],
         targets['rnaseq_diffexp'],
         targets['chipseq_eda'],
+        targets['chipseq_diffmod'],
         targets['macs_predictd'],
         targets['idr_peaks_epic'],
         targets['idr_peaks_macs'],
@@ -2077,7 +2083,7 @@ rule chipseq_peak_size_analysis:
                    params={ 'basedir': os.getcwd(), })
 
 rule chipseq_explore:
-    '''Perform exploratory data analysis on {chip_antibody} ChIP-seq dataset'''
+    '''Perform exploratory data analysis on ChIP-seq dataset'''
     input:
         rmd='scripts/chipseq-explore-{chip_antibody}.Rmd',
         sexp='saved_data/csaw-counts-500bp-windows-147bp-reads-{chip_antibody}.RDS',
@@ -2098,4 +2104,27 @@ rule chipseq_explore:
                        'window_size': '500bp',
                        'fragment_length': '147bp',
                        'bigbin_size': '10kbp',
+                   })
+
+rule chipseq_diffmod:
+    '''Perform differential modification analysis on ChIP-seq dataset'''
+    input:
+        rmd='scripts/chipseq-diffmod.Rmd',
+        sexp='saved_data/csaw-counts-500bp-windows-147bp-reads-{chip_antibody}.RDS',
+        peaks='peak_calls/epic_hg38.analysisSet/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
+    output:
+        # TODO: Output tables
+        html='reports/ChIP-seq/{chip_antibody}-diffmod.html',
+    version: R_package_version('rmarkdown')
+    threads: 4
+    resources: mem_gb=40
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
+                   output_format='html_document',
+                   params={
+                       'basedir': os.getcwd(),
+                       'histone_mark': wildcards.chip_antibody,
+                       'window_size': '500bp',
+                       'fragment_length': '147bp',
                    })
