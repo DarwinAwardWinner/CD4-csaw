@@ -10,7 +10,7 @@ params:
   basedir:
     value: /home/ryan/Projects/CD4-csaw
   histone_mark:
-    value: H3K4me3
+    value: H3K27me3
   window_size:
     value: 500bp
   fragment_length:
@@ -21,7 +21,7 @@ params:
 
 ```{r setup, include=FALSE, cache=FALSE}
 knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
-                      cache.extra = list(params=params), 
+                      cache.extra = list(params=params),
                       # https://github.com/yihui/knitr/issues/572
                       cache.lazy=FALSE,
                       fig.height=8, fig.width=8,
@@ -53,7 +53,6 @@ library(ggfortify)
 library(broom)
 library(ks)
 library(RColorBrewer)
-library(Rtsne)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
 
@@ -94,13 +93,13 @@ allpeaks <- {
 Now we'll load the ChIP-seq read count data set from RDS files containing SummarizedExperiment objects, and modify them to use the sample names as column names. We also ensure that the column order is identical between the two objects. Lastly, we filter out any windows with fewer than one count per sample. This is a very mild filtering criterion, but it often eliminates many windows, greatly easing the subsequent computational burden of computing the *real* filtering threshold.
 
 ```{r load_counts}
-sexpfile <- 
+sexpfile <-
     file.path(params$basedir, "saved_data",
               with(params, sprintf("csaw-counts-%s-windows-%s-reads-%s.RDS", window_size, fragment_length, histone_mark)))
 full.sexp <- readRDS(sexpfile)
 colnames(full.sexp) <- colData(full.sexp)$SampleName
 sexp <- full.sexp %>% .[rowSums(assay(.)) >= ncol(.),]
-# Exepected number of counts per read, based on overlapping multiple windows. 
+# Exepected number of counts per read, based on overlapping multiple windows.
 # NOTE: Assumes windows exactly tile the genome (no overlaps, no gaps).
 colData(sexp)$CountDupFactor <- (colData(sexp)$ext - 1) / median(width(rowRanges(sexp))) + 1
 ```
@@ -112,7 +111,7 @@ sample.table <- colData(sexp) %>%
     as.data.frame %>% autoFactorize %>%
     mutate(days_after_activation=time_point %>% str_extract("\\d+$") %>% as.numeric(),
            time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
-           group=interaction(cell_type, time_point, sep="")) %>% 
+           group=interaction(cell_type, time_point, sep="")) %>%
     autoFactorize %>%
     set_rownames(colnames(sexp))
 for (i in names(sample.table)) {
@@ -152,7 +151,7 @@ all.window.meta <- rowRanges(sexp) %>% as.data.frame %>%
 # Convert list columns to character vectors
 all.window.meta[] %<>% lapply(function(x) if (is.list(x)) sapply(x, str_c, collapse=",") else x)
 rownames(all.window.meta) <- all.window.meta %$% sprintf("%s:%s-%s", chr, start, end)
-dge <- asDGEList(sexp) %>% 
+dge <- asDGEList(sexp) %>%
     assign_into(.$offset, NULL) %>%
     assign_into(.$genes, all.window.meta) %>%
     set_rownames(rownames(all.window.meta))
@@ -169,40 +168,41 @@ message(sprintf("Excluding %i out of %i peak-overlapping windows (%.3g%%) with a
                 sum(filt == FALSE), length(filt), 100*(1-mean(filt)), count.threshold))
 ```
 
-We also compute the fraction of reads in peaks (FRiP) for each sample, which will be used later in the design matrix.
-
-```{r compute_frip}
-sample.table$RiP <- colData(sexp)$RiP <- assay(sexp) %>%
-    colSums %>%
-    divide_by(sample.table$CountDupFactor)
-sample.table$FRiP <- colData(sexp)$FRiP <- colData(sexp) %$% { RiP / totals }
-```
-
 ## Model fitting
 
-Now we are ready to fit a model to the data. We begin by building the design matrix, inclulding coefficients for the interaction of cell type and time point (group), donor ID as a batch effect, and FRiP as an additional covariate, modelled non-linearly using a natural cubic spline basis with 3 degrees of freedom. 
+Now we are ready to fit a model to the data. We begin by building the design matrix, inclulding coefficients for the interaction of cell type and time point (group).
 
 ```{r build_design_matrix}
-FRiP.NS <- ns(sample.table$FRiP, df=3, intercept = FALSE)
-design.NoFRiP <- model.matrix(~0 + group + donor_id, sample.table, strip.prefixes = TRUE)
-design <- model.matrix(~0 + group + donor_id + FRiP.NS, sample.table, strip.prefixes = TRUE)
+design <- model.matrix(~0 + group, sample.table, strip.prefixes = TRUE)
 colnames(design)
+```
+
+Instead of incorporating all the batch effects we think might be important into the design matrix, we let SVA infer the important confounding factors from the data, and add those to the design matrix.
+
+```{r sva}
+dge %<>% calcNormFactors()
+logcpm <- cpm(dge, log=TRUE, prior.count=1)
+svobj <- sva(logcpm, design)
+ggduo.dataXY(sample.table[c("cell_type", "time_point", "donor_id", "totals", "FRiP")], add.numbered.colnames(svobj$sv, "SV"))
+svmat <- add.numbered.colnames(svobj$sv, "SV")
+design.sv <- cbind(design, svmat)
 ```
 
 We now proceed to computing normalization factors, estimating dispersions, and fitting the quasi-likelihood GLM.
 
 ```{r fit_model}
-dge %<>% calcNormFactors() %>%
-    estimateDisp(design, robust=TRUE)
+dge %<>% estimateDisp(design.sv, robust=TRUE)
 plotBCV(dge)
-fit <- glmQLFit(dge, design, robust=TRUE)
+fit <- glmQLFit(dge, design.sv, robust=TRUE)
 plotQLDisp(fit)
 ```
+
+
 
 Next, we define the differential expression tests we wish to perform as contrasts. Each contrast is an arithmetic expression in terms of the model coefficients.
 
 ```{r define_contrasts}
-celltypes <- unique(sample.table$cell_type)
+celltypes <- sort(unique(sample.table$cell_type))
 all.timepoints <- unique(sample.table$time_point)
 nonzero.timepoints <- setdiff(all.timepoints, "D0")
 
@@ -221,12 +221,13 @@ factorial.singlet.tests <-
                      sprintf("Fac.%s", nonzero.timepoints)))
 factorial.allt.test <- list(Fac.AllT=unlist(factorial.singlet.tests))
 mi.vs.nf.test <- list(MD0vND14="MemoryD0 - NaiveD14")
-donor.var.test <- list(InterDonor=sample.table$donor_id %>% levels %>% {sprintf("%s.vs.%s", .[1], .[-1]) %>% set_names(., .)})
-frip.var.test <- list(FRiP=str_c("FRiP.NS", colnames(FRiP.NS)))
+sv.test <- list(SV=colnames(svmat))
 alltests <- c(timepoint.anova.tests, timepoint.single.tests,
               celltype.allt.test, celltype.singlet.tests,
               factorial.allt.test, factorial.singlet.tests,
-              mi.vs.nf.test, donor.var.test, frip.var.test)
+              mi.vs.nf.test,
+              sv.test
+              )
 print(alltests)
 ```
 
@@ -234,19 +235,51 @@ We now perform the differential expression tests for each contrast or set of con
 
 ```{r test_contrasts}
 window.results.tables <- bplapply(alltests, function(ct) {
-    ctmat <- makeContrasts(contrasts = ct, levels=design) %>% set_colnames(names(ct))
+    ctmat <- makeContrasts(contrasts = ct, levels=design.sv) %>% set_colnames(names(ct))
     ctest <- glmQLFTest(fit, contrast = ctmat)
-    topTags(ctest, n=Inf, sort.by="none")
+    topTags(ctest, n=Inf, sort.by="none") %>% as.data.frame %>% add.qvalue
 })
+```
+
+```{r window_pval_hist}
+p <- bplapply(names(window.results.tables), function(testname) {
+    pvals <- window.results.tables[[testname]]$PValue
+    pi0 <- pi0est(pvals)$pi0
+    p <- plotpvals(pvals, ptn = pi0) +
+        labs(title=sprintf("P-value histogram for %s", testname),
+             subtitle=sprintf("Est. Non-Null Prop.: %g%%", (1 - pi0) * 100))
+})
+ggprint(p)
 ```
 
 Next, because we wish to control the FDR at the level of peaks, not individual windows, we must combine the results for all the windows in each peak and report a single combined p-value for each peak.
 
 ```{r cluster_windows}
-peak.results.tables <- lapply(window.results.tables, function(tt) {
-    tab <- as.data.frame(tt)
-    gr <- as(tab, "GRanges")
+peak.results.tables <- bplapply(window.results.tables, function(tt) {
+    gr <- as(tt, "GRanges")
     olap <- findOverlaps(peaks, gr)
-    combineOverlaps(olap, tab) %>% add.qvalue %>% arrange(PValue)
+    combineOverlaps(olap, tt) %>%
+        filter(!is.na(PValue)) %>%
+        arrange(PValue) %>%
+        add.qvalue
 })
+peak.results.tables %<>% lapply(. %>% add.qvalue)
+```
+
+We now visualize the p-value histogram for each test.
+
+```{r peak_pval_hist}
+p <- bplapply(names(peak.results.tables), function(testname) {
+    pvals <- peak.results.tables[[testname]]$PValue
+    pi0 <- pi0est(pvals)$pi0
+    p <- plotpvals(pvals, ptn = pi0) +
+        labs(title=sprintf("P-value histogram for %s", testname),
+             subtitle=sprintf("Est. Non-Null Prop.: %g%%", (1 - pi0) * 100))
+})
+ggprint(p)
+```
+
+```{r num_signif}
+x <- sapply(peak.results.tables, . %$% FDR %>% is_weakly_less_than(0.1) %>% sum) %>% cbind(NumSignif=.)
+x
 ```
