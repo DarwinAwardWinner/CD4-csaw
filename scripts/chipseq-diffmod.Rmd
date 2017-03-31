@@ -183,7 +183,7 @@ Instead of incorporating all the batch effects we think might be important into 
 dge %<>% calcNormFactors()
 logcpm <- cpm(dge, log=TRUE, prior.count=1)
 svobj <- sva(logcpm, design)
-ggduo.dataXY(sample.table[c("cell_type", "time_point", "donor_id", "totals", "FRiP")], add.numbered.colnames(svobj$sv, "SV"))
+ggduo.dataXY(sample.table[c("cell_type", "time_point", "donor_id", "totals")], add.numbered.colnames(svobj$sv, "SV"))
 svmat <- add.numbered.colnames(svobj$sv, "SV")
 design.sv <- cbind(design, svmat)
 ```
