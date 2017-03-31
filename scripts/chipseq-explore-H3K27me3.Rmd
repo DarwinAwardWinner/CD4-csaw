@@ -56,6 +56,7 @@ library(broom)
 library(ks)
 library(RColorBrewer)
 library(Rtsne)
+library(variancePartition)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
 
@@ -165,8 +166,10 @@ p <- list(
              subtitle="Colored by peak overlap"),
     Violin=ggplot(adata) +
         aes(x=PeakOverlap, y=logCPM) +
-        geom_violin() + 
-        geom_tufteboxplot(median.type = "line", whisker.type = 'line', hoffset = 0, width = 3) +
+        geom_violin(aes(fill=PeakOverlap), scale = "area") +
+        geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
+        scale_fill_hue(guide="none") + 
+        coord_cartesian(ylim=quantile(a, c(0, 0.999))) +
         labs(title="Violin plot of average window logCPM values",
              subtitle="Grouped by peak overlap"))
 ggprint(p)
@@ -261,7 +264,7 @@ design.int <- model.matrix(~1 + group, sample.table)
 
 ## SVA
 
-To account for the variable effect of donor, efficiency bias, and as any other sources of systematic bias present in the data, we use SVA to estimate surrogate variables. We do so for each normalization method, including an additional method based on only the windows that are both peak-overlapping and have a mean count greater than 5.
+To account for the variable effect of donor, efficiency bias, and as any other sources of systematic bias present in the data, we use SVA to estimate surrogate variables. We do so for each normalization method, including an additional method based on only the windows that are both peak-overlapping and have a mean count greater than 5.
 
 ```{r sva}
 count.threshold <- 5
@@ -366,31 +369,36 @@ disptable <- lapply(names(dges), function(i) {
     mutate(BCV_SVA = sqrt(DispSVA), 
            BCV_NoSVA = sqrt(DispNoSVA),
            BCV_Change = BCV_SVA - BCV_NoSVA)
+# This isn't used any more and takes up a lot of memory, so delete it
+rm(dges.nosv, dges.noebayes, dges.noebayes.nosv); invisible(gc())
 disptable %>% group_by(NormType) %>% do({
     summary(.$BCV_Change) %>% unclass %>% rbind %>% as_data_frame
 }) %>% inner_join(numsv.table, ., by="NormType")
-bcv_limits <- disptable %>% select(BCV_SVA, BCV_NoSVA) %>% unlist %>% quantile(c(.001, .999)) %>%
-    ifelse(. < 0.1, 0, .)
+bcv_upper_limit <- disptable %>% select(BCV_SVA, BCV_NoSVA) %>% unlist %>% quantile(.999)
 ggplot(disptable) + 
     aes(x=NormType, y=BCV_NoSVA) + 
-    geom_hline(yintercept = 0, linetype="dashed", alpha=0.5) +
-    geom_violin(scale = "area", draw_quantiles = (1:3)/4) +
-    coord_cartesian(ylim=bcv_limits) +
+    geom_violin(aes(fill=NormType), scale = "area") +
+    geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
+    scale_fill_hue(guide="none") + 
+    coord_cartesian(ylim=c(0, bcv_upper_limit)) +
     labs(title="BCV estimates without SVA") + 
     xlab("Normalization Type") + 
     ylab("BCV")
 ggplot(disptable) + 
     aes(x=NormType, y=BCV_SVA) + 
-    geom_hline(yintercept = 0, linetype="dashed", alpha=0.5) +
-    geom_violin(scale = "area", draw_quantiles = (1:3)/4) +
-    coord_cartesian(ylim=bcv_limits) +
+    geom_violin(aes(fill=NormType), scale = "area") +
+    geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
+    scale_fill_hue(guide="none") + 
+    coord_cartesian(ylim=c(0, bcv_upper_limit)) +
     labs(title="BCV estimates with SVA") + 
     xlab("Normalization Type") + 
     ylab("BCV")
 ggplot(disptable) + 
     aes(x=NormType, y=BCV_Change) + 
     geom_hline(yintercept = 0, linetype="dashed", alpha=0.5) +
-    geom_violin(scale="area", draw_quantiles = (1:3)/4) +
+    geom_violin(aes(fill=NormType), scale = "area") +
+    geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
+    scale_fill_hue(guide="none") + 
     coord_cartesian(ylim=quantile(disptable$BCV_Change, c(.001, .999))) +
     labs(title="Effect of SVA on BCV estimates") + 
     xlab("Normalization Type") + 
@@ -431,8 +439,8 @@ prep.mds <- function(x) {
     }
     df
 }
-mdstabs <- bplapply(bcdata, prep.mds)
-mdstabs.nosv <- bplapply(dges, prep.mds)
+mdstabs <- lapply(bcdata, prep.mds)
+mdstabs.nosv <- lapply(dges, prep.mds)
 ggmds <- function(x) {
      ggplot(x %>% arrange(cell_type, time_point, donor_id)) +
         aes(x=Dim1, y=Dim2, label=SampleName, color=time_point,
@@ -513,6 +521,7 @@ for (i in names(varParts)) {
     if (is(varParts[[i]], "try-error")) {
         message("Could not run variancePartition for ", i, ", probably due to collinearity of covariates.")
     } else {
+        assert_that(is(varParts[[i]], "varPartResults"))
         x <- as(varParts[[i]], "data.frame")
         x.sv <- x %>% select(matches("^SV\\d+$"))
         if (ncol(x.sv) > 0) {
