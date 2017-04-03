@@ -305,6 +305,8 @@ for (i in names(svmats)) {
 ggprint(p)
 ```
 
+With the background normalization, we can clearly see that the first surrogate variable becomes a proxy for ChIP efficiency. This is a hint that efficiency normalization may be correct for this data set. Beyond that, it seems that some of the surrogate variables are capturing the donor effects, while others show little correlation with any known experimental factors, which is expected.
+
 ## Dispersion estimation
 
 Now we estimate the dispersions with and without empirical Bayes shrinkage, with and without surrogate variables.
@@ -344,7 +346,7 @@ for (i in names(dges)) {
 ggprint(p)
 ```
 
-Clearly, the peak-based normalizations produce the smallest BCV estimates. This is expected because both have 8 surrogate variables in their models, while the other models have much fewer. Based on these plots, we would lean toward one of the peak-based normalizations, but we can't rule out the other two.
+Clearly, the peak-based normalizations produce the smallest BCV estimates. This is expected because both have 9 surrogate variables in their models, while the other models have fewer. Based on these plots, we would lean toward one of the peak-based normalizations, but we can't rule out the other two.
 
 We also inspect the BCV plot without SVA:
 
@@ -360,7 +362,7 @@ for (i in names(dges.nosv)) {
 ggprint(p)
 ```
 
-It's clear that without SVA, the BCVs are on average much higher for each type or normalization except for the loess normalization. We can quantify this by looking at the distribution of changes in BCV when the surrogate variables are added to the model.
+It's clear that without SVA, the BCVs are on average much higher for each type or normalization. We can quantify this by looking at the distribution of changes in BCV when the surrogate variables are added to the model.
 
 ```{r sva_disp_effect}
 disptable <- lapply(names(dges), function(i) {
@@ -407,7 +409,7 @@ ggplot(disptable) +
     ylab("Change in BCV with SVA")
 ```
 
-We can see that the median change in BCV is about 0.25 downward for all 3 scaling normalizations, while the effect is more modest for the loess normalization. This makes sense, since there were fewer surrogate variables for the loess normalization. Additionally, for all 3 scaling normalizations, the prior degrees of freedom (i.e. the weight given to the trend during empirical Bayes squeezing) are much higher without SVA. For the background, the prior d.f. is actually infinte, which is often indicative of a severe normalization problem. Hence, we can probably eliminate the background normalization here.
+We can see that the median change in BCV is about 0.15 downward for all normalizations, except for background normalization, where it is more like 0.2. This makes sense, since the first SV for the background normalization is removing an effect that was already removed by the other normalizations.
 
 Next, we examine the effect of each normalization on the MDS plot.
 
@@ -486,7 +488,7 @@ ggprint(p12)
 ggprint(p23)
 ```
 
-The peak-based normalization produce the cleanest, most interpretable MDS plots by far, with both naive and memory cells tracing parallel arcs over time. The background normalization is much more muddled, and the loess normalization seems to be riddled with outliers, even after subtracting surrogate variables. These results definitely favor peak-based normalization with SVA as the best modelling strategy for this data.
+In this case, all normalizations produce nearly the same MDS plot. This is encouraging because it means that the downstream analysis will not be substantially affected by the choice of normalization method. For convenience, we will move forward with the PeakHANorm method, which is the simplest to implement.
 
 ## MDS plots without subtracting SV effects
 
@@ -500,7 +502,7 @@ ggprint(p12.nosv)
 ggprint(p23.nosv)
 ```
 
-Without the surrogate variables, the MDS plots look are more or less uninterpretable, with no clean separation between groups. This underscores the importance of modelling unknown sources of variation in the data using SVA. These unknown sources could include ChIP efficiency bias, GC bias, and other technical variables in the ChIP-Seq process that have nothing to do with the biology of the experiment. Because the donor ID was not included in the design, inter-donor variability could also be included in the surrogate variables.
+Without the surrogate variables, the MDS still have some of the same features, but the groups are much less clearly separated. This underscores the importance of modelling unknown sources of variation in the data using SVA. These unknown sources could include ChIP efficiency bias, GC bias, and other technical variables in the ChIP-Seq process that have nothing to do with the biology of the experiment. Because the donor ID was not included in the design, inter-donor variability could also be included in the surrogate variables.
 
 ## Variance Partitioning analysis
 
@@ -535,6 +537,8 @@ for (i in names(varParts)) {
 }
 ```
 
+The variancePartition function failed to run for the model that included both known covariates and surrogate variables. This is expected if the surrogate variables are highly correlated with any of the known covariates, which we have already observed is the case for donor ID.
+
 ```{r plot_vpart}
 p <- list()
 for (i in names(varTables)) {
@@ -545,7 +549,7 @@ for (i in names(varTables)) {
 ggprint(p)
 ```
 
-It is an encouraging sign that no mater which covariates are included, the percent of variance explained by the main experimental effects (group) stays the same. It seems that donor ID and FRiP explain only a small amount of additional variance beyond what the surrogate variables can already explain (visible as a small reduction in the "Residuals" distribution), so there is little reason to include them in the model. This can be justified more rigorously using the Bayesian Information Criterion:
+It is an encouraging sign that no matter which covariates are included, the percent of variance explained by the main experimental effects (group) stays the same. It seems that donor ID and FRiP explain only a small amount of additional variance, while the surrogate variables explain much more. This can be justified more rigorously using the Bayesian Information Criterion:
 
 ```{r selectModel}
 sm <- BPselectModel(voomWithOffset(dges$PeakHANorm, designs[[1]]), designs, criterion = "bic")
@@ -565,7 +569,9 @@ ggplot(sm$IC) + aes(x=Group_and_SV, y=Group_and_Covars_and_SV) +
     labs(title="Window BIC with vs. without Donor & FRiP covariates")
 ```
 
-When the covariates (donor and FRiP) are added into any model, the BIC for the average gene gets larger (i.e. worse), indicating that these covariates are not explaining enough additional variation to justify including them in the model. Note that this does not mean these are unimportant covariates, but that the surrogate variables inferred by SVA are already capturing most of the variation explained by these covariates, making their inclusion mostly redundant. Looking at the scatter plot above, we can see that there is a minority of windows below the identity line for which including group and FRiP improves the model, but the majority lie above the identity line, where the no-covariates model is better.
+When the covariates (donor and FRiP) are added into any model, the BIC for the average gene gets larger (i.e. worse), indicating that for most windows these covariates are not explaining enough additional variation to justify including them in the model. Note that this does not mean these are unimportant covariates, but that the surrogate variables inferred by SVA are already capturing most of the variation explained by these covariates, making their inclusion mostly redundant. Looking at the scatter plot above, we can see that there is a minority of windows below the identity line for which including group and FRiP improves the model, but the majority lie above the identity line, where the no-covariates model is better.
+
+Note that for many windows, the model with only group and no other covariates has the smallest BIC. These are likely windows that are not signifcantly affected by any covariate. Fitting the model with surrogate variables to these windows does not hurt except to sacrifice some statistical power, while it certainly gains more statistical power for the windows whose binding *is* affected by the surrogate variables.
 
 ## MA plots
 
@@ -660,7 +666,7 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
 ggprint(p)
 ```
 
-Now, we make the same plots, but for the x-axis, we use the average log2 CPM of the whole dataset, rather than the log mean of the two samples being plotted. The advantage of this is that it puts all the plots on a common x-axis, and it also allows us to add a curve representing the loess normalization, since this normalization is calculated relative to the same average log2 CPM scale. The disadvantage is that this smears the plots horizontally, since windows with similar counts in the two specific samples will have different counts in all the other samples, leading to a spreading of previously similar A values.
+Now, we make the same plots, but for the x-axis, we use the average log2 CPM of the whole dataset, rather than the log mean of the two samples being plotted. The advantage of this is that it uses the exact same X coordinate for every window across all the MA plots, and it also allows us to add a curve representing the loess normalization, since the loess curve is fit along the same average log2 CPM scale. The disadvantage is that this smears the plots horizontally, since windows with similar counts in the two specific samples will have different counts in all the other samples, leading to a spreading of previously similar A values, so it is not a great visualization in general. In fact, in many cases it shows where the loess normalization falls short because at some points along the x-axis, it is trying unsuccesfully to interpolate between two modes.
 
 ```{r maplot_windows_Acommon}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
@@ -690,7 +696,7 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
 ggprint(p)
 ```
 
-Next, we make the same MA plots using the same corrected data used to generate the MDS plots above. This data has been normalized using the peak-based factors and then had surrogate variable effects subtracted out, hopefully leaving only the biologically relevant variation. Since this data should already be normalized, we simply put a horizaontal line at zero for reference.
+Next, we make the same MA plots using the same corrected data that was used to generate the MDS plots above. This data has been normalized using the peak-based factors and then had surrogate variable effects subtracted out, hopefully leaving only the biologically relevant variation. Since this data should already be normalized, we simply put a horizaontal line at zero for reference.
 
 ```{r maplot_sva}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
@@ -705,7 +711,7 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
 ggprint(p)
 ```
 
-Last, we make MA plots for the 10kb bins that were used to compute the background normalization.
+Last, we make MA plots for the 10kb bins that were used to compute the background normalization. The main purpose of these plots is to show that the distribution of abundances is generally bimodal, with a high-abundance mode representing peak-overlapping windows and a low-abundance mode representing non-peak windows. The background normalization line passes through the low-abundance mode, while the peak-based normalizations pass through the high-abundance mode. Any difference between them is presumbed to be due to differences in either ChIP efficiency or global changes in the histone mark.
 
 ```{r maplot_bigbins}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%

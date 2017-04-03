@@ -303,6 +303,10 @@ for (i in names(svmats)) {
 ggprint(p)
 ```
 
+With the background normalization, we can clearly see that the first surrogate variable becomes a proxy for ChIP efficiency. This is a hint that efficiency normalization may be correct for this data set. Beyond that, it seems that some of the surrogate variables are capturing the donor effects, while others show little correlation with any known experimental factors, which is expected.
+
+For the loess normalization, it seems that one sample is a substantial outlier. This may interfere with the selection of the number of surrogate variables, as well as other downstream analyses.
+
 ## Dispersion estimation
 
 Now we estimate the dispersions with and without empirical Bayes shrinkage, with and without surrogate variables.
@@ -484,7 +488,7 @@ ggprint(p12)
 ggprint(p23)
 ```
 
-The peak-based normalization produce the cleanest, most interpretable MDS plots by far, with both naive and memory cells tracing parallel arcs over time. The background normalization is much more muddled, and the loess normalization seems to be riddled with outliers, even after subtracting surrogate variables. These results definitely favor peak-based normalization with SVA as the best modelling strategy for this data.
+The peak-based normalizations produce the cleanest, most interpretable MDS plots by far, with both naive and memory cells tracing parallel arcs over time. These MDS plots also closely match the plots for H3K4me2. The background normalization is much more muddled, and the loess normalization seems to be riddled with outliers, even after subtracting surrogate variables. These results definitely favor peak-based normalization with SVA as the best modelling strategy for this data.
 
 ## MDS plots without subtracting SV effects
 
@@ -658,7 +662,7 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
 ggprint(p)
 ```
 
-Now, we make the same plots, but for the x-axis, we use the average log2 CPM of the whole dataset, rather than the log mean of the two samples being plotted. The advantage of this is that it puts all the plots on a common x-axis, and it also allows us to add a curve representing the loess normalization, since this normalization is calculated relative to the same average log2 CPM scale. The disadvantage is that this smears the plots horizontally, since windows with similar counts in the two specific samples will have different counts in all the other samples, leading to a spreading of previously similar A values.
+Now, we make the same plots, but for the x-axis, we use the average log2 CPM of the whole dataset, rather than the log mean of the two samples being plotted. The advantage of this is that it uses the exact same X coordinate for every window across all the MA plots, and it also allows us to add a curve representing the loess normalization, since the loess curve is fit along the same average log2 CPM scale. The disadvantage is that this smears the plots horizontally, since windows with similar counts in the two specific samples will have different counts in all the other samples, leading to a spreading of previously similar A values, so it is not a great visualization in general. In fact, in many cases it shows where the loess normalization falls short because at some points along the x-axis, it is trying unsuccesfully to interpolate between two modes. This could well be the source of the outliers observed in the MDS plots with loess normalization.
 
 ```{r maplot_windows_Acommon}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
@@ -703,7 +707,7 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
 ggprint(p)
 ```
 
-Last, we make MA plots for the 10kb bins that were used to compute the background normalization.
+Last, we make MA plots for the 10kb bins that were used to compute the background normalization. The main purpose of these plots is to show that the distribution of abundances is generally bimodal, with a high-abundance mode representing peak-overlapping windows and a low-abundance mode representing non-peak windows. The background normalization line passes through the low-abundance mode, while the peak-based normalizations pass through the high-abundance mode. Any difference between them is presumbed to be due to differences in either ChIP efficiency or global changes in the histone mark.
 
 ```{r maplot_bigbins}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%

@@ -250,7 +250,7 @@ p <- list(ggduo(as.data.frame(colData(sexp)),
 ggprint(p)
 ```
 
-The strongest associations are between the FRiP values and both normalization factors, with the peak-based normalization factors being positively correlated with FRiP and the background normalization being negatively correlated. This indicates that the peak-based normalization factors are counteracting differences in pulldown efficiency between samples, while composition normalizationfactors are preserving, and perhaps even reinforcing these differences. This is the expected behavior for both normalization methods. There is also a visible, but weaker, negative correlation between total read counts and FRiP: sample with more total reads tend to have a greater fraction of reads not overlapping peaks.
+The strongest associations are between the FRiP values and both normalization factors, with the peak-based normalization factors being positively correlated with FRiP and the background normalization being negatively correlated. This indicates that the peak-based normalization factors are counteracting differences in pulldown efficiency between samples, while composition normalizationfactors are preserving, and perhaps even reinforcing these differences. This is the expected behavior for both normalization methods.
 
 To test these normalizations, we will look at their effect on the dispersion estimation step. But first, we must generate the design matrix in order to estimate dispersions.
 
@@ -303,6 +303,8 @@ for (i in names(svmats)) {
 ggprint(p)
 ```
 
+With the background normalization, we can clearly see that the first surrogate variable becomes a proxy for ChIP efficiency. This is a hint that efficiency normalization may be correct for this data set. Beyond that, it seems that some of the surrogate variables may be capturing the donor effects, while others seem to be confounded with the time point. This confounding is a potential concern, and we should be on the lookout for possible consequences of this in downstream analyses.
+
 ## Dispersion estimation
 
 Now we estimate the dispersions with and without empirical Bayes shrinkage, with and without surrogate variables.
@@ -342,7 +344,7 @@ for (i in names(dges)) {
 ggprint(p)
 ```
 
-Clearly, the peak-based normalizations produce the smallest BCV estimates. This is expected because both have 8 surrogate variables in their models, while the other models have much fewer. Based on these plots, we would lean toward one of the peak-based normalizations, but we can't rule out the other two.
+The peak-based normalizations and the loess normalization produce the smallest BCV estimates, but the overall variability in this data set is fairly low for all normalizations. Based on these plots, there is no clear reason to prefer one normalization over the others.
 
 We also inspect the BCV plot without SVA:
 
@@ -358,7 +360,7 @@ for (i in names(dges.nosv)) {
 ggprint(p)
 ```
 
-It's clear that without SVA, the BCVs are on average much higher for each type or normalization except for the loess normalization. We can quantify this by looking at the distribution of changes in BCV when the surrogate variables are added to the model.
+Not only are the BCV values higher without SVA, the BCV also trends upward with abundance rather than downward as is typical. These BCV plots are indicative of the likely presence of unmodeled batch effects and underscore the importance of SVA for this data set. In any case, we can quantify the effect of SVA by looking at the distribution of changes in BCV when the surrogate variables are added to the model.
 
 ```{r sva_disp_effect}
 disptable <- lapply(names(dges), function(i) {
@@ -405,9 +407,7 @@ ggplot(disptable) +
     ylab("Change in BCV with SVA")
 ```
 
-We can see that the median change in BCV is about 0.25 downward for all 3 scaling normalizations, while the effect is more modest for the loess normalization. This makes sense, since there were fewer surrogate variables for the loess normalization. Additionally, for all 3 scaling normalizations, the prior degrees of freedom (i.e. the weight given to the trend during empirical Bayes squeezing) are much higher without SVA. For the background, the prior d.f. is actually infinte, which is often indicative of a severe normalization problem. Hence, we can probably eliminate the background normalization here.
-
-Next, we examine the effect of each normalization on the MDS plot.
+We can see that the median change in BCV is around -0.1 for the peak-based normalizations and -0.12 for the other normalizations. Next, we examine the effect of each normalization on the MDS plot.
 
 ## MDS Plots
 
@@ -484,7 +484,7 @@ ggprint(p12)
 ggprint(p23)
 ```
 
-The peak-based normalization produce the cleanest, most interpretable MDS plots by far, with both naive and memory cells tracing parallel arcs over time. The background normalization is much more muddled, and the loess normalization seems to be riddled with outliers, even after subtracting surrogate variables. These results definitely favor peak-based normalization with SVA as the best modelling strategy for this data.
+The peak-based normalizations produce the cleanest, most interpretable MDS plots by far, with both naive and memory cells tracing parallel arcs over time. The background normalization somewhat muddies the separation between naive and memory, and the loess normalization is generally less well-separated. These results definitely favor peak-based normalization with SVA as the best modelling strategy for this data.
 
 ## MDS plots without subtracting SV effects
 
@@ -533,6 +533,8 @@ for (i in names(varParts)) {
 }
 ```
 
+The variancePartition function failed to run for the model that included both known covariates and surrogate variables. This is expected if the surrogate variables are highly correlated with any of the known covariates, which we have already observed is the case for donor ID.
+
 ```{r plot_vpart}
 p <- list()
 for (i in names(varTables)) {
@@ -543,7 +545,7 @@ for (i in names(varTables)) {
 ggprint(p)
 ```
 
-It is an encouraging sign that no mater which covariates are included, the percent of variance explained by the main experimental effects (group) stays the same. It seems that donor ID and FRiP explain only a small amount of additional variance beyond what the surrogate variables can already explain (visible as a small reduction in the "Residuals" distribution), so there is little reason to include them in the model. This can be justified more rigorously using the Bayesian Information Criterion:
+It is an encouraging sign that no matter which covariates are included, the percent of variance explained by the main experimental effects (group) stays the same. It seems that donor ID and FRiP explain only a small amount of additional variance, while the surrogate variables explain much more. This can be justified more rigorously using the Bayesian Information Criterion:
 
 ```{r selectModel}
 sm <- BPselectModel(voomWithOffset(dges$PeakHANorm, designs[[1]]), designs, criterion = "bic")
@@ -658,7 +660,7 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
 ggprint(p)
 ```
 
-Now, we make the same plots, but for the x-axis, we use the average log2 CPM of the whole dataset, rather than the log mean of the two samples being plotted. The advantage of this is that it puts all the plots on a common x-axis, and it also allows us to add a curve representing the loess normalization, since this normalization is calculated relative to the same average log2 CPM scale. The disadvantage is that this smears the plots horizontally, since windows with similar counts in the two specific samples will have different counts in all the other samples, leading to a spreading of previously similar A values.
+Now, we make the same plots, but for the x-axis, we use the average log2 CPM of the whole dataset, rather than the log mean of the two samples being plotted. The advantage of this is that it uses the exact same X coordinate for every window across all the MA plots, and it also allows us to add a curve representing the loess normalization, since the loess curve is fit along the same average log2 CPM scale. The disadvantage is that this smears the plots horizontally, since windows with similar counts in the two specific samples will have different counts in all the other samples, leading to a spreading of previously similar A values, so it is not a great visualization in general. In fact, in many cases it shows where the loess normalization falls short because at some points along the x-axis, it is trying unsuccesfully to interpolate between two modes. This could well be the source of the outliers observed in the MDS plots with loess normalization.
 
 ```{r maplot_windows_Acommon}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
@@ -703,7 +705,7 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
 ggprint(p)
 ```
 
-Last, we make MA plots for the 10kb bins that were used to compute the background normalization.
+Last, we make MA plots for the 10kb bins that were used to compute the background normalization. The main purpose of these plots is to show that the distribution of abundances is generally bimodal, with a high-abundance mode representing peak-overlapping windows and a low-abundance mode representing non-peak windows. The background normalization line passes through the low-abundance mode, while the peak-based normalizations pass through the high-abundance mode. Any difference between them is presumbed to be due to differences in either ChIP efficiency or global changes in the histone mark. This effect is less clear for H3K27me3 than for other histone marks, because of the low separation between the two modes.
 
 ```{r maplot_bigbins}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
