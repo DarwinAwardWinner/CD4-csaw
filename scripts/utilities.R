@@ -48,15 +48,15 @@ ggprint <- function(plots, device=dev.cur(), closedev, printfun=print) {
     }
     if (!is.null(device) && !is.na(device)) {
         dev.set(new.device)
-        on.exit({
-            if (closedev) {
-                dev.off(new.device)
-            }
-            if (new.device != orig.device) {
-                dev.set(orig.device)
-            }
-        })
     }
+    on.exit({
+        if (closedev) {
+            dev.off(new.device)
+        }
+        if (closedev && new.device != orig.device && orig.device != 1) {
+            dev.set(orig.device)
+        }
+    })
     assertthat::assert_that(is(plots, "gg") ||
                                 is.list(plots))
     if (is(plots, "gg")) {

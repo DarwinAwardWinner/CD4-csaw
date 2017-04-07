@@ -323,14 +323,16 @@ results.tables <- bplapply(alltests, function(ct) {
 })
 ```
 
-We save the full result tables to an R data file and the tables of significant results only (FDR 10% or less) to an Excel file. We also save the entire workspace for later follow-up analysis.
+We save the full result tables to an R data file and the tables of significant results only (FDR 10% or less) to an Excel file. (For tests with fewer than 100 significant genes, we just save the top 100 genes.) We also save the entire workspace for later follow-up analysis.
 
 ```{r save_results}
+# Take all genes significant at 10% FDR or top 100 genes, whichever is more
+filtered.results.tables <- lapply(results.tables, . %>% filter(FDR <= 0.1 | seq_len(nrow(.)) <= 100))
 dir.create(file.path(params$basedir, "saved_data", "RNA-seq"), recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(params$basedir, "results", "RNA-seq"), recursive = TRUE, showWarnings = FALSE)
 saveRDS(results.tables, file.path(params$basedir, 'saved_data', 'RNA-seq', sprintf('%s-diffexp-tables.RDS', params$dataset)))
 save.image(file.path(params$basedir, 'saved_data', 'RNA-seq', sprintf('%s-diffexp.rda', params$dataset)))
-write.xlsx(results.tables, file.path(params$basedir, "results", "RNA-seq",sprintf('%s-diffexp.xlsx', params$dataset)))
+write.xlsx(filtered.results.tables, file.path(params$basedir, "results", "RNA-seq",sprintf('%s-diffexp.xlsx', params$dataset)))
 ```
 
 To have confidence in the significance measures returned, we should verify that the p-value distributions for each test look reasonable.
