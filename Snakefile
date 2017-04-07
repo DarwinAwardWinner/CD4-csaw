@@ -2113,8 +2113,11 @@ rule chipseq_diffmod:
         sexp='saved_data/csaw-counts-500bp-windows-147bp-reads-{chip_antibody}.RDS',
         peaks='peak_calls/epic_hg38.analysisSet/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
     output:
-        # TODO: Output tables
         html='reports/ChIP-seq/{chip_antibody}-diffmod.html',
+        peaks_xlsx='results/ChIP-seq/{chip_antibody}-peak-diffmod.xlsx',
+        peaks_rds='saved_data/ChIP-seq/{chip_antibody}-peak-diffmod.RDS',
+        windows_rds='saved_data/ChIP-seq/{chip_antibody}-window-diffmod.RDS',
+        rda='saved_data/ChIP-seq/{chip_antibody}-diffmod.rda',
     version: R_package_version('rmarkdown')
     threads: 4
     resources: mem_gb=40

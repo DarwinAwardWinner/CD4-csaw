@@ -10,7 +10,7 @@ params:
   basedir:
     value: /home/ryan/Projects/CD4-csaw
   histone_mark:
-    value: H3K27me3
+    value: H3K4me3
   window_size:
     value: 500bp
   fragment_length:
@@ -282,4 +282,15 @@ ggprint(p)
 ```{r num_signif}
 x <- sapply(peak.results.tables, . %$% FDR %>% is_weakly_less_than(0.1) %>% sum) %>% cbind(NumSignif=.)
 x
+```
+
+```{r save_results}
+# Take all genes significant at 10% FDR or top 100 genes, whichever is more
+filtered.peak.results.tables <- lapply(peak.results.tables, . %>% filter(FDR <= 0.1 | seq_len(nrow(.)) <= 100))
+dir.create(file.path(params$basedir, "saved_data", "ChIP-seq"), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(params$basedir, "results", "ChIP-seq"), recursive = TRUE, showWarnings = FALSE)
+saveRDS(window.results.tables, file.path(params$basedir, 'saved_data', 'ChIP-seq', sprintf('%s-window-diffmod.RDS', params$histone_mark)))
+saveRDS(peak.results.tables, file.path(params$basedir, 'saved_data', 'ChIP-seq', sprintf('%s-peak-diffmod.RDS', params$histone_mark)))
+save.image(file.path(params$basedir, 'saved_data', 'ChIP-seq', sprintf('%s-diffmod.rda', params$histone_mark)))
+write.xlsx(filtered.peak.results.tables, file.path(params$basedir, "results", "ChIP-seq",sprintf('%s-peak-diffmod.xlsx', params$histone_mark)))
 ```
