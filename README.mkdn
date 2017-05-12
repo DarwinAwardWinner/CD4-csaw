@@ -35,14 +35,8 @@ reproduce the full analysis.
   * Alignment-free bias-corrected transcript quantification using Salmon & Kallisto
   * Differential gene expression
 
-### TODO components
+### Possible TODO components
 
-* RNA-seq differential gene/transcript/exon/whatever expression from
-  Salmon quantification
-* Variance partitioning: http://bioconductor.org/packages/devel/bioc/html/variancePartition.html
-* pvca
-* csaw differential analysis of ChIP-seq
-* fdrtool: http://strimmerlab.org/software/fdrtool/
 * Integrating RNA-seq and ChIP-seq
   * geneXtendeR: http://bioconductor.org/packages/devel/bioc/html/geneXtendeR.html
   * fCCAC: http://bioconductor.org/packages/release/bioc/html/fCCAC.html
