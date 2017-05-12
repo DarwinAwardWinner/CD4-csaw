@@ -1,5 +1,5 @@
 ---
-title: "Exploration of CD4 ChIP-Seq Dataset"
+title: "Differential Modification Analysis of CD4 ChIP-Seq Dataset"
 author: "Ryan C. Thompson"
 date: '`r gsub("\\s+", " ", format(Sys.time(), "%B %e, %Y"))`'
 output:
