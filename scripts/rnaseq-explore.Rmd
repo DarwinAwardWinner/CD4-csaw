@@ -25,6 +25,8 @@ First we load the necessary libraries, along with a set of utility functions.
 ```{r load_packages, message=FALSE, cache=FALSE}
 library(stringr)
 library(magrittr)
+library(Matrix)
+library(lme4)
 library(SummarizedExperiment)
 library(dplyr)
 library(edgeR)
@@ -39,6 +41,7 @@ library(assertthat)
 library(ggfortify)
 library(broom)
 library(codingMatrices)
+library(variancePartition)
 
 library(doParallel)
 ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
@@ -406,6 +409,8 @@ p <- list(
 ggprint(p)
 ```
 
+The naive batch subtraction seems to leave one donor as an outlier for unclear reasons, while ComBat avoids this artifact, instead yielding abiologically more plausible MDS plot.
+
 ```{r batch_correction_mds_plot_pdf, cache=FALSE, include=FALSE}
 ggprint(p, device=cairo_pdf(file.path(plotdir, "rnaseq-MDSPlots-BatchCorrect.pdf"), width=12, height=12, onefile = TRUE))
 ```
@@ -449,8 +454,49 @@ ggprint(p)
 ggprint(p, device=cairo_pdf(file.path(plotdir, "rnaseq-MDSPlots.pdf"), onefile = TRUE))
 ```
 
-## Variance Partitioning
+## Variance Partitioning analysis
 
-TODO: pvca
+To further investigate the sources of variance within the data, we can use the `variancePartition` package. We fit the model to the uncorrected data and the two corrected data sets (simple batch subtraction and ComBat) so that we can see how the percent of variance explained is affected by batch correction. We use random effects for the factors in the model since batch and time point are confounded.
 
-TODO: variancePartition
+```{r run_vpart}
+# Fit all factors as random effects, since group and batch are confounded
+vp.formula <- ~ (1|group) + (1|donor_id) + (1|batch)
+elists <- list(NoBC=elist.w, BatSub=elist.bc, ComBat=elist.cb)
+# Function is already parallelized, so don't call it in parallel
+varParts <- mapply(function(...) try(fitExtractVarPartModel(...)), 
+                   exprObj = elists, 
+                   MoreArgs = list(
+                       formula = vp.formula, 
+                       data=sample.table),
+                   SIMPLIFY = FALSE)
+# Collapse SVs to a single column
+varTables <- list()
+for (i in names(varParts)) {
+    if (is(varParts[[i]], "try-error")) {
+        message("Could not run variancePartition for ", i, ", probably due to collinearity of covariates.")
+    } else {
+        assert_that(is(varParts[[i]], "varPartResults"))
+        x <- as(varParts[[i]], "data.frame")
+        x.sv <- x %>% select(matches("^SV\\d+$"))
+        if (ncol(x.sv) > 0) {
+            x.nosv <- x[setdiff(colnames(x), colnames(x.sv))]
+            x <- data.frame(x.nosv, SV=rowSums(x.sv))
+        }
+        varTables[[i]] <- cbind(select(x, -Residuals), select(x, Residuals))
+    }
+}
+```
+
+The variancePartition function failed to run for the model that included both known covariates and surrogate variables. This is expected if the surrogate variables are highly correlated with any of the known covariates, which we have already observed is the case for donor ID.
+
+```{r plot_vpart}
+p <- list()
+for (i in names(varTables)) {
+    incl <- str_replace_all(i, "_and_", " + ")
+    p[[i]] <- plotVarPart(varTables[[i]]) +
+        labs(title=str_c("Variance Partitions, ", incl))
+}
+ggprint(p)
+```
+
+The results seen here are consistent with what can be seen qualitatively from the MDS plots. With no batch correction, batch effects are a significant contributor to overall variance, which is problematic since batch and time point are confounded. With simple batch subtraction. recall that the MDS plots showed an outlier donor. This is reflected here in the very large contribution of donor ID to the variance of many genes. Lastly, the variance partition plot for ComBat looks quite reasonable, with most of the variance for a majority of genes explained by group (i.e. the combination of time point and cell type) and some smaller part explained by donor ID.
