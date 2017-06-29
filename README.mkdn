@@ -38,8 +38,6 @@ reproduce the full analysis.
 ### Possible TODO components
 
 * Integrating RNA-seq and ChIP-seq
-  * geneXtendeR: http://bioconductor.org/packages/devel/bioc/html/geneXtendeR.html
-  * fCCAC: http://bioconductor.org/packages/release/bioc/html/fCCAC.html
   * hiAnnotator: http://bioconductor.org/packages/devel/bioc/html/hiAnnotator.html
   * ChIPseeker: http://bioconductor.org/packages/devel/bioc/html/ChIPseeker.html
   * mogsa: http://bioconductor.org/packages/release/bioc/html/mogsa.html
