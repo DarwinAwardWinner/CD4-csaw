@@ -188,11 +188,29 @@ Instead of incorporating all the batch effects we think might be important into 
 dge %<>% calcNormFactors()
 logcpm <- cpm(dge, log=TRUE, prior.count=1)
 svobj <- sva(logcpm, design)
-ggduo.dataXY(sample.table[c("cell_type", "time_point", "donor_id", "totals")], add.numbered.colnames(svobj$sv, "SV"))
 svmat <- add.numbered.colnames(svobj$sv, "SV")
 design.sv <- cbind(design, svmat)
 ```
 
+We plot the surrogate variables against known variables and also test for significant correlations between them.
+
+```{r test_sv_corr}
+sv.cor.tests <- expand.grid(SV=colnames(svmat),
+                            Var=c("cell_type", "time_point", "group", "donor_id", "totals")) %>%
+    select(Var, SV) %>%
+    group_by_all() %>% 
+    do(mod=list(lm(as.formula(sprintf("%s ~ %s", .$SV, .$Var)), data=cbind(sample.table, svmat)))) %>%
+    mutate(aov=lapply(mod, anova)) %>%
+    ungroup() %>%
+    mutate(PValue=vapply(.$aov, . %$% {`Pr(>F)`[1]}, numeric(1)),
+           FDR=p.adjust(PValue, method="BH")) %>%
+    select(-mod, -aov)
+sv.cor.tests %>% arrange(PValue)
+ggduo.dataXY(sample.table[c("cell_type", "time_point", "donor_id", "totals")], svmat,
+             extraData=sample.table["group"],
+             types=list(comboVertical="dot_no_facet"),
+             mapping=aes(color=group, shape=donor_id))
+```
 We now proceed to computing normalization factors, estimating dispersions, and fitting the quasi-likelihood GLM.
 
 ```{r fit_model}
@@ -287,7 +305,10 @@ peak.results.tables %>% lapply(function(rt) {
     summarize(rt,
               NumSignif=FDR %>% is_weakly_less_than(0.1) %>% sum,
               EstNonNull=floor(length(PValue) * (1 - propTrueNull(PValue))))
-}) %>% do.call(what=rbind) %>% as.matrix
+}) %>% 
+    do.call(what=rbind) %>% 
+    mutate(Test=rownames(.)) %>%
+    select(Test, everything())
 ```
 
 ```{r save_results}
