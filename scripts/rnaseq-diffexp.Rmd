@@ -54,6 +54,12 @@ register(DoparParam())
 source(file.path(params$basedir, "scripts/utilities.R"))
 ```
 
+We also set the random seed for reproducibility:
+
+```{r set_random_seed}
+set.seed(1986)
+```
+
 # Data Loading and Preprocessing
 
 Now we'll load the RNA-seq data set from an RDS file containing a SummarizedExperiment object, and modify it to use the sample names as column names.

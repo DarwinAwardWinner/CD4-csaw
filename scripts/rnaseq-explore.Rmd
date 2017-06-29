@@ -59,6 +59,12 @@ plotdir <- file.path(params$basedir, "plots/RNA-seq", params$dataset)
 dir.create(plotdir, recursive = TRUE, showWarnings = FALSE)
 ```
 
+We also set the random seed for reproducibility:
+
+```{r set_random_seed}
+set.seed(1986)
+```
+
 # Data Loading and Preprocessing
 
 Now we load the RNA-seq data set from an RDS file containing a SummarizedExperiment object and edit it to use the sample names as column names.
