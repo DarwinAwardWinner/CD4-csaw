@@ -56,21 +56,29 @@ format.bp <- function(x) {
 
 get.options <- function(opts) {
     optlist <- list(
+        make_option(c("-s", "--samplemeta-file"), metavar="FILENAME.RDS", type="character",
+                    help="(REQUIRED) RDS/RData/xlsx/csv file containing a table of sample metadata. Any existing rownames will be replaced with the values in the sample ID  column (see below)."),
+        make_option(c("-c", "--sample-id-column"), type="character", default="Sample",
+                    help="Sample metadata column name that holds the sample IDs. These will be substituted into '--bam-file-pattern' to determine the BAM file names."),
+        make_option(c("-p", "--bam-file-pattern"), metavar="PATTERN", type="character",
+                    help="(REQUIRED) Format string to convert sample IDs into BAM file paths. This should contain a '%s' wherever the sample ID should be substituted ('%s' can occur multiple times),. Example: 'bam_files/Sample_%s/Aligned.bam"),
+        make_option(c("-o", "--output-file"), metavar="FILENAME.RDS", type="character",
+                    help="(REQUIRED) Output file name. The SummarizedExperiment object containing the counts will be saved here using saveRDS, so it should end in '.RDS'."),
+        make_option(c("-b", "--expected-bam-files"), metavar="BAMFILE1,BAMFILE2,...", type="character",
+                    help="Comma-separated list of bam file names expected to be used as input. This argument is optional, but if it is provided, it will be checked against the list of files determined from '--samplemeta-file' and '--bam-file-pattern', and an error will be raised if they don't match exactly."),
         make_option(c("-w", "--window-width"), type="character", default="150bp",
                     help="Width of windows in which to count."),
         make_option(c("-s", "--window-spacing"), metavar="BP", type="character",
                     help="Spacing between the start points of consecutive windows. By default, this is identical to the window width, so that the windows exactly tile the genome. Changing this results in either gapped windows (spacing > width) or overlapping windows (spacing < width)."),
         make_option(c("-e", "--read-extension"), type="character", default="100bp",
                     help="Assumed fragment length of reads. Each read will be assumed to represent a DNA fragment extending this far from its 5 prime end, regardless of the actual read length."),
-        make_option(c("-b", "--bin"), action="store_true", default=FALSE,
+        make_option(c("--bin"), action="store_true", default=FALSE,
                     help="Run in bin mode, where each read is counted into exactly one bin."),
-        make_option(c("-o", "--output-file"), metavar="FILENAME.RDS", type="character",
-                    help="(REQUIRED) Output file name. The SummarizedExperiment object containing the counts will be saved here using saveRDS, so it should end in '.RDS'."),
         make_option(c("-j", "--threads"), metavar="N", type="integer", default=1,
                     help="Number of threads to use"))
     progname <- na.omit(c(get_Rscript_filename(), "csaw-count-windows.R"))[1]
     parser <- OptionParser(
-        usage="Usage: %prog -w WSIZE -e READEXT [ -s WSPACE -b ] -o SUMEXP.RDS",
+        usage="Usage: %prog [options] -s SAMPLEMETA.RDS -p PATTERN -w WSIZE -e READEXT [ -s WSPACE ] -o SUMEXP.RDS",
         description="Do window counting across the genome for ChIP-Seq data",
 option_list = optlist,
 add_help_option = TRUE,
@@ -79,7 +87,7 @@ epilogue = "Note that all base pair sizes (window width/spacing and read extensi
 
     cmdopts <- parse_args(parser, opts)
     ## Ensure that all required arguments were provided
-    required.opts <- c("output-file")
+    required.opts <- c("samplemeta-file", "output-file", "bam-file-pattern")
     missing.opts <- setdiff(required.opts, names(cmdopts))
     if (length(missing.opts) > 0) {
         stop(str_c("Missing required arguments: ", deparse(missing.opts)))
@@ -144,9 +152,9 @@ print.var.vector <- function(v) {
 
     tsmsg("Loading sample data")
 
-    sample.table <- readRDS("saved_data/samplemeta-ChIPSeq.RDS") %>%
+    sample.table <- readRDS(cmdopts$samplemeta_file) %>%
         ## Compute full path to BAM file
-        mutate(bam_file=sprintf("aligned/chipseq_bowtie2_hg38.analysisSet/%s/Aligned.bam", SRA_run)) %>%
+        mutate(bam_file=sprintf(cmdopts$bam_file_pattern, .[[cmdopts$sample_id_column]])) %>%
         ## Ensure that days_after_activation is a factor and can't be
         ## interpreted as a numeric
         mutate(days_after_activation=days_after_activation %>%
