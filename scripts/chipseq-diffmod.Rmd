@@ -10,7 +10,7 @@ params:
   basedir:
     value: /home/ryan/Projects/CD4-csaw
   histone_mark:
-    value: H3K4me3
+    value: H3K27me3
   window_size:
     value: 500bp
   fragment_length:
@@ -234,7 +234,7 @@ alltests <- c(timepoint.anova.tests, timepoint.single.tests,
 print(alltests)
 ```
 
-We now perform the differential expression tests for each contrast or set of contrasts. For a single contrast, the test is analogous to a t-test. For a multi-contrast test, the global null hypothesis that all contrasts are equal to zero is used, analogous to an F-test.
+We now perform the differential modification tests for each contrast or set of contrasts. For a single contrast, the test is analogous to a t-test. For a multi-contrast test, the global null hypothesis that all contrasts are equal to zero is used, analogous to an F-test.
 
 ```{r test_contrasts}
 window.results.tables <- bplapply(alltests, function(ct) {
@@ -255,7 +255,7 @@ p <- bplapply(names(window.results.tables), function(testname) {
 ggprint(p)
 ```
 
-Next, because we wish to control the FDR at the level of peaks, not individual windows, we must combine the results for all the windows in each peak and report a single combined p-value for each peak.
+Next, because we wish to control the FDR at the level of peaks, not individual windows, we must combine the results for all the windows in each peak. The p-value for each peak tests the combined null hypothesis that no windows in that peak are differentially modified with respect to the specified contrast(s).
 
 ```{r cluster_windows}
 peak.results.tables <- bplapply(window.results.tables, function(tt) {
@@ -269,7 +269,7 @@ peak.results.tables <- bplapply(window.results.tables, function(tt) {
 peak.results.tables %<>% lapply(. %>% add.qvalue)
 ```
 
-We now visualize the p-value histogram for each test.
+We now visualize the p-value histogram for each test. Ideally, each p-value histogram should either be uniform or biased toward zero. Any other shape is indicative of a failure of some modelling step. 
 
 ```{r peak_pval_hist}
 p <- bplapply(names(peak.results.tables), function(testname) {
@@ -283,8 +283,11 @@ ggprint(p)
 ```
 
 ```{r num_signif}
-x <- sapply(peak.results.tables, . %$% FDR %>% is_weakly_less_than(0.1) %>% sum) %>% cbind(NumSignif=.)
-x
+peak.results.tables %>% lapply(function(rt) {
+    summarize(rt,
+              NumSignif=FDR %>% is_weakly_less_than(0.1) %>% sum,
+              EstNonNull=floor(length(PValue) * (1 - propTrueNull(PValue))))
+}) %>% do.call(what=rbind) %>% as.matrix
 ```
 
 ```{r save_results}
