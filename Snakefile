@@ -1771,7 +1771,7 @@ rule idr_filter_peaks_all_conditions:
         expand('idr_analysis/{peak_caller}_{genome_build}/{chip_antibody}_condition.ALL_{donorPair}/idrValues.txt',
                **wildcards,
                donorPair=dfselect(idr_sample_pairs, chip_antibody=wildcards.chip_antibody) \
-               .apply(lambda x: '%svs%s' % (x['donorA'], x['donorB']), axis=1).unique())
+               .apply(lambda x: '%svs%s' % (x['donorA'], x['donorB']), axis=1).drop_duplicates())
     output:
         filtered_peaks='peak_calls/{peak_caller}_{genome_build}/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
     run:
@@ -2171,8 +2171,8 @@ rule chipseq_explore:
     '''Perform exploratory data analysis on ChIP-seq dataset'''
     input:
         rmd='scripts/chipseq-explore-{chip_antibody}.Rmd',
-        sexp='saved_data/csaw-counts-500bp-windows_147bp-reads_{chip_antibody}.RDS',
-        bigbin_sexp='saved_data/csaw-counts-10kbp-bigbins_{chip_antibody}.RDS',
+        sexp='saved_data/csaw-counts_500bp-windows_147bp-reads_{chip_antibody}.RDS',
+        bigbin_sexp='saved_data/csaw-counts_10kbp-bigbins_{chip_antibody}.RDS',
         peaks='peak_calls/epic_hg38.analysisSet/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
     output:
         html='reports/ChIP-seq/{chip_antibody}-exploration.html',
@@ -2195,7 +2195,7 @@ rule chipseq_diffmod:
     '''Perform differential modification analysis on ChIP-seq dataset'''
     input:
         rmd='scripts/chipseq-diffmod.Rmd',
-        sexp='saved_data/csaw-counts-500bp-windows_147bp-reads_{chip_antibody}.RDS',
+        sexp='saved_data/csaw-counts_500bp-windows_147bp-reads_{chip_antibody}.RDS',
         peaks='peak_calls/epic_hg38.analysisSet/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
     output:
         html='reports/ChIP-seq/{chip_antibody}-diffmod.html',
