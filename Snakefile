@@ -1152,6 +1152,36 @@ rule merge_blacklists:
         'saved_data/ChIPSeq-merged-blacklist.bed'
     shell: '''cat {input:q} > {output:q}'''
 
+rule generate_promoter_regions_ensembl:
+    '''Generate a file describing promoter regions for UCSC knownGene.'''
+    input:
+        txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v{release}.sqlite3'),
+    output:
+        rds="saved_data/promoter-regions-hg38.analysisSet_ensembl.{release}-{radius,\\d+.*?bp}.RDS",
+    threads: 32
+    shell: '''
+    scripts/generate-promoters.R \
+      -j {threads:q} \
+      --txdb {input.txdb:q} \
+      --promoter-radius {wildcards.radius:q} \
+      --output-file {output.rds:q}
+    '''
+
+rule generate_promoter_regions_knownGene:
+    '''Generate a file describing promoter regions for UCSC knownGene.'''
+    params:
+        txdb='TxDb.Hsapiens.UCSC.hg38.knownGene'
+    output:
+        rds="saved_data/promoter-regions-hg38.analysisSet_knownGene-{radius,\\d+.*?bp}.RDS",
+    threads: 32
+    shell: '''
+    scripts/generate-promoters.R \
+      -j {threads:q} \
+      --txdb {params.txdb:q} \
+      --promoter-radius {wildcards.radius:q} \
+      --output-file {output.rds:q}
+    '''
+
 rule macs_predictd:
     '''Determine ChIP-Seq fragment length using 'macs2 predictd'.
 
