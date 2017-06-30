@@ -23,11 +23,16 @@ tsmsg <- function(...) {
 size.prefixes <- c(k=1e3, m=1e6, g=1e9, t=1e12)
 
 parse.bp <- function(size) {
-    m <- str_match(size, "^\\s*(\\d+)\\s*(?:([kmgt]?)bp?)?\\s*$")
-    assert_that(!any(is.na(m[,2])))
+    m <- str_match(size, "^(.*?)(?:([kmgt]?)bp?)?\\s*$")
+    ## m <- str_match(size, "^\\s*(\\d+(?:\\.\\d+))\\s*(?:([kmgt]?)bp?)?\\s*$")
+    base <- suppressWarnings(as.numeric(m[,2]))
+    if (any(is.na(base))) {
+        invalid <- size[is.na(base)]
+        stop(sprintf("Invalid base pair size specification: %s", deparse(head(invalid))))
+    }
     multiplier <- unname(size.prefixes[m[,3]])
     multiplier[is.na(multiplier)] <- 1
-    x <- as.numeric(m[,2]) * multiplier
+    x <- base * multiplier
     assert_that(!any(is.na(x)))
     x
 }

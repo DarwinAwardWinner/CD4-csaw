@@ -94,6 +94,8 @@ epilogue = "")
         stop("Multiple annotations provided. Please provide only one annotation.")
     }
 
+    ## Replace dashes with underscores so that all options can easily
+    ## be accessed by "$"
     cmdopts %>% setNames(str_replace_all(names(.), "-", "_"))
 }
 
