@@ -79,7 +79,7 @@ get.options <- function(opts) {
         make_option(c("-e", "--read-extension"), type="character", default="100bp",
                     help="Assumed fragment length of reads. Each read will be assumed to represent a DNA fragment extending this far from its 5 prime end, regardless of the actual read length."),
         make_option(c("-x", "--blacklist"), metavar="FILENAME.bed", type="character",
-                    help="File describing blacklist regions to be excluded from the analysis. Reads that overlap these regions will be discarded without counting them toward any window.")
+                    help="File describing blacklist regions to be excluded from the analysis. Reads that overlap these regions will be discarded without counting them toward any window. This can be a BED file, GFF file, R data file containing a GRanges object, or csv file that can be converted to a GRanges object.")
         make_option(c("--bin"), action="store_true", default=FALSE,
                     help="Run in bin mode, where each read is counted into exactly one bin."),
         make_option(c("-j", "--threads"), metavar="N", type="integer", default=1,
@@ -88,10 +88,10 @@ get.options <- function(opts) {
     parser <- OptionParser(
         usage="Usage: %prog [options] -s SAMPLEMETA.RDS -p PATTERN -w WSIZE -e READEXT [ -s WSPACE ] -o SUMEXP.RDS",
         description="Do window counting across the genome for ChIP-Seq data",
-option_list = optlist,
-add_help_option = TRUE,
-prog = progname,
-epilogue = "Note that all base pair sizes (window width/spacing and read extension) may have an suffix of 'bp', 'kbp', 'mbp', or 'tbp'. For example, 10kb = 10000")
+        option_list = optlist,
+        add_help_option = TRUE,
+        prog = progname,
+        epilogue = "Note that all base pair sizes (window width/spacing and read extension) may have an suffix of 'bp', 'kbp', 'mbp', or 'tbp'. For example, 10kb = 10000")
 
     cmdopts <- parse_args(parser, opts)
     ## Ensure that all required arguments were provided
@@ -261,6 +261,8 @@ print.var.vector <- function(v) {
         tsmsg("Loading blacklist regions")
         blacklist.regions <- read.regions(cmdopts$blacklist)
         assert_that(is(blacklist.regions, "GRanges"))
+        ## Blacklist applies to both strands
+        strand(blacklist.regions) <- "*"
     }
 
     ## Standard nuclear chromosomes only. (chrM is excluded because it is
@@ -269,7 +271,7 @@ print.var.vector <- function(v) {
     ## contain even a single typically-sized peak, so little is lost by
     ## excluding them for this analysis.)
     std.chr <- extractSeqlevels("Homo sapiens", "UCSC") %>% setdiff("chrM")
-    rparam <- readParam(restrict=std.chr, discard=blacklist)
+    rparam <- readParam(discard=blacklist)
 
     tsmsg(sprintf("Counting reads in %s %s in %i samples.",
                   format.bp(cmdopts$window_width), ifelse(cmdopts$bin, "bins", "windows"),

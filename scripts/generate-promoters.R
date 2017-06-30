@@ -253,11 +253,15 @@ print.var.vector <- function(v) {
     suppressWarnings(file.remove(cmdopts$output_file))
     assert_that(!file.exists(cmdopts$output_file))
 
+    ## Only chr1-chr22,chrX,chrY
+    std.chr <- extractSeqlevels("Homo sapiens", "UCSC") %>% setdiff("chrM")
+
     tsmsg("Reading annotation data")
     txdb <- get.txdb(cmdopts$annotation_txdb)
     tsmsg(sprintf("Getting %s-radius promoters", format.bp(cmdopts$promoter_radius)))
     all.promoters <- suppressWarnings(promoters(txdb, upstream=cmdopts$promoter_radius, downstream = cmdopts$promoter_radius)) %>%
-        trim
+        trim %>% keepSeqlevels(std.chr)
+
     tsmsg("Annotating promoters")
     mcols(all.promoters) %<>%
         ## Not using dplyr because it's a BioC DataFrame

@@ -8,4 +8,9 @@ MEMORY_REQUIREMENTS_GB = {
     'macs_callpeak': 30,
     'epic_callpeak': 20,
     'greylist': 30,
+    'csaw_count_windows': 60,
+    'csaw_count_bins': 20,
+    'csaw_count_promoters': 3,
+    'rnaseq_analyze': 10,
+    'chipseq_analyze': 40,
 }
