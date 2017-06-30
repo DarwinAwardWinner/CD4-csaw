@@ -1852,11 +1852,12 @@ rule csaw_count_windows:
     resources: mem_gb=60
     shell: '''
     scripts/csaw-count-windows.R \
-      --samplemeta-file saved_data/samplemeta-ChIPSeq.RDS \
+      --samplemeta-file {input.samplemeta:q} \
       --sample-id-column SRA_run \
       --bam-file-pattern 'aligned/chipseq_bowtie2_hg38.analysisSet/%s/Aligned.bam' \
       --window-width {wildcards.window_size:q} \
       --read-extension {wildcards.read_ext:q} \
+      --blacklist {input.blacklist:q} \
       --threads {threads:q} \
       --output-file {output:q}
     '''
@@ -1884,6 +1885,7 @@ rule csaw_count_bins:
       --sample-id-column SRA_run \
       --bam-file-pattern 'aligned/chipseq_bowtie2_hg38.analysisSet/%s/Aligned.bam' \
       --window-width {wildcards.window_size:q} \
+      --blacklist {input.blacklist:q} \
       --bin \
       --threads {threads:q} \
       --output-file {output:q}

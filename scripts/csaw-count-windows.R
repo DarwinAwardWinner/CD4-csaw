@@ -11,6 +11,7 @@ library(dplyr)
 library(csaw)
 library(Matrix)
 library(assertthat)
+library(future)
 
 library(doParallel)
 library(BiocParallel)
@@ -77,6 +78,8 @@ get.options <- function(opts) {
                     help="Spacing between the start points of consecutive windows. By default, this is identical to the window width, so that the windows exactly tile the genome. Changing this results in either gapped windows (spacing > width) or overlapping windows (spacing < width)."),
         make_option(c("-e", "--read-extension"), type="character", default="100bp",
                     help="Assumed fragment length of reads. Each read will be assumed to represent a DNA fragment extending this far from its 5 prime end, regardless of the actual read length."),
+        make_option(c("-x", "--blacklist"), metavar="FILENAME.bed", type="character",
+                    help="File describing blacklist regions to be excluded from the analysis. Reads that overlap these regions will be discarded without counting them toward any window.")
         make_option(c("--bin"), action="store_true", default=FALSE,
                     help="Run in bin mode, where each read is counted into exactly one bin."),
         make_option(c("-j", "--threads"), metavar="N", type="integer", default=1,
@@ -125,6 +128,91 @@ windowCountsParallel <- function(bam.files, ..., filter=10, BPPARAM=bpparam()) {
     res[keep,]
 }
 
+## Read a single R object from an RDA file. If run on an RDA
+## file containing more than one object, throws an error.
+read.single.object.from.rda <- function(filename) {
+    objects <- within(list(), suppressWarnings(load(filename)))
+    if (length(objects) != 1) {
+        stop("RDA file should contain exactly one object")
+    }
+    return(objects[[1]])
+}
+
+## Read a single object from RDS or RDA file
+read.RDS.or.RDA <- function(filename, expected.class="ANY") {
+    object <- suppressWarnings(tryCatch({
+        readRDS(filename)
+    }, error=function(...) {
+        read.single.object.from.rda(filename)
+    }))
+    if (!any(sapply(expected.class, is, object=object))) {
+        object <- as(object, expected.class)
+    }
+    return(object)
+}
+
+## Read a table from a R data file, csv, or xlsx file. Returns a data
+## frame or thorws an error.
+read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL,
+                               dataframe.class="data.frame") {
+    suppressWarnings({
+        read.table.args %<>% as.list
+        read.table.args$file <- filename
+        read.table.args$header <- TRUE
+        read.xlsx.args %<>% as.list
+        read.xlsx.args$xlsxFile <- filename
+        lazy.results <- list(
+            rdata=lazy(read.RDS.or.RDA(filename, dataframe.class)),
+            table=lazy(do.call(read.table, read.table.args)),
+            csv=lazy(do.call(read.csv, read.table.args)),
+            xlsx=lazy(do.call(read.xlsx, read.xlsx.args)))
+        for (lzresult in lazy.results) {
+            result <- tryCatch({
+                x <- as(value(lzresult), dataframe.class)
+                assert_that(is(x, dataframe.class))
+                x
+            }, error=function(...) NULL)
+            if (!is.null(result)) {
+                return(result)
+            }
+        }
+        stop(sprintf("Could not read a data frame from %s as R data, csv, or xlsx", deparse(filename)))
+    })
+}
+
+read.saf <- function(filename, ...) {
+    saf <- read.table.general(filename, ...)
+    assert_that("GeneID" %in% names(saf))
+    gr <- as(saf, "GRanges")
+    grl <- split(gr, gr$GeneID) %>% promote.common.mcols
+    return(grl)
+}
+
+read.regions <- function(filename) {
+    suppressWarnings({
+        lazy.results <- list(
+            rdata=lazy(read.RDS.or.RDA(filename)),
+            bed=lazy(import(filename, format="bed")),
+            gff=lazy(import(filename, format="gff")),
+            saf=lazy(read.saf(filename)),
+            table=lazy(read.table.general(filename)))
+        for (lzresult in lazy.results) {
+            result <- tryCatch({
+                x <- value(lzresult)
+                if (is(x, "List")) {
+                    x <- unlist(x)
+                }
+                x <- as(x, "GRanges")
+                x
+            }, error=function(...) NULL)
+            if (!is.null(result)) {
+                return(result)
+            }
+        }
+        stop(sprintf("Could not read genomic regions from %s as R data, bed, gff, SAF, or csv", deparse(filename)))
+    })
+}
+
 print.var.vector <- function(v) {
     for (i in names(v)) {
         cat(i, ": ", deparse(v[[i]]), "\n", sep="")
@@ -168,8 +256,12 @@ print.var.vector <- function(v) {
 
     assert_that(all(file.exists(sample.table$bam_file)))
 
-    tsmsg("Loading blacklist regions")
-    blacklist <- import("saved_data/ChIPSeq-merged-blacklist.bed", format="bed")
+    blacklist.regions <- GRanges()
+    if (!is.null(cmdopts$blacklist)) {
+        tsmsg("Loading blacklist regions")
+        blacklist.regions <- read.regions(cmdopts$blacklist)
+        assert_that(is(blacklist.regions, "GRanges"))
+    }
 
     ## Standard nuclear chromosomes only. (chrM is excluded because it is
     ## not located in the nucleus and is thus not subject to histone

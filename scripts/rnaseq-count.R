@@ -143,7 +143,7 @@ read.RDS.or.RDA <- function(filename, expected.class="ANY") {
     }, error=function(...) {
         read.single.object.from.rda(filename)
     }))
-    if (!is(object, expected.class)) {
+    if (!any(sapply(expected.class, is, object=object))) {
         object <- as(object, expected.class)
     }
     return(object)
@@ -350,8 +350,6 @@ read.annotation.from.saf <- function(filename, ...) {
 read.annotation.from.rdata <- function(filename) {
     read.RDS.or.RDA(filename, "GRangesList")
 }
-
-
 
 read.additional.gene.info <- function(filename, gff_format="GFF3", geneFeatureType="gene", ...) {
     df <- tryCatch({
