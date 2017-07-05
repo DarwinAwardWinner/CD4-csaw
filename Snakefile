@@ -1907,14 +1907,14 @@ rule csaw_count_promoters:
     output:
         'saved_data/promoter-counts_{genome,[^_]+}_{transcriptome,[^_]+}_{radius,[0-9.]+.*?bp}-radius_{read_ext,[0-9.]+.*?bp}-reads.RDS'
     version: R_package_version('csaw')
-    threads: 1
+    threads: 16
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['csaw_count_promoters']
     shell: '''
     scripts/csaw-count-regions.R \
       --samplemeta-file {input.samplemeta:q} \
       --sample-id-column SRA_run \
       --bam-file-pattern 'aligned/chipseq_bowtie2_hg38.analysisSet/%s/Aligned.bam' \
-      --regions {input.promoters:q}
+      --regions {input.promoters:q} \
       --read-extension {wildcards.read_ext:q} \
       --blacklist {input.blacklist:q} \
       --threads {threads:q} \
