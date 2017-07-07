@@ -108,14 +108,34 @@ suppressPlot <- function(arg) {
     result
 }
 
+# Always returns a list of ggplot objects. Flattens nested lists,
+# encapsulates single plots into a 1-element list, ensures that all
+# elements are ggplots.
+get.ggplots <- function(plots) {
+    UseMethod("get.ggplots")
+}
+
+get.ggplots.default <- function(plots) {
+    stop(glue("Don't know how to get ggplots from an object of class {deparse(class(plots)[1])}"))
+}
+
+get.ggplots.gg <- function(plots) {
+    list(plots)
+}
+
+get.ggplots.list <- function(plots) {
+    plotlists <- lapply(plots, get.ggplots)
+    do.call(c, plotlists)
+}
+
 # Somewhat surprisingly, this function doesn't actually rely on ggplot2 being
 # loaded.
 ggprint <- function(plots, device=dev.cur(), closedev, printfun=print) {
     orig.device <- dev.cur()
     new.device <- device
-    # Functions that create devices don't generally return them, they just set
-    # them as the new current device, so get the actual device from dev.cur()
-    # instead.
+    # Functions that create devices don't generally return them, they
+    # just set them as the new current device, so get the actual
+    # device from dev.cur() instead.
     if (is.null(new.device)) {
         new.device <- dev.cur()
     }
@@ -133,16 +153,9 @@ ggprint <- function(plots, device=dev.cur(), closedev, printfun=print) {
             dev.set(orig.device)
         }
     })
-    assertthat::assert_that(is(plots, "gg") ||
-                                is.list(plots))
-    if (is(plots, "gg")) {
-        printfun(plots)
-    } else if (is.list(plots)) {
-        lapply(plots, ggprint, device=NA, closedev=FALSE, printfun=printfun)
-    } else {
-        stop("Argument is not a ggplot or list of ggplots")
-    }
-    invisible(NULL)
+    p <- get.ggplots(plots)
+    lapply(p, printfun)
+    invisible(p)
 }
 
 # Printer function for ggplotly, to be passed as the prinfun for ggprint
