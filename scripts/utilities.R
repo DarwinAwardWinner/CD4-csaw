@@ -26,22 +26,22 @@ si2f <- function(string, unit="") {
              "", "k", "M", "G", "T", "P", "E", "Z", "Y")
 
     rx <- rex(
-        ## Leading whitespace
+        # Leading whitespace
         start,
         zero_or_more(space),
 
-        ## Capture a floating point number
+        # Capture a floating point number
         capture(
-            ## Sign
+            # Sign
             maybe(one_of("+", "-")),
-            ## Integer part
+            # Integer part
             zero_or_more(digit),
-            ## Decimal point
+            # Decimal point
             maybe("."),
-            ## Fractional part (or integer part when decimal is not
-            ## present)
+            # Fractional part (or integer part when decimal is not
+            # present)
             one_or_more(digit),
-            ## Exponential notation
+            # Exponential notation
             maybe(
                 one_of("e", "E"),
                 maybe(one_of("+", "-")),
@@ -49,15 +49,15 @@ si2f <- function(string, unit="") {
             )
         ),
 
-        ## Space between number and unit
+        # Space between number and unit
         zero_or_more(space),
 
-        ## Capture SI prefix
+        # Capture SI prefix
         capture(maybe(one_of(pre))),
         # User-specified unit suffix
         unit,
 
-        ## Trailing whitespace
+        # Trailing whitespace
         zero_or_more(space),
         end
     )
@@ -73,7 +73,7 @@ si2f <- function(string, unit="") {
 parse.bp <- function(size) {
     suppressWarnings({
         result <- si2f(size, unit="bp")
-        ## Fall back to just parsing a number without the "bp" suffix
+        # Fall back to just parsing a number without the "bp" suffix
         result[is.na(result)] <- si2f(size[is.na(result)])
     })
     assert_that(!any(is.na(result)))
@@ -175,8 +175,8 @@ rasterpdf <- function(pdffile, outfile=pdffile, resolution=600) {
     assert_that(exitcode == 0)
     assert_that(file.exists(tempf))
     suppressWarnings(file.rename(tempf, outfile))
-    ## If file still exists, then the rename failed because it's a
-    ## cross-device move, so copy and delete instead.
+    # If file still exists, then the rename failed because it's a
+    # cross-device move, so copy and delete instead.
     if (file.exists(tempf)) {
         file.copy(tempf, outfile)
     }
@@ -241,7 +241,7 @@ estimateDispByGroup <- function(dge, group=as.factor(dge$samples$group), batch, 
     })
 }
 
-## Versions of cpm and aveLogCPM that use an offset matrix instead of lib sizes
+# Versions of cpm and aveLogCPM that use an offset matrix instead of lib sizes
 cpmWithOffset <- function(dge, offset=expandAsMatrix(getOffset(dge), dim(dge)),
                           log = FALSE, prior.count = 0.25, preserve.mean=TRUE, ...) {
     x <- dge$counts
@@ -285,7 +285,7 @@ aveLogCPMWithOffset.DGEList <- function (
 
 library(limma)
 
-## Version of voom that uses an offset matrix instead of lib sizes
+# Version of voom that uses an offset matrix instead of lib sizes
 voomWithOffset <- function (
     dge, design = NULL, offset=expandAsMatrix(getOffset(dge), dim(dge)),
     normalize.method = "none", plot = FALSE, span = 0.5, ...)
@@ -334,7 +334,7 @@ voomWithOffset <- function (
         fitted.values <- fit$coef %*% t(fit$design)
     }
     fitted.cpm <- 2^fitted.values
-    ## fitted.count <- 1e-06 * t(t(fitted.cpm) * (lib.size + 1))
+    # fitted.count <- 1e-06 * t(t(fitted.cpm) * (lib.size + 1))
     fitted.count <- 1e-06 * fitted.cpm * (effective.lib.size + 1)
     fitted.logcount <- log2(fitted.count)
     w <- 1/f(fitted.logcount)^4
@@ -349,7 +349,7 @@ voomWithOffset <- function (
     new("EList", out)
 }
 
-## Version of voom that uses an offset matrix instead of lib sizes
+# Version of voom that uses an offset matrix instead of lib sizes
 voomWithQualityWeightsAndOffset <-function (
     dge, design = NULL,
     offset=expandAsMatrix(getOffset(dge), dim(dge)),
@@ -561,8 +561,8 @@ bfdr <- function(B) {
     B <- B[o]
     positive <- which(B > 0)
     PP <- exp(B)/(1+exp(B))
-    ## Computing from 1-PP gives better numerical precision for the
-    ## most significant genes (large B-values)
+    # Computing from 1-PP gives better numerical precision for the
+    # most significant genes (large B-values)
     oneMinusPP <- 1/(1+exp(B))
     BayesFDR <- cummean(oneMinusPP)
     data.frame(B, PP, BayesFDR)[ro,]
@@ -750,8 +750,8 @@ ggplotBCV <- function(y, xlab="Average log CPM", ylab="Biological coefficient of
         assert_that(all(c("logCPM", "CommonBCV", "TrendBCV", "eBayesBCV") %in% names(disptable)))
     }
 
-    ## Reduce the number of points to plot for each line for performance
-    ## reasons
+    # Reduce the number of points to plot for each line for performance
+    # reasons
     npoints <- c(Common=2, Trend=500)
     disp.line.table <-
         disptable %>%
@@ -795,12 +795,12 @@ clamp_trans <- function(lower_threshold=0, upper_threshold=1) {
     name <- sprintf("Clamp values outside of [%s, %s]", lower_threshold, upper_threshold)
     trans_new(name,
               transform=function(x) pmin(upper_threshold, pmax(lower_threshold, x)),
-              ## transform is only invertible for part of the range
+              # transform is only invertible for part of the range
               inverse=identity)
 }
 
-## Do multiple runs of t-SNE and pick the one with the lowest final
-## cost. (TODO: Make reproducible)
+# Do multiple runs of t-SNE and pick the one with the lowest final
+# cost. (TODO: Make reproducible)
 Rtsne.multi <- function(..., num.repeats=10, BPPARAM=BPPARAM()) {
     args <- list(...)
     results <- bplapply(seq_len(num.repeats), function(i) {
@@ -810,11 +810,11 @@ Rtsne.multi <- function(..., num.repeats=10, BPPARAM=BPPARAM()) {
     results[[which.min(final.costs)]]
 }
 
-## Alternate interface to removeBatchEffect: provide a single design
-## matrix and specify the coefficient effects to remove. Note: use
-## sum-to-zero contrasts for factors and mean-centered transformations
-## for numerics if you want the grand means to remain unaffected by
-## coefficient subtraction.
+# Alternate interface to removeBatchEffect: provide a single design
+# matrix and specify the coefficient effects to remove. Note: use
+# sum-to-zero contrasts for factors and mean-centered transformations
+# for numerics if you want the grand means to remain unaffected by
+# coefficient subtraction.
 subtractCoefs <- function(x, design, coefsToSubtract, ...) {
     assert_that(!anyDuplicated(colnames(design)))
     subtract.design <- design[,coefsToSubtract]
