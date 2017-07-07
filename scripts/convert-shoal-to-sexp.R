@@ -108,7 +108,7 @@ epilogue = "")
 
     ## Replace dashes with underscores so that all options can easily
     ## be accessed by "$"
-    cmdopts %>% setNames(str_replace_all(names(.), "-", "_"))
+    cmdopts %>% setNames(chartr("-", "_", names(.)))
 }
 
 ## Do argument parsing early so the script exits quickly if arguments are invalid

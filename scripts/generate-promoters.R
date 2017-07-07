@@ -148,7 +148,7 @@ epilogue = "Note that all base pair sizes (for the promoter radius) may have an 
 
     ## Replace dashes with underscores so that all options can easily
     ## be accessed by "$"
-    cmdopts %>% setNames(str_replace_all(names(.), "-", "_"))
+    cmdopts %>% setNames(chartr("-", "_", names(.)))
 }
 
 ## Do this early to handle "--help" before wasting time loading

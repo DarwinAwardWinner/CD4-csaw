@@ -130,7 +130,7 @@ get.options <- function(opts) {
 
     ## Replace dashes with underscores so that all options can easily
     ## be accessed by "$"
-    cmdopts %>% setNames(str_replace_all(names(.), "-", "_"))
+    cmdopts %>% setNames(chartr("-", "_", names(.)))
 }
 
 ## Terminate early on argument-processing errors

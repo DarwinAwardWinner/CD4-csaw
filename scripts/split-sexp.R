@@ -38,7 +38,7 @@ get.options <- function(opts) {
     assert_that(str_detect(cmdopts[['output-file-pattern']], c("\\{.*\\}")))
     ## Replace dashes with underscores so that all options can easily
     ## be accessed by "$"
-    cmdopts %>% setNames(str_replace_all(names(.), "-", "_"))
+    cmdopts %>% setNames(chartr("-", "_", names(.)))
 }
 
 print.var.vector <- function(v) {
