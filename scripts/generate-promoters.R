@@ -3,6 +3,9 @@
 library(getopt)
 library(optparse)
 library(assertthat)
+library(rex)
+library(sitools)
+
 num.cores <- 1
 ## Don't default to more than 4 cores
 try({library(parallel); num.cores <- detectCores(); }, silent=TRUE)
@@ -35,44 +38,73 @@ match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg)
     choices[i]
 }
 
-## Kilo, mega, giga, tera
-size.prefixes <- c(k=1e3, m=1e6, g=1e9, t=1e12)
+# Inverse of sitools::f2si
+si2f <- function(string, unit="") {
+    if (length(string) == 0) {
+        return(numeric(0))
+    }
+    sifactor <- c(1e-24, 1e-21, 1e-18, 1e-15, 1e-12, 1e-09, 1e-06,
+                  0.001, 1, 1000, 1e+06, 1e+09, 1e+12, 1e+15, 1e+18, 1e+21,
+                  1e+24)
+    pre <- c("y", "z", "a", "f", "p", "n", "u", "m",
+             "", "k", "M", "G", "T", "P", "E", "Z", "Y")
+
+    rx <- rex(
+        ## Leading whitespace
+        start,
+        zero_or_more(space),
+
+        ## Capture a floating point number
+        capture(
+            ## Sign
+            maybe(one_of("+", "-")),
+            ## Integer part
+            zero_or_more(digit),
+            ## Decimal point
+            maybe("."),
+            ## Fractional part (or integer part when decimal is not
+            ## present)
+            one_or_more(digit),
+            ## Exponential notation
+            maybe(
+                one_of("e", "E"),
+                maybe(one_of("+", "-")),
+                one_or_more(digit)
+            )
+        ),
+
+        ## Space between number and unit
+        zero_or_more(space),
+
+        ## Capture SI prefix
+        capture(maybe(one_of(pre))),
+
+        unit,
+
+        ## Trailing whitespace
+        zero_or_more(space),
+        end
+    )
+
+    m <- str_match(string, rx)
+    base <- as.numeric(m[,2])
+    p <- m[,3]
+    fac <- sifactor[match(p, pre)]
+    base * fac
+}
 
 parse.bp <- function(size) {
-    m <- str_match(size, "^(.*?)(?:([kmgt]?)bp?)?\\s*$")
-    ## m <- str_match(size, "^\\s*(\\d+(?:\\.\\d+))\\s*(?:([kmgt]?)bp?)?\\s*$")
-    base <- suppressWarnings(as.numeric(m[,2]))
-    if (any(is.na(base))) {
-        invalid <- size[is.na(base)]
-        stop(sprintf("Invalid base pair size specification: %s", deparse(head(invalid))))
-    }
-    multiplier <- unname(size.prefixes[m[,3]])
-    multiplier[is.na(multiplier)] <- 1
-    x <- base * multiplier
-    assert_that(!any(is.na(x)))
-    x
+    suppressWarnings({
+        result <- si2f(size, "bp")
+        ## Fall back to just parsing a number without the "bp" suffix
+        result[is.na(result)] <- si2f(size[is.na(result)])
+    })
+    assert_that(!any(is.na(result)))
+    result
 }
 
 format.bp <- function(x) {
-    x %<>% round
-    sapply(x, function(xx) {
-        ## Anything more than this, just use scientific notation
-        if ((xx) >= 1e15) {
-            prefix <= ""
-            multiplier <- 1
-        } else {
-            prefix <- size.prefixes %>% .[. <= xx] %>% which.max %>% names
-            if (is.null(prefix)) {
-                prefix <- ""
-                multiplier <- 1
-            } else {
-                multiplier <- size.prefixes[prefix]
-            }
-        }
-        digits <- max(1, ceiling(log10(xx+1)))
-        numfmt <- str_c("%.", digits, "g%sbp")
-        sprintf(numfmt, xx / multiplier, prefix)
-    })
+    x %>% round %>% f2si("bp") %>% str_replace_all(rex(one_or_more(space)), "")
 }
 
 get.options <- function(opts) {
