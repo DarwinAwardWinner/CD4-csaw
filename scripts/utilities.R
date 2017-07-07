@@ -154,43 +154,19 @@ ggplotly.printer <- function(...) {
     }
 }
 
-## Based on this: https://www.r-bloggers.com/shrinking-rs-pdf-output/
-## Requires some command-line image and PDF manip tools.
-rasterpdf <- function(pdffile, outfile=pdffile, resolution=600, verbose=FALSE) {
-    vmessage <- function(...) {
-        if (verbose) message(...)
+rasterpdf <- function(pdffile, outfile=pdffile, resolution=600) {
+    tempf <- tempfile(pattern="raster", fileext=".pdf")
+    on.exit(unlink(tempf))
+    exitcode <- system2("convert", args=c("-density", resolution, pdffile, tempf),
+                        stdout=FALSE, stderr=FALSE)
+    assert_that(exitcode == 0)
+    assert_that(file.exists(tempf))
+    suppressWarnings(file.rename(tempf, outfile))
+    ## If file still exists, then the rename failed because it's a
+    ## cross-device move, so copy and delete instead.
+    if (file.exists(tempf)) {
+        file.copy(tempf, outfile)
     }
-    require(parallel)
-    wd=getwd()
-    td=tempfile(pattern="rasterpdf")
-    dir.create(td, recursive = TRUE)
-    on.exit(unlink(td, recursive=TRUE))
-    file.copy(pdffile, file.path(td,"toraster.pdf"))
-    setwd(td)
-    on.exit(setwd(wd), add=TRUE)
-    assert_that(file.exists("toraster.pdf"))
-    system2("pdftk", args=c("toraster.pdf", "burst"))
-    files=list.files(pattern="pg_")
-
-    vmessage(paste0("Rasterizing ",length(files)," pages:  (",paste(files,collapse=","),")"))
-    bplapply(files,function(f){
-        system2("gs", args=c("-dBATCH", "-dTextAlphaBits=4", "-dNOPAUSE",
-                             paste0("-r", resolution), "-q", "-sDEVICE=png16m",
-                             paste0("-sOutputFile=",f,".png"),f))
-        system2("convert", args=c("-quality", "100", "-density", resolution,
-                                  paste0(f,".png"),
-                                  paste0(strsplit(f,".",fixed=T)[[1]][1],".pdf")))
-        vmessage(paste0("Finished page ",f))
-        return()
-    })
-    vmessage("Compiling the final pdf")
-    file.remove("toraster.pdf")
-    file.remove(list.files(pattern="png"))
-    setwd(wd)
-    system2("gs", args=c("-dBATCH", "-dNOPAUSE", "-q", "-sDEVICE=pdfwrite",
-                         paste0("-sOutputFile=",outfile),
-                         list.files(path=td, pattern=glob2rx("*.pdf"), full.names=TRUE)))
-    vmessage("Finished!!")
 }
 
 add.numbered.colnames <- function(x, prefix="C") {
