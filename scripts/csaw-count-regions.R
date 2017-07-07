@@ -308,5 +308,7 @@ print.var.vector <- function(v) {
         sample.table$bam_file, regions=target.regions,
         ext=cmdopts$read_extension, param=rparam)
     colData(wcounts) %<>% {cbind(sample.table, .[c("totals", "ext")])}
+    tsmsg("Saving output file")
     saveRDS(wcounts, cmdopts$output_file)
+    tsmsg("Finished.")
 }
