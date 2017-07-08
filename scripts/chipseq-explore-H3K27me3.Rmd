@@ -269,7 +269,7 @@ design.int <- model.matrix(~1 + group, sample.table)
 
 ## SVA
 
-To account for the variable effect of donor, efficiency bias, and as any other sources of systematic bias present in the data, we use SVA to estimate surrogate variables. We do so for each normalization method, including an additional method based on only the windows that are both peak-overlapping and have a mean count greater than 5.
+To account for the variable effect of donor, efficiency bias, and as any other sources of systematic bias present in the data, we use SVA to estimate surrogate variables. We do so for each normalization method, including an additional method based on only the windows that are both peak-overlapping and have a mean count greater than 5.
 
 ```{r sva}
 count.threshold <- 5
