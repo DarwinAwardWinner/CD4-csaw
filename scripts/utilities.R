@@ -20,10 +20,10 @@ si2f <- function(string, unit="") {
         return(numeric(0))
     }
     sifactor <- c(1e-24, 1e-21, 1e-18, 1e-15, 1e-12, 1e-09, 1e-06,
-                  0.001, 1, 1000, 1e+06, 1e+09, 1e+12, 1e+15, 1e+18, 1e+21,
-                  1e+24)
+        0.001, 1, 1000, 1e+06, 1e+09, 1e+12, 1e+15, 1e+18, 1e+21,
+        1e+24)
     pre <- c("y", "z", "a", "f", "p", "n", "u", "m",
-             "", "k", "M", "G", "T", "P", "E", "Z", "Y")
+        "", "k", "M", "G", "T", "P", "E", "Z", "Y")
 
     rx <- rex(
         # Leading whitespace
@@ -171,7 +171,7 @@ rasterpdf <- function(pdffile, outfile=pdffile, resolution=600) {
     tempf <- tempfile(pattern="raster", fileext=".pdf")
     on.exit(unlink(tempf))
     exitcode <- system2("convert", args=c("-density", resolution, pdffile, tempf),
-                        stdout=FALSE, stderr=FALSE)
+        stdout=FALSE, stderr=FALSE)
     assert_that(exitcode == 0)
     assert_that(file.exists(tempf))
     suppressWarnings(file.rename(tempf, outfile))
@@ -242,8 +242,10 @@ estimateDispByGroup <- function(dge, group=as.factor(dge$samples$group), batch, 
 }
 
 # Versions of cpm and aveLogCPM that use an offset matrix instead of lib sizes
-cpmWithOffset <- function(dge, offset=expandAsMatrix(getOffset(dge), dim(dge)),
-                          log = FALSE, prior.count = 0.25, preserve.mean=TRUE, ...) {
+cpmWithOffset <-
+    function(dge, offset=expandAsMatrix(getOffset(dge), dim(dge)),
+             log = FALSE, prior.count = 0.25, preserve.mean=TRUE, ...)
+{
     x <- dge$counts
     if (preserve.mean) {
         # Ensure that the mean logcpm is not changed by the offsets, by setting
@@ -266,15 +268,17 @@ aveLogCPMWithOffset <- function(y, ...) {
     UseMethod("aveLogCPM")
 }
 
-aveLogCPMWithOffset.default <- function (y, offset = NULL, prior.count = 2,
-                                         dispersion = NULL, weights = NULL, ...)
+aveLogCPMWithOffset.default <-
+    function (y, offset = NULL, prior.count = 2,
+              dispersion = NULL, weights = NULL, ...)
 {
     aveLogCPM(y, lib.size = NULL, offset = offset, prior.count = prior.count, dispersion = dispersion, weights = weights, ...)
 }
 
-aveLogCPMWithOffset.DGEList <- function (
-    y, offset = expandAsMatrix(getOffset(y), dim(y)),
-    prior.count = 2, dispersion = NULL, ...) {
+aveLogCPMWithOffset.DGEList <-
+    function (y, offset = expandAsMatrix(getOffset(y), dim(y)),
+              prior.count = 2, dispersion = NULL, ...)
+{
     if (is.null(dispersion)) {
         dispersion <- y$common.dispersion
     }
@@ -286,15 +290,14 @@ aveLogCPMWithOffset.DGEList <- function (
 library(limma)
 
 # Version of voom that uses an offset matrix instead of lib sizes
-voomWithOffset <- function (
-    dge, design = NULL, offset=expandAsMatrix(getOffset(dge), dim(dge)),
-    normalize.method = "none", plot = FALSE, span = 0.5, ...)
+voomWithOffset <-
+    function (dge, design = NULL, offset=expandAsMatrix(getOffset(dge), dim(dge)),
+              normalize.method = "none", plot = FALSE, span = 0.5, ...)
 {
     out <- list()
     out$genes <- dge$genes
     out$targets <- dge$samples
-    if (is.null(design) && diff(range(as.numeric(counts$sample$group))) >
-        0)
+    if (is.null(design) && diff(range(as.numeric(counts$sample$group))) > 0)
         design <- model.matrix(~group, data = counts$samples)
     counts <- dge$counts
     if (is.null(design)) {
@@ -320,15 +323,15 @@ voomWithOffset <- function (
     l <- lowess(sx, sy, f = span)
     if (plot) {
         plot(sx, sy, xlab = "log2( count size + 0.5 )", ylab = "Sqrt( standard deviation )",
-             pch = 16, cex = 0.25)
+            pch = 16, cex = 0.25)
         title("voom: Mean-variance trend")
         lines(l, col = "red")
     }
     f <- approxfun(l, rule = 2)
     if (fit$rank < ncol(design)) {
         j <- fit$pivot[1:fit$rank]
-        fitted.values <- fit$coef[, j, drop = FALSE] %*% t(fit$design[,
-                                                                      j, drop = FALSE])
+        fitted.values <- fit$coef[, j, drop = FALSE] %*%
+            t(fit$design[, j, drop = FALSE])
     }
     else {
         fitted.values <- fit$coef %*% t(fit$design)
@@ -350,13 +353,13 @@ voomWithOffset <- function (
 }
 
 # Version of voom that uses an offset matrix instead of lib sizes
-voomWithQualityWeightsAndOffset <-function (
-    dge, design = NULL,
-    offset=expandAsMatrix(getOffset(dge), dim(dge)),
-    normalize.method = "none",
-    plot = FALSE, span = 0.5, var.design = NULL, method = "genebygene",
-    maxiter = 50, tol = 1e-10, trace = FALSE, replace.weights = TRUE,
-    col = NULL, ...)
+voomWithQualityWeightsAndOffset <-
+    function (dge, design = NULL,
+              offset=expandAsMatrix(getOffset(dge), dim(dge)),
+              normalize.method = "none",
+              plot = FALSE, span = 0.5, var.design = NULL, method = "genebygene",
+              maxiter = 50, tol = 1e-10, trace = FALSE, replace.weights = TRUE,
+              col = NULL, ...)
 {
     counts <- dge$counts
     if (plot) {
@@ -364,19 +367,19 @@ voomWithQualityWeightsAndOffset <-function (
         on.exit(par(oldpar))
     }
     v <- voomWithOffset(dge, design = design, offset = offset, normalize.method = normalize.method,
-                        plot = FALSE, span = span, ...)
+        plot = FALSE, span = span, ...)
     aw <- arrayWeights(v, design = design, method = method, maxiter = maxiter,
-                       tol = tol, var.design = var.design)
+        tol = tol, var.design = var.design)
     v <- voomWithOffset(dge, design = design, weights = aw, offset = offset,
-                        normalize.method = normalize.method, plot = plot, span = span,
-                        ...)
+        normalize.method = normalize.method, plot = plot, span = span,
+        ...)
     aw <- arrayWeights(v, design = design, method = method, maxiter = maxiter,
-                       tol = tol, trace = trace, var.design = var.design)
+        tol = tol, trace = trace, var.design = var.design)
     wts <- asMatrixWeights(aw, dim(v)) * v$weights
     attr(wts, "arrayweights") <- NULL
     if (plot) {
         barplot(aw, names = 1:length(aw), main = "Sample-specific weights",
-                ylab = "Weight", xlab = "Sample", col = col)
+            ylab = "Weight", xlab = "Sample", col = col)
         abline(h = 1, col = 2, lty = 2)
     }
     if (replace.weights) {
@@ -390,10 +393,11 @@ voomWithQualityWeightsAndOffset <-function (
 }
 
 # Convenience function for alternating dupCor and voom until convergence
-voomWithDuplicateCorrelation <- function(
-    counts, design = NULL, plot = FALSE, block = NULL, trim = 0.15,
-    voom.fun=voom, dupCor.fun=duplicateCorrelation, initial.correlation=0,
-    niter=5, tol=1e-6, verbose=TRUE, ...) {
+voomWithDuplicateCorrelation <-
+    function(counts, design = NULL, plot = FALSE, block = NULL, trim = 0.15,
+             voom.fun=voom, dupCor.fun=duplicateCorrelation, initial.correlation=0,
+             niter=5, tol=1e-6, verbose=TRUE, ...)
+{
     assert_that(niter >= 1)
     assert_that(is.finite(niter))
 
@@ -445,8 +449,7 @@ voomWithDuplicateCorrelation <- function(
 
 library(codingMatrices)
 # Variant of code_control that generates more verbose column names
-code_control_named <- function (n, contrasts = TRUE, sparse = FALSE)
-{
+code_control_named <- function (n, contrasts = TRUE, sparse = FALSE) {
     if (is.numeric(n) && length(n) == 1L) {
         if (n > 1L)
             levels <- .zf(seq_len(n))
@@ -528,14 +531,14 @@ plotpvals <- function(pvals, ptn=propTrueNull(pvals)) {
     ggplot(df) + aes(x=p) +
         geom_histogram(aes(y = ..density..), binwidth=0.01, boundary=0) +
         geom_hline(aes(yintercept=y, color=Line),
-                   data=linedf, alpha=0.5, show.legend=TRUE) +
+            data=linedf, alpha=0.5, show.legend=TRUE) +
         scale_color_manual(name="Ref. Line", values=c("blue", "red")) +
         xlim(0,1) + ggtitle(sprintf("P-value distribution (Est. %0.2f%% signif.)",
-                                    100 * (1-ptn))) +
+            100 * (1-ptn))) +
         expand_limits(y=c(0, 1.25)) +
         xlab("p-value") + ylab("Relative frequency") +
         theme(legend.position=c(0.95, 0.95),
-              legend.justification=c(1,1))
+            legend.justification=c(1,1))
 }
 
 # Misc functions to facilitate alternative FDR calculations for limma/edgeR
@@ -590,7 +593,7 @@ get.pval.colname <- function(ttab) {
         cnames <- colnames(ttab)
     }
     pcol <- match(c("p.value", "pvalue", "pval", "p"),
-                  tolower(cnames)) %>%
+        tolower(cnames)) %>%
         na.omit %>% .[1]
     pcolname <- cnames[pcol]
     if (length(pcolname) != 1)
@@ -646,14 +649,14 @@ add.fdrtool <- function(ttab, verbose=FALSE, plot=TRUE, convert.to.zscores, cuto
             }
         }
         fdrmod <- fdrtool(Zscore, statistic="normal", verbose=verbose,
-                          plot=plot, cutoff.method=cutoff.method, ...)
+            plot=plot, cutoff.method=cutoff.method, ...)
 
     } else {
         if (missing(cutoff.method)) {
             cutoff.method <- "fndr"
         }
         fdrmod <- fdrtool(P, statistic="pvalue", verbose=verbose,
-                          plot=plot, cutoff.method=cutoff.method,...)
+            plot=plot, cutoff.method=cutoff.method,...)
     }
     fdrdf <- do.call(data.frame, fdrmod[c("pval", "qval", "lfdr")])
     for (i in names(fdrdf)) {
@@ -696,7 +699,7 @@ getBCVTable <- function(y, design, ..., rawdisp) {
     }
     # Estimate dispersions now if they are not already present
     if (! all(c("common.dispersion", "trended.dispersion", "tagwise.dispersion") %in%
-              names(y))) {
+                  names(y))) {
         if (is.null(design) && !design.passed) {
             warning("Estimating dispersions with no design matrix")
         }
@@ -723,7 +726,7 @@ getBCVTable <- function(y, design, ..., rawdisp) {
     } else {
         # Assume anything else is a numeric vector of raw dispersions
         assert_that(is.numeric(rawdisp),
-                    length(rawdisp) == nrow(y))
+            length(rawdisp) == nrow(y))
         y.raw <- y
         y.raw$tagwise.dispersion <- rawdisp
         y.raw$prior.df <- y.raw$prior.n <- rep(0, length(rawdisp))
@@ -786,17 +789,17 @@ ggplotBCV <- function(y, xlab="Average log CPM", ylab="Biological coefficient of
 power_trans <- function(pow) {
     name <- sprintf("^%s", pow)
     trans_new(name,
-              transform=function(x) x ^ pow,
-              inverse=function(x) x ^ (1/pow),
-              domain =c(0,Inf))
+        transform=function(x) x ^ pow,
+        inverse=function(x) x ^ (1/pow),
+        domain =c(0,Inf))
 }
 
 clamp_trans <- function(lower_threshold=0, upper_threshold=1) {
     name <- sprintf("Clamp values outside of [%s, %s]", lower_threshold, upper_threshold)
     trans_new(name,
-              transform=function(x) pmin(upper_threshold, pmax(lower_threshold, x)),
-              # transform is only invertible for part of the range
-              inverse=identity)
+        transform=function(x) pmin(upper_threshold, pmax(lower_threshold, x)),
+        # transform is only invertible for part of the range
+        inverse=identity)
 }
 
 # Do multiple runs of t-SNE and pick the one with the lowest final
@@ -823,7 +826,7 @@ subtractCoefs <- function(x, design, coefsToSubtract, ...) {
 }
 
 BPselectModel <- function (y, designlist, criterion = "aic", df.prior = 0, s2.prior = NULL,
-          s2.true = NULL, ..., BPPARAM=bpparam())
+                           s2.true = NULL, ..., BPPARAM=bpparam())
 {
     ym <- as.matrix(dge)
     if (any(is.na(ym)))
@@ -848,9 +851,8 @@ BPselectModel <- function (y, designlist, criterion = "aic", df.prior = 0, s2.pr
             npar <- narrays - fit$df.residual[1]
             if (i == 1) {
                 IC <- matrix(nrow = nrow(fit), ncol = nmodels,
-                             dimnames = list(Probes = rownames(fit), Models = models))
-                if (length(s2.true) != nrow(fit) && length(s2.true) !=
-                    1)
+                    dimnames = list(Probes = rownames(fit), Models = models))
+                if (length(s2.true) != nrow(fit) && length(s2.true) != 1)
                     stop("s2.true wrong length")
             }
             IC[, i] <- fit$df.residual * fit$sigma^2/s2.true +
@@ -868,11 +870,11 @@ BPselectModel <- function (y, designlist, criterion = "aic", df.prior = 0, s2.pr
                             fit$sigma^2)/ntotal
             if (i == 1)
                 IC <- matrix(nrow = nrow(fit), ncol = nmodels,
-                             dimnames = list(Probes = rownames(fit), Models = models))
+                    dimnames = list(Probes = rownames(fit), Models = models))
             IC[, i] <- ntotal * log(s2.post) + npar * penalty
         }
     }
     pref <- factor(apply(IC, 1, which.min), levels = 1:nmodels,
-                   labels = models)
+        labels = models)
     list(IC = IC, pref = pref, criterion = criterion)
 }
