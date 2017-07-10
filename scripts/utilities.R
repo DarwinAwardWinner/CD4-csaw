@@ -185,6 +185,7 @@ rasterpdf <- function(pdffile, outfile=pdffile, resolution=600) {
 
 add.numbered.colnames <- function(x, prefix="C") {
     x %>% set_colnames(glue("{prefix}{num}", num=seq(from=1, length.out=ncol(x))))
+}
 
 # For each column of a data frame, if it is a character vector with at least one
 # repeated value, convert that column to a factor
