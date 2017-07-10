@@ -58,6 +58,7 @@ library(reshape2)
 library(stringr)
 library(stringi)
 library(rex)
+library(glue)
 
 print.var.vector <- function(v) {
     for (i in names(v)) {
@@ -75,7 +76,7 @@ read.idr.table <- function(file) {
 
 cutIDR <- function(x, thresholds=c(0.01, 0.05, 0.1)) {
     fullbreaks <- c(0, thresholds, 1)
-    labels <- c(sprintf("<=%s", thresholds), sprintf(">%s", tail(thresholds, 1)))
+    labels <- c(glue("<={thresholds}"), glue(">{tail(thresholds, 1)}"))
     cut(x, breaks=fullbreaks, labels=labels) %>%
         factor(levels=rev(levels(.)))
 }

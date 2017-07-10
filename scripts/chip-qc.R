@@ -14,6 +14,7 @@ tryCatch(setwd(file.path(dirname(getScriptPath()), "..")),
          error=function(...) tsmsg("WARNING: Could not determine script path. Ensure that you are already in the correct directory."))
 
 library(stringr)
+library(glue)
 library(magrittr)
 library(GenomicRanges)
 library(Rsubread)
@@ -56,8 +57,8 @@ sample.table <- read.xlsx("data_files/ChIP-Seq/sample-tables.xlsx", "Samples") %
     ## Make sure no factorial variables can be accidentally
     ## numericized by prefixing them with letters
     mutate(
-        Donor=sprintf("Dn%s", Donor),
-        Day=sprintf("D%i", Day)
+        Donor=glue("Dn{Donor}"),
+        Day=glue("D{Day}")
     ) %>%
     ## Compute full path to files
     mutate(
@@ -68,7 +69,7 @@ sample.table <- read.xlsx("data_files/ChIP-Seq/sample-tables.xlsx", "Samples") %
     mutate(
         ChIP=factor(ChIP),
         Celltype=factor(Celltype, levels=c("Naive", "Memory")),
-        Day=factor(Day, levels=sprintf("D%s", c(0,1,5,14))),
+        Day=factor(Day, levels=glue("D{day}", day=c(0,1,5,14))),
         TreatmentGroup=interaction(Celltype, Day, sep=""),
         Group=interaction(ChIP, TreatmentGroup, sep="."),
         Donor=factor(Donor)

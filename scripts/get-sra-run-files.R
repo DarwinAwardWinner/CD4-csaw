@@ -2,6 +2,7 @@
 
 suppressPackageStartupMessages(suppressMessages({
     library(stringr)
+    library(glue)
     library(GEOquery)
     library(SRAdb)
     library(magrittr)
@@ -54,14 +55,10 @@ suppressPackageStartupMessages(suppressMessages({
                       c("asperaweb_id_dsa.openssh",
                         "../etc/asperaweb_id_dsa.openssh"))))
         if (!is.na(ascp.key.file)) {
-            cmd <- sprintf(
-                "%s -T -k1 -i %s",
-                shQuote(ascp.path),
-                shQuote(ascp.key.file))
-            ## cmd <- sprintf(
-            ##     "%s -q -k2",
-            ##     shQuote(ascp.path),
-            ##     shQuote(ascp.key.file))
+            cmd <- glue(
+                "{ascp} -T -k1 -i {keyfile}",
+                ascp=shQuote(ascp.path),
+                keyfile=shQuote(ascp.key.file))
             getSRAfile <- function(...) {
                 SRAdb::getSRAfile(..., srcType="fasp",
                                   ascpCMD = cmd)

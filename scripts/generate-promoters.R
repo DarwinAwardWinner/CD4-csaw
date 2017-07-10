@@ -10,8 +10,9 @@ num.cores <- 1
 ## Don't default to more than 4 cores
 try({library(parallel); num.cores <- detectCores(); }, silent=TRUE)
 
-match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg))
-{
+## Extension of match.arg with automatic detection of the argument
+## name for use in error messages.
+match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg), ignore.case=FALSE) {
     if (missing(choices)) {
         formal.args <- formals(sys.function(sys.parent()))
         choices <- eval(formal.args[[as.character(substitute(arg))]])
@@ -19,16 +20,20 @@ match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg)
     if (is.null(arg))
         return(choices[1L])
     else if (!is.character(arg))
-        stop(sprintf("%s must be NULL or a character vector", deparse(argname)))
+        stop(glue("{deparse(argname)} must be NULL or a character vector"))
     if (!several.ok) {
         if (identical(arg, choices))
             return(arg[1L])
         if (length(arg) > 1L)
-            stop(sprintf("%s must be of length 1", deparse(argname)))
+            stop(glue("{deparse(argname)} must be of length 1"))
     }
     else if (length(arg) == 0L)
-        stop(sprintf("%s must be of length >= 1", deparse(argname)))
-    i <- pmatch(arg, choices, nomatch = 0L, duplicates.ok = TRUE)
+        stop(glue("{deparse(argname)} must be of length >= 1"))
+    fold_case <- identity
+    if (ignore.case) {
+        fold_case <- tolower
+    }
+    i <- pmatch(fold_case(arg), fold_case(choices), nomatch = 0L, duplicates.ok = TRUE)
     if (all(i == 0L))
         stop(gettextf("%s should be one of %s", deparse(argname), paste(dQuote(choices),
             collapse = ", ")), domain = NA)
@@ -290,7 +295,7 @@ print.var.vector <- function(v) {
 
     tsmsg("Reading annotation data")
     txdb <- get.txdb(cmdopts$annotation_txdb)
-    tsmsg(sprintf("Getting %s-radius promoters", format.bp(cmdopts$promoter_radius)))
+    tsmsg(glue("Getting {format.bp(cmdopts$promoter_radius)}-radius promoters", ))
     all.promoters <- suppressWarnings(promoters(txdb, upstream=cmdopts$promoter_radius, downstream = cmdopts$promoter_radius)) %>%
         trim %>% keepSeqlevels(std.chr)
 
@@ -309,7 +314,8 @@ print.var.vector <- function(v) {
     merged.promoters <- bplapply(gene.promoters, function(gp) {
         gp.reduced <- reduce(gp)
         gp.reduced$GeneID <- gp$GeneID[1]
-        names(gp.reduced) <- gp.reduced$PromoterID <- sprintf("%s-P%s", gp.reduced$GeneID, seq_along(gp.reduced))
+        names(gp.reduced) <- gp.reduced$PromoterID <-
+            glue("{gene}-P{pnum}", gene=gp.reduced$GeneID, pnum=seq_along(gp.reduced))
         pgroup <- gp.reduced$PromoterID[nearest(gp, gp.reduced)]
         gp.reduced$TxID <- CharacterList(split(gp$TxID, pgroup))[gp.reduced$PromoterID]
         gp.reduced

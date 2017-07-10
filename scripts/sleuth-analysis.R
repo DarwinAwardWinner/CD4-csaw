@@ -3,7 +3,9 @@
 library(getopt)
 library(optparse)
 
-match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg)) {
+## Extension of match.arg with automatic detection of the argument
+## name for use in error messages.
+match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg), ignore.case=FALSE) {
     if (missing(choices)) {
         formal.args <- formals(sys.function(sys.parent()))
         choices <- eval(formal.args[[as.character(substitute(arg))]])
@@ -11,16 +13,20 @@ match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg)
     if (is.null(arg))
         return(choices[1L])
     else if (!is.character(arg))
-        stop(sprintf("%s must be NULL or a character vector", deparse(argname)))
+        stop(glue("{deparse(argname)} must be NULL or a character vector"))
     if (!several.ok) {
         if (identical(arg, choices))
             return(arg[1L])
         if (length(arg) > 1L)
-            stop(sprintf("%s must be of length 1", deparse(argname)))
+            stop(glue("{deparse(argname)} must be of length 1"))
     }
     else if (length(arg) == 0L)
-        stop(sprintf("%s must be of length >= 1", deparse(argname)))
-    i <- pmatch(arg, choices, nomatch = 0L, duplicates.ok = TRUE)
+        stop(glue("{deparse(argname)} must be of length >= 1"))
+    fold_case <- identity
+    if (ignore.case) {
+        fold_case <- tolower
+    }
+    i <- pmatch(fold_case(arg), fold_case(choices), nomatch = 0L, duplicates.ok = TRUE)
     if (all(i == 0L))
         stop(gettextf("%s should be one of %s", deparse(argname), paste(dQuote(choices),
             collapse = ", ")), domain = NA)

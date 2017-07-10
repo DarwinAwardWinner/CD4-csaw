@@ -840,7 +840,7 @@ rule count_rnaseq_hisat2_ensembl:
         expected_bam_files=','.join(expand(
             'aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam',
             SRA_run=rnaseq_samplemeta['SRA_run'])),
-        bam_file_pattern='aligned/rnaseq_hisat2_grch38_snp_tran/%s/Aligned.bam',
+        bam_file_pattern='aligned/rnaseq_hisat2_grch38_snp_tran/{SAMPLE}/Aligned.bam',
     version: R_package_version('RSubread')
     threads: len(rnaseq_samplemeta)
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
@@ -876,7 +876,7 @@ rule count_rnaseq_hisat2_knownGene:
         expected_bam_files=','.join(expand(
             'aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam',
             SRA_run=rnaseq_samplemeta['SRA_run'])),
-        bam_file_pattern='aligned/rnaseq_hisat2_grch38_snp_tran/%s/Aligned.bam',
+        bam_file_pattern='aligned/rnaseq_hisat2_grch38_snp_tran/{SAMPLE}/Aligned.bam',
     version: R_package_version('RSubread')
     threads: len(rnaseq_samplemeta)
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
@@ -913,7 +913,7 @@ rule count_rnaseq_star_ensembl:
         expected_bam_files=','.join(expand(
             'aligned/rnaseq_star_hg38.analysisSet_ensembl.{{release}}/{SRA_run}/Aligned.sortedByCoord.out.bam',
             SRA_run=rnaseq_samplemeta['SRA_run'])),
-        bam_file_pattern=lambda wildcards: expand('aligned/rnaseq_star_hg38.analysisSet_ensembl.{release}/%s/Aligned.sortedByCoord.out.bam', **wildcards)
+        bam_file_pattern=lambda wildcards: expand('aligned/rnaseq_star_hg38.analysisSet_ensembl.{release}/{{SAMPLE}}/Aligned.sortedByCoord.out.bam', **wildcards)
     version: R_package_version('RSubread')
     threads: len(rnaseq_samplemeta)
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']

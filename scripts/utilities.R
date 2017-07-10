@@ -1,5 +1,6 @@
 library(stringr)
 library(rex)
+library(glue)
 library(sitools)
 library(glue)
 library(sitools)
@@ -183,8 +184,7 @@ rasterpdf <- function(pdffile, outfile=pdffile, resolution=600) {
 }
 
 add.numbered.colnames <- function(x, prefix="C") {
-    x %>% set_colnames(sprintf("%s%i", prefix, seq(from=1, length.out=ncol(x))))
-}
+    x %>% set_colnames(glue("{prefix}{num}", num=seq(from=1, length.out=ncol(x))))
 
 # For each column of a data frame, if it is a character vector with at least one
 # repeated value, convert that column to a factor
@@ -416,18 +416,18 @@ voomWithDuplicateCorrelation <-
         warning("Not running duplicateCorrelation because block is NULL.")
     }
     if (verbose) {
-        message(sprintf("Initial guess for duplicate correlation before 1st iteration: %s", initial.correlation))
+        message(glue("Initial guess for duplicate correlation before 1st iteration: {initial.correlation}"))
     }
     dupcor <- dupCor.fun(elist, design, block=block, trim=trim)
     iter.num <- iter.num + 1
     if (verbose) {
-        message(sprintf("Duplicate correlation after %s iteration: %s", toOrdinal(iter.num), dupcor$consensus.correlation))
+        message(glue("Duplicate correlation after {toOrdinal(iter.num)} iteration: {dupcor$consensus.correlation}"))
     }
     while (iter.num < niter) {
         if (!is.null(tol) && is.finite(tol)) {
             if (abs(dupcor$consensus.correlation - prev.cor) <= tol) {
                 if (verbose) {
-                    message(sprintf("Stopping after %s iteration because tolerance threshold was reached.", toOrdinal(iter.num)))
+                    message(glue("Stopping after {toOrdinal(iter.num)} iteration because tolerance threshold was reached."))
                 }
                 break
             }
@@ -437,7 +437,7 @@ voomWithDuplicateCorrelation <-
         dupcor <- dupCor.fun(elist, design, block=block, trim=trim)
         iter.num <- iter.num + 1
         if (verbose) {
-            message(sprintf("Duplicate correlation after %s iteration: %s", toOrdinal(iter.num), dupcor$consensus.correlation))
+            message(glue("Duplicate correlation after toOrdinal(iter.num) iteration: dupcor$consensus.correlation"))
         }
     }
     elist <- voom.fun(counts, design=design, plot=plot, block=block, correlation=dupcor$consensus.correlation, ...)
@@ -533,8 +533,7 @@ plotpvals <- function(pvals, ptn=propTrueNull(pvals)) {
         geom_hline(aes(yintercept=y, color=Line),
             data=linedf, alpha=0.5, show.legend=TRUE) +
         scale_color_manual(name="Ref. Line", values=c("blue", "red")) +
-        xlim(0,1) + ggtitle(sprintf("P-value distribution (Est. %0.2f%% signif.)",
-            100 * (1-ptn))) +
+        xlim(0,1) + ggtitle(glue("P-value distribution (Est. {format(100 * (1-ptn), digits=3)}% signif.)")) +
         expand_limits(y=c(0, 1.25)) +
         xlab("p-value") + ylab("Relative frequency") +
         theme(legend.position=c(0.95, 0.95),
@@ -787,7 +786,7 @@ ggplotBCV <- function(y, xlab="Average log CPM", ylab="Biological coefficient of
 
 # Utilities for ggplot2 corrdinate transformation
 power_trans <- function(pow) {
-    name <- sprintf("^%s", pow)
+    name <- glue("^{pow}")
     trans_new(name,
         transform=function(x) x ^ pow,
         inverse=function(x) x ^ (1/pow),
@@ -795,7 +794,7 @@ power_trans <- function(pow) {
 }
 
 clamp_trans <- function(lower_threshold=0, upper_threshold=1) {
-    name <- sprintf("Clamp values outside of [%s, %s]", lower_threshold, upper_threshold)
+    name <- glue("Clamp values outside of [{lower_threshold}, {upper_threshold}]")
     trans_new(name,
         transform=function(x) pmin(upper_threshold, pmax(lower_threshold, x)),
         # transform is only invertible for part of the range

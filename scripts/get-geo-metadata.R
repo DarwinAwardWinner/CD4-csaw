@@ -16,10 +16,12 @@ tryCatch(setwd(file.path(dirname(getScriptPath()), "..")),
 library(GEOquery)
 library(SRAdb)
 library(stringr)
+library(glue)
 library(magrittr)
 library(dplyr)
 library(assertthat)
 library(lubridate)
+library(rex)
 
 tsmsg <- function(...) {
     message(base::date(), ": ", ...)
@@ -44,7 +46,14 @@ get_channel_meta <- function (pdata) {
     num.channels <- max(as.numeric(pdata$channel_count))
     assert_that(num.channels >= 1)
     lapply(seq_len(num.channels), function(chan) {
-        chan_regexp <- sprintf("ch%s(\\.\\d+)?$", chan)
+        chan_regexp <- rex(
+            "ch", chan,
+            maybe(
+                ".",
+                one_or_more(digit)
+            ),
+            end
+        )
         pdata[str_detect(colnames(pdata), chan_regexp)]
     })
 }
@@ -108,13 +117,13 @@ samplemeta <- lapply(esets, function(eset) {
         mutate(cell_type=factor(cell_type, levels=c("Naive", "Memory")),
                activated=as.logical(activated),
                days_after_activation=as.numeric(days_after_activation),
-               donor_id=sprintf("D%s", donor_id),
+               donor_id=glue("D{donor_id}"),
                submission_date=mdy(submission_date),
                last_update_date=mdy(last_update_date)) %>%
         ## Only in RNA-seq
         mutate_if_present(
             "technical_batch",
-            technical_batch=sprintf("B%s", technical_batch),
+            technical_batch=glue("B{technical_batch}"),
             libType=ifelse(technical_batch == "B1", "SF", "SR")) %>%
         ## Only in ChIP-seq
         mutate_if_present(
@@ -126,5 +135,5 @@ assert_that(all(!is.na(unlist(samplemeta))))
 
 tsmsg("Saving sample metadata")
 for (i in names(samplemeta)) {
-    saveRDS(samplemeta[[i]], file.path("saved_data", sprintf("samplemeta-%s.RDS", i)))
+    saveRDS(samplemeta[[i]], file.path("saved_data", glue("samplemeta-{i}.RDS")))
 }

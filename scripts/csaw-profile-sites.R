@@ -14,6 +14,7 @@ tryCatch(setwd(file.path(dirname(getScriptPath()), "..")),
          error=function(...) tsmsg("WARNING: Could not determine script path. Ensure that you are already in the correct directory."))
 
 library(stringr)
+library(glue)
 library(magrittr)
 library(GenomicRanges)
 library(rtracklayer)
@@ -35,7 +36,7 @@ tsmsg("Loading sample data")
 
 sample.table <- readRDS("saved_data/samplemeta-ChIPSeq.RDS") %>%
     ## Compute full path to BAM file
-    mutate(bam_file=sprintf("aligned/chipseq_bowtie2_hg38.analysisSet/%s/Aligned.bam", SRA_run)) %>%
+    mutate(bam_file=glue("aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam")) %>%
     ## Ensure that days_after_activation is a factor and can't be
     ## interpreted as a numeric
     mutate(days_after_activation=days_after_activation %>%

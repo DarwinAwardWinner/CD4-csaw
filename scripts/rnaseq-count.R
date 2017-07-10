@@ -6,8 +6,9 @@ num.cores <- 1
 ## Don't default to more than 4 cores
 try({library(parallel); num.cores <- min(4, detectCores()); }, silent=TRUE)
 
-match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg))
-{
+## Extension of match.arg with automatic detection of the argument
+## name for use in error messages.
+match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg), ignore.case=FALSE) {
     if (missing(choices)) {
         formal.args <- formals(sys.function(sys.parent()))
         choices <- eval(formal.args[[as.character(substitute(arg))]])
@@ -15,16 +16,20 @@ match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg)
     if (is.null(arg))
         return(choices[1L])
     else if (!is.character(arg))
-        stop(sprintf("%s must be NULL or a character vector", deparse(argname)))
+        stop(glue("{deparse(argname)} must be NULL or a character vector"))
     if (!several.ok) {
         if (identical(arg, choices))
             return(arg[1L])
         if (length(arg) > 1L)
-            stop(sprintf("%s must be of length 1", deparse(argname)))
+            stop(glue("{deparse(argname)} must be of length 1"))
     }
     else if (length(arg) == 0L)
-        stop(sprintf("%s must be of length >= 1", deparse(argname)))
-    i <- pmatch(arg, choices, nomatch = 0L, duplicates.ok = TRUE)
+        stop(glue("{deparse(argname)} must be of length >= 1"))
+    fold_case <- identity
+    if (ignore.case) {
+        fold_case <- tolower
+    }
+    i <- pmatch(fold_case(arg), fold_case(choices), nomatch = 0L, duplicates.ok = TRUE)
     if (all(i == 0L))
         stop(gettextf("%s should be one of %s", deparse(argname), paste(dQuote(choices),
             collapse = ", ")), domain = NA)
@@ -43,7 +48,7 @@ get.options <- function(opts) {
         make_option(c("-c", "--sample-id-column"), type="character", default="Sample",
                     help="Sample metadata column name that holds the sample IDs. These will be substituted into '--bam-file-pattern' to determine the BAM file names."),
         make_option(c("-p", "--bam-file-pattern"), metavar="PATTERN", type="character",
-                    help="(REQUIRED) Format string to convert sample IDs into BAM file paths. This should contain a '%s' wherever the sample ID should be substituted ('%s' can occur multiple times),. Example: 'bam_files/Sample_%s/Aligned.bam"),
+                    help="(REQUIRED) Format string to convert sample IDs into BAM file paths. This should contain the string '{SAMPLE}' wherever the sample ID should be substituted (this can occur multiple times),. Example: 'bam_files/Sample_{SAMPLE}/Aligned.bam"),
         make_option(c("-o", "--output-file"), metavar="FILENAME.RDS", type="character",
                     help="(REQUIRED) Output file name. The SummarizedExperiment object containing the counts will be saved here using saveRDS, so it should end in '.RDS'."),
         make_option(c("-b", "--expected-bam-files"), metavar="BAMFILE1,BAMFILE2,...", type="character",
@@ -196,6 +201,8 @@ featureCountsParallel <- function(files, ...) {
         combineFCResults
 }
 
+## TODO: Move to utilities.R
+
 ## Read a table from a R data file, csv, or xlsx file. Returns a data
 ## frame or thorws an error.
 read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL,
@@ -221,7 +228,7 @@ read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NU
                 return(result)
             }
         }
-        stop(sprintf("Could not read a data frame from %s as R data, csv, or xlsx", deparse(filename)))
+        stop(glue("Could not read a data frame from {deparse{filename}} as R data, csv, or xlsx"))
     })
 }
 
@@ -392,12 +399,6 @@ print.var.vector <- function(v) {
     invisible(v)
 }
 
-## Like sprintf, but inserts the same value into every placeholder
-sprintf.single.value <- function(fmt, value) {
-    ## Max function arguments is 100
-    arglist = c(list(fmt=fmt), rep(list(value), 99))
-    do.call(sprintf, arglist)
-}
 
 ## Guess type of ID
 identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL", "UNIGENE"), threshold=0.5) {
@@ -415,7 +416,7 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
     idcounts %<>% sort(decreasing = TRUE)
     result <- names(idcounts)[1]
     if (idcounts[result] / length(ids) < threshold) {
-        stop(sprintf("Could not identify more than %.0f%% of given IDs as any of %s", threshold * 100, deparse(idtypes)))
+        stop(glue("Could not identify more than {format(threshold * 100, digits=2)}%% of given IDs as any of {deparse(idtypes)}"))
     }
     tsmsg("Detected gene IDs as ", result)
     attr(result, "counts") <- idcounts
@@ -454,7 +455,7 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
 
     rownames(samplemeta) <- samplemeta[[cmdopts$sample_id_column]]
 
-    samplemeta$bam_file <- sprintf.single.value(cmdopts$bam_file_pattern, samplemeta[[cmdopts$sample_id_column]])
+    samplemeta$bam_file <- glue(cmdopts$bam_file_pattern, SAMPLE=samplemeta[[cmdopts$sample_id_column]], .envir=emptyenv())
 
     if ("expected_bam_files" %in% names(cmdopts)) {
         tryCatch({
@@ -464,10 +465,10 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
             unexpected_existing <- setdiff(samplemeta$bam_file, cmdopts$expected_bam_files)
             expected_but_missing <- setdiff(cmdopts$expected_bam_files, samplemeta$bam_file)
             if (length(unexpected_existing) > 0) {
-                tsmsg(sprintf("Got unexpected bam files: %s", deparse(unexpected_existing)))
+                tsmsg(glue("Got unexpected bam files: {deparse(unexpected_existing)}"))
             }
             if (length(expected_but_missing) > 0) {
-                tsmsg(sprintf("Didn't find expected bam files: %s", deparse(expected_but_missing)))
+                tsmsg(glue("Didn't find expected bam files: {deparse(expected_but_missing)}"))
             }
             stop("Bam file list was not as expected")
         })

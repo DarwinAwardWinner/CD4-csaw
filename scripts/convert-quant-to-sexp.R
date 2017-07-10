@@ -4,6 +4,7 @@ library(getopt)
 library(optparse)
 library(magrittr)
 library(assertthat)
+library(glue)
 
 num.cores <- 1
 ## Don't default to more than 4 cores
@@ -19,15 +20,15 @@ match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg)
     if (is.null(arg))
         return(choices[1L])
     else if (!is.character(arg))
-        stop(sprintf("%s must be NULL or a character vector", deparse(argname)))
+        stop(glue("{deparse(argname)} must be NULL or a character vector"))
     if (!several.ok) {
         if (identical(arg, choices))
             return(arg[1L])
         if (length(arg) > 1L)
-            stop(sprintf("%s must be of length 1", deparse(argname)))
+            stop(glue("{deparse(argname)} must be of length 1"))
     }
     else if (length(arg) == 0L)
-        stop(sprintf("%s must be of length >= 1", deparse(argname)))
+        stop(glue("{deparse(argname)} must be of length >= 1"))
     fold_case <- identity
     if (ignore.case) {
         fold_case <- tolower
@@ -49,7 +50,7 @@ get.options <- function(opts) {
         make_option(c("-c", "--sample-id-column"), type="character", default="Sample",
                     help="Sample metadata column name that holds the sample IDs. These will be substituted into '--abundance-file-pattern' to determine the abundance file names."),
         make_option(c("-a", "--abundance-file-pattern"), metavar="PATTERN", type="character",
-                    help="(REQUIRED) Format string to convert sample IDs into file paths to the abundance.h5 file for each sample. This should contain a '%s' wherever the sample ID should be substituted ('%s' can occur multiple times),. Example: 'kallisto_quant/Sample_%s/abundance.h5'"),
+                    help="(REQUIRED) Format string to convert sample IDs into file paths to the abundance.h5 file for each sample. This should contain the string '{SAMPLE}' wherever the sample ID should be substituted (this can occur multiple times),. Example: 'kallisto_quant/Sample_{SAMPLE}/abundance.h5'"),
         make_option(c("-l", "--aggregate-level"), metavar="LEVEL", type="character", default="auto",
                     help="Whether to save aggregated gene counts or transcript counts in the output file. By default, aggregated gene counts are saved if a gene annotation is provided, and transcript counts are saved otherwise. You can force one or the other by specifying 'gene' or 'transcript' for this option."),
         make_option(c("-o", "--output-file"), metavar="FILENAME.RDS", type="character",
@@ -199,6 +200,8 @@ save.RDS.or.RDA <-
     }
 }
 
+## TODO: Move to utilities.R
+
 ## Read a table from a R data file, csv, or xlsx file. Returns a data
 ## frame or thorws an error.
 read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL,
@@ -224,7 +227,7 @@ read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NU
                 return(result)
             }
         }
-        stop(sprintf("Could not read a data frame from %s as R data, csv, or xlsx", deparse(filename)))
+        stop(glue("Could not read a data frame from {deparse{filename}} as R data, csv, or xlsx"))
     })
 }
 
@@ -412,13 +415,6 @@ print.var.vector <- function(v) {
     invisible(v)
 }
 
-## Like sprintf, but inserts the same value into every placeholder
-sprintf.single.value <- function(fmt, value) {
-    ## Max function arguments is 100
-    arglist = c(list(fmt=fmt), rep(list(value), 99))
-    do.call(sprintf, arglist)
-}
-
 {
 
     cmdopts <- get.options(commandArgs(TRUE))
@@ -437,7 +433,7 @@ sprintf.single.value <- function(fmt, value) {
     tsmsg("Running with ", cmdopts$threads, " threads")
     registerDoParallel(cores=cmdopts$threads)
 
-    ## Expand expected_bam_files into vector
+    ## Expand expected_abundance_files into vector
     if ("expected_abundance_files" %in% names(cmdopts)) {
         cmdopts$expected_abundance_files %<>% str_split(",") %>% unlist
     }
@@ -459,7 +455,7 @@ sprintf.single.value <- function(fmt, value) {
 
     rownames(samplemeta) <- samplemeta$sample <- samplemeta[[cmdopts$sample_id_column]]
 
-    samplemeta$path <- sprintf.single.value(cmdopts$abundance_file_pattern, samplemeta[[cmdopts$sample_id_column]])
+    samplemeta$path <- glue(cmdopts$abundance_file_pattern, SAMPLE=samplemeta[[cmdopts$sample_id_column]], .envir=emptyenv())
 
     if ("expected_abundance_files" %in% names(cmdopts)) {
         tryCatch({
@@ -469,10 +465,10 @@ sprintf.single.value <- function(fmt, value) {
             unexpected_existing <- setdiff(samplemeta$path, cmdopts$expected_abundance_files)
             expected_but_missing <- setdiff(cmdopts$expected_abundance_files, samplemeta$path)
             if (length(unexpected_existing) > 0) {
-                tsmsg(sprintf("Got unexpected abundance files: %s", deparse(unexpected_existing)))
+                tsmsg(glue("Got unexpected abundance files: {deparse(unexpected_existing)}"))
             }
             if (length(expected_but_missing) > 0) {
-                tsmsg(sprintf("Didn't find expected abundance files: %s", deparse(expected_but_missing)))
+                tsmsg(glue("Didn't find expected abundance files: {deparse(expected_but_missing)}"))
             }
             stop("Abundance file list was not as expected")
         })

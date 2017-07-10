@@ -4,6 +4,7 @@ library(getopt)
 library(optparse)
 library(magrittr)
 library(assertthat)
+library(glue)
 
 num.cores <- 1
 ## Don't default to more than 4 cores
@@ -19,15 +20,15 @@ match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg)
     if (is.null(arg))
         return(choices[1L])
     else if (!is.character(arg))
-        stop(sprintf("%s must be NULL or a character vector", deparse(argname)))
+        stop(glue("{deparse(argname)} must be NULL or a character vector"))
     if (!several.ok) {
         if (identical(arg, choices))
             return(arg[1L])
         if (length(arg) > 1L)
-            stop(sprintf("%s must be of length 1", deparse(argname)))
+            stop(glue("{deparse(argname)} must be of length 1"))
     }
     else if (length(arg) == 0L)
-        stop(sprintf("%s must be of length >= 1", deparse(argname)))
+        stop(glue("{deparse(argname)} must be of length >= 1"))
     fold_case <- identity
     if (ignore.case) {
         fold_case <- tolower
@@ -47,7 +48,7 @@ get.options <- function(opts) {
         make_option(c("-s", "--samplemeta-file"), metavar="FILENAME.RDS", type="character",
                     help="(REQUIRED) RDS/RData/xlsx/csv file containing a table of sample metadata. Any existing rownames will be replaced with the values in the sample ID  column (see below)."),
         make_option(c("-c", "--sample-id-column"), type="character", default="Sample",
-                    help="Sample metadata column name that holds the sample IDs. These will be substituted into '--abundance-file-pattern' to determine the abundance file names."),
+                    help="Sample metadata column name that holds the sample IDs. These will be used to determine the abundance file names."),
         make_option(c("-i", "--shoal-dir"), metavar="PATTERN", type="character",
                     help="(REQUIRED) Directory containing shoal output."),
         make_option(c("-l", "--aggregate-level"), metavar="LEVEL", type="character", default="auto",
@@ -191,6 +192,8 @@ save.RDS.or.RDA <-
     }
 }
 
+## TODO: Move to utilities.R
+
 ## Read a table from a R data file, csv, or xlsx file. Returns a data
 ## frame or thorws an error.
 read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL,
@@ -216,7 +219,7 @@ read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NU
                 return(result)
             }
         }
-        stop(sprintf("Could not read a data frame from %s as R data, csv, or xlsx", deparse(filename)))
+        stop(glue("Could not read a data frame from {deparse{filename}} as R data, csv, or xlsx"))
     })
 }
 
@@ -404,13 +407,6 @@ print.var.vector <- function(v) {
     invisible(v)
 }
 
-## Like sprintf, but inserts the same value into every placeholder
-sprintf.single.value <- function(fmt, value) {
-    ## Max function arguments is 100
-    arglist = c(list(fmt=fmt), rep(list(value), 99))
-    do.call(sprintf, arglist)
-}
-
 {
 
     cmdopts <- get.options(commandArgs(TRUE))
@@ -446,7 +442,7 @@ sprintf.single.value <- function(fmt, value) {
 
     rownames(samplemeta) <- samplemeta$sample <- samplemeta[[cmdopts$sample_id_column]]
 
-    samplemeta$path <- file.path(cmdopts$shoal_dir, sprintf("%s_adapt.sf", samplemeta[[cmdopts$sample_id_column]]))
+    samplemeta$path <- file.path(cmdopts$shoal_dir, glue("{samplemeta[[cmdopts$sample_id_column]]}_adapt.sf", ))
 
     assert_that(all(file.exists(samplemeta$path)))
 

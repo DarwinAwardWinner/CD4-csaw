@@ -3,6 +3,7 @@
 library(getopt)
 library(optparse)
 library(stringr)
+library(glue)
 library(rex)
 library(sitools)
 library(magrittr)
@@ -98,7 +99,7 @@ get.options <- function(opts) {
         make_option(c("-c", "--sample-id-column"), type="character", default="Sample",
                     help="Sample metadata column name that holds the sample IDs. These will be substituted into '--bam-file-pattern' to determine the BAM file names."),
         make_option(c("-p", "--bam-file-pattern"), metavar="PATTERN", type="character",
-                    help="(REQUIRED) Format string to convert sample IDs into BAM file paths. This should contain a '%s' wherever the sample ID should be substituted ('%s' can occur multiple times),. Example: 'bam_files/Sample_%s/Aligned.bam"),
+                    help="(REQUIRED) Format string to convert sample IDs into BAM file paths. This should contain the string '{SAMPLE}' wherever the sample ID should be substituted (this can occur multiple times),. Example: 'bam_files/Sample_{SAMPLE}/Aligned.bam"),
         make_option(c("-o", "--output-file"), metavar="FILENAME.RDS", type="character",
                     help="(REQUIRED) Output file name. The SummarizedExperiment object containing the counts will be saved here using saveRDS, so it should end in '.RDS'."),
         make_option(c("-b", "--expected-bam-files"), metavar="BAMFILE1,BAMFILE2,...", type="character",
@@ -182,6 +183,8 @@ read.RDS.or.RDA <- function(filename, expected.class="ANY") {
     return(object)
 }
 
+## TODO: Move to utilities.R
+
 ## Read a table from a R data file, csv, or xlsx file. Returns a data
 ## frame or thorws an error.
 read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL,
@@ -207,7 +210,7 @@ read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NU
                 return(result)
             }
         }
-        stop(sprintf("Could not read a data frame from %s as R data, csv, or xlsx", deparse(filename)))
+        stop(glue("Could not read a data frame from {deparse{filename}} as R data, csv, or xlsx"))
     })
 }
 
@@ -240,7 +243,7 @@ read.regions <- function(filename) {
                 return(result)
             }
         }
-        stop(sprintf("Could not read genomic regions from %s as R data, bed, gff, SAF, or csv", deparse(filename)))
+        stop(glue("Could not read genomic regions from {deparse(filename)} as R data, bed, gff, SAF, or csv"))
     })
 }
 
@@ -278,7 +281,7 @@ print.var.vector <- function(v) {
 
     sample.table <- readRDS(cmdopts$samplemeta_file) %>%
         ## Compute full path to BAM file
-        mutate(bam_file=sprintf(cmdopts$bam_file_pattern, .[[cmdopts$sample_id_column]])) %>%
+        mutate(bam_file=glue(cmdopts$bam_file_pattern, SAMPLE=.[[cmdopts$sample_id_column]], .envir=emptyenv())) %>%
         ## Ensure that days_after_activation is a factor and can't be
         ## interpreted as a numeric
         mutate(days_after_activation=days_after_activation %>%
@@ -304,9 +307,10 @@ print.var.vector <- function(v) {
     std.chr <- extractSeqlevels("Homo sapiens", "UCSC") %>% setdiff("chrM")
     rparam <- readParam(discard=blacklist)
 
-    tsmsg(sprintf("Counting reads in %s %s in %i samples.",
-                  format.bp(cmdopts$window_width), ifelse(cmdopts$bin, "bins", "windows"),
-                  nrow(sample.table)))
+    tsmsg(glue("Counting reads in {width} {type} in {scount} samples.",
+        width=format.bp(cmdopts$window_width),
+        type=ifelse(cmdopts$bin, "bins", "windows"),
+        scount=nrow(sample.table)))
     if (cmdopts$threads > 1) {
         wCountsFun <- windowCountsParallel
         options(mc.cores=cmdopts$threads, mc.preschedule=FALSE)
