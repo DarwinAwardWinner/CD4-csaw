@@ -104,9 +104,9 @@ Now we'll load the ChIP-seq read count data set from RDS files containing Summar
 ```{r load_counts}
 sexpfile <- 
     file.path(params$basedir, "saved_data",
-              with(params, sprintf("csaw-counts-%s-windows-%s-reads-%s.RDS", window_size, fragment_length, histone_mark)))
+              with(params, sprintf("csaw-counts_%s-windows_%s-reads_%s.RDS", window_size, fragment_length, histone_mark)))
 bigbin.sexpfile <- file.path(params$basedir, "saved_data",
-                             with(params, sprintf("csaw-counts-%s-bigbins-%s.RDS", bigbin_size, histone_mark)))
+                             with(params, sprintf("csaw-counts_%s-bigbins_%s.RDS", bigbin_size, histone_mark)))
 bigbin.sexp <- readRDS(bigbin.sexpfile)
 full.sexp <- readRDS(sexpfile)
 colnames(full.sexp) <- colData(full.sexp)$SampleName
