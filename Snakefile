@@ -331,6 +331,15 @@ except Exception:
 rnaseq_samplemeta['time_point'] = rnaseq_samplemeta['days_after_activation'].apply(lambda x: 'Day{:.0f}'.format(x))
 chipseq_samplemeta['time_point'] = chipseq_samplemeta['days_after_activation'].apply(lambda x: 'Day{:.0f}'.format(x))
 
+promoter_radii = {
+    'H3K4me3': '1kbp',
+    'H3K4me2': '1kbp',
+    'H3K27me3': '2.5kbp',
+    'input': None,
+}
+
+chipseq_samplemeta['promoter_radius'] = chipseq_samplemeta['chip_antibody'].apply(lambda x: promoter_radii[x])
+
 rnaseq_sample_libtypes = dict(zip(rnaseq_samplemeta['SRA_run'], rnaseq_samplemeta['libType']))
 
 rnaseq_star_outdirs = [
@@ -351,6 +360,8 @@ aligned_rnaseq_bam_files = aligned_rnaseq_star_bam_files + aligned_rnaseq_hisat_
 aligned_rnaseq_bai_files = [ bam + '.bai' for bam in aligned_rnaseq_bam_files ]
 
 chipseq_samplemeta_noinput = dfselect(chipseq_samplemeta, chip_antibody=lambda x: x != 'input')
+
+promoter_radius_table = dfselect(chipseq_samplemeta_noinput, what=['chip_antibody', 'promoter_radius']).drop_duplicates()
 
 def all_pairs(v, *, include_equal=False, include_reverse=False):
     '''Return iterator over 2-tuples of input elements.
@@ -432,6 +443,10 @@ targets = {
     'chipseq_diffmod' : expand(
         'reports/ChIP-seq/{chip_antibody}-diffmod.html',
         chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
+    ),
+    'promoter_eda': expand(
+        'reports/ChIP-seq/{chip_antibody}-{promoter_radius}-promoter-exploration.html',
+        zip, **promoter_radius_table,
     ),
     'macs_predictd' : 'results/macs_predictd/output.log',
     'idr_peaks_epic' :expand(
@@ -535,6 +550,7 @@ rule all:
         targets['rnaseq_diffexp'],
         targets['chipseq_eda'],
         targets['chipseq_diffmod'],
+        targets['promoter_eda'],
         targets['macs_predictd'],
         targets['idr_peaks_epic'],
         targets['idr_peaks_macs'],
@@ -2215,4 +2231,26 @@ rule chipseq_diffmod:
                        'histone_mark': wildcards.chip_antibody,
                        'window_size': '500bp',
                        'fragment_length': '147bp',
+                   })
+
+rule chipseq_promoter_explore:
+    '''Perform exploratory data analysis on ChIP-seq dataset'''
+    input:
+        rmd='scripts/chipseq-promoter-explore-{chip_antibody}.Rmd',
+        sexp='saved_data/promoter-counts_hg38.analysisSet_knownGene_{promoter_radius}-radius_147bp-reads_{chip_antibody}.RDS'
+    output:
+        html='reports/ChIP-seq/{chip_antibody}-{promoter_radius,[0-9.]+\\w*?bp}-promoter-exploration.html',
+    version: R_package_version('rmarkdown')
+    threads: 4
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_analyze']
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
+                   output_format='html_document',
+                   params={
+                       'basedir': os.getcwd(),
+                       'histone_mark': wildcards.chip_antibody,
+                       'window_size': '500bp',
+                       'fragment_length': '147bp',
+                       'bigbin_size': '10kbp',
                    })
