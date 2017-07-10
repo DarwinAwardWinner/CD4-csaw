@@ -1,0 +1,700 @@
+---
+title: "Exploration of CD4 ChIP-Seq Dataset"
+author: "Ryan C. Thompson"
+date: '`r gsub("\\s+", " ", format(Sys.time(), "%B %e, %Y"))`'
+output:
+  html_document: default
+  html_notebook: default
+subtitle: '`r paste0("For histone mark ", params$histone_mark)`'
+params:
+  basedir:
+    value: /home/ryan/Projects/CD4-csaw
+  histone_mark:
+    value: H3K4me2
+  promoter_radius:
+    value: 1kbp
+  fragment_length:
+    value: 147bp
+  bigbin_size:
+    value: 10kbp
+---
+
+# Preliminary Setup
+
+```{r setup, include=FALSE, cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
+                      cache.extra = list(params=params), 
+                      # https://github.com/yihui/knitr/issues/572
+                      cache.lazy=FALSE,
+                      fig.height=8, fig.width=8,
+                      cache.path = paste0(file.path(params$basedir, "cache", "chipseq-explore", params$histone_mark), .Platform$file.sep))
+```
+
+First we load the necessary libraries, along with a set of utility functions.
+
+```{r load_packages, message=FALSE, cache=FALSE}
+library(stringr)
+library(glue)
+library(magrittr)
+library(openxlsx)
+library(SummarizedExperiment)
+library(dplyr)
+library(edgeR)
+library(limma)
+library(csaw)
+library(sva)
+library(ggplot2)
+library(scales)
+library(GGally)
+library(ggalt)
+library(ggthemes)
+library(splines)
+library(reshape2)
+library(assertthat)
+library(ggfortify)
+library(broom)
+library(ks)
+library(RColorBrewer)
+library(Rtsne)
+library(variancePartition)
+
+library(BSgenome.Hsapiens.UCSC.hg38)
+
+library(doParallel)
+ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
+options(mc.cores=ncores)
+registerDoParallel(cores=ncores)
+library(BiocParallel)
+register(DoparParam())
+
+options(future.globals.maxSize=4 * 1024^3)
+library(future)
+plan(multicore)
+
+source(file.path(params$basedir, "scripts/utilities.R"))
+
+# Required in order to use DGEList objects with future
+length.DGEList <- function(x) {
+    length(unclass(x))
+}
+```
+
+We also set the random seed for reproducibility:
+
+```{r set_random_seed}
+set.seed(1986)
+```
+
+# Data Loading and Preprocessing
+
+First we load the consensus peaks called from the reads pooled from all samples. This consensus peak set is not biased toward or against any sample or condition, and therefore the peak significance is expected to be independent of any differential binding in that peak.
+
+```{r load_peaks}
+peakfile <- file.path(
+    params$basedir, "peak_calls", "epic_hg38.analysisSet",
+    glue_data(params, "{histone_mark}_condition.ALL_donor.ALL"),
+    "peaks_noBL_IDR.narrowPeak")
+allpeaks <- {
+    read.narrowPeak(peakfile) %>% as("GRanges") %>%
+        assign_into(seqinfo(.), seqinfo(BSgenome.Hsapiens.UCSC.hg38)[seqlevels(.)])
+}
+```
+
+Now we'll load the ChIP-seq read count data set from RDS files containing SummarizedExperiment objects, and modify them to use the sample names as column names. We also ensure that the column order is identical between the two objects. Lastly, we filter out any windows with fewer than one count per sample. This is a very mild filtering criterion, but it often eliminates many windows, greatly easing the subsequent computational burden of computing the *real* filtering threshold.
+
+```{r load_counts}
+sexpfile <- 
+    file.path(params$basedir, "saved_data",
+              glue_data(params, "promoter-counts_hg38.analysisSet_knownGene_{promoter_radius}-radius_{fragment_length}-reads_{histone_mark}.RDS"))
+bigbin.sexpfile <- file.path(params$basedir, "saved_data",
+                             glue_data(params, "csaw-counts_{bigbin_size}-bigbins_{histone_mark}.RDS"))
+bigbin.sexp <- readRDS(bigbin.sexpfile)
+full.sexp <- readRDS(sexpfile)
+colnames(full.sexp) <- colData(full.sexp)$SampleName
+colnames(bigbin.sexp) <- colData(bigbin.sexp)$SampleName
+# Ensure identical column order
+bigbin.sexp %<>% .[,colnames(full.sexp)]
+assert_that(all(colnames(full.sexp) == colnames(bigbin.sexp)))
+sexp <- full.sexp %>% .[rowSums(assay(.)) >= ncol(.),]
+```
+
+We extract the sample metadata from the SummarizedExperiment. We set all factors to use a sum-to-zero variant of the treatment-contrast coding, which will ease the subtraction of batch effects later.
+
+```{r extract_samplemeta}
+sample.table <- colData(sexp) %>%
+    as.data.frame %>% autoFactorize %>%
+    mutate(days_after_activation=time_point %>% str_extract("\\d+$") %>% as.numeric(),
+           time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
+           group=interaction(cell_type, time_point, sep="")) %>% 
+    autoFactorize %>%
+    set_rownames(colnames(sexp))
+for (i in names(sample.table)) {
+    if (is.factor(sample.table[[i]]) && nlevels(sample.table[[i]]) > 1) {
+        sample.table[[i]] %<>% C(code_control_named(levels(.)))
+    }
+}
+```
+
+# Filtering unbound promoters
+
+We begin by selecting only peaks  with an IDR value of 0.05 or less, and then determine the set of promoters that overlap these peaks.
+
+```{r initial_filter_peaks}
+idr.threshold <- 0.05
+genome.size <- seqlengths(seqinfo(allpeaks)) %>% as.numeric %>% sum
+# IDR is encoded in the qValue field of the narrowPeak file
+peaks <- allpeaks[allpeaks$qValue >= -log10(idr.threshold)]
+pct.covered <- width(peaks) %>% sum %>% divide_by(genome.size) %>% multiply_by(100)
+peak.overlap <- overlapsAny(sexp, peaks)
+pct.peak.overlap <- mean(peak.overlap) * 100
+message(sprintf("Selected %i peaks at an IDR threshold of %.3g, with an average width of %.0f nucleotides and covering a total of %.3g%% of the genome, overlapping %.3g%% of promoters", length(peaks), idr.threshold, mean(width(peaks)), pct.covered, pct.peak.overlap))
+```
+
+We need a strategy to filter out unbound promoters windows representing background regions of the genome where no specific binding is observed. First, we examine the overall distribution of average logCPM values, splitting the distribution based on which promoters overlap peaks:
+
+```{r compute_aveLogCPM}
+a %<-% aveLogCPM(asDGEList(sexp), prior.count = 2)
+```
+
+```{r plot_aveLogCPM}
+adata <- data.frame(logCPM=a, PeakOverlap=peak.overlap)
+threshold.q <- 0.01
+logcpm.threshold <- adata %>% filter(PeakOverlap) %$% quantile(logCPM, threshold.q)
+count.threshold <- 2^logcpm.threshold * mean(colData(sexp)$totals) / 1e6
+message(glue("
+    Filter theshold at {threshold.q} quantile of peak-overlapping promoters is {format(count.threshold, digits=3)} reads, a logCPM of {format(logcpm.threshold, digits=3)}. \\
+    This threshold keeps {format(100 * mean(a >= logcpm.threshold), digits=3)}% of promoters.
+"))
+p <- list(
+    Histogram=ggplot(adata) +
+        aes(x=logCPM, fill=PeakOverlap) +
+        geom_histogram(aes(y=100*(..count..)/sum(..count..)), binwidth=0.1, boundary=0) +
+        geom_vline(xintercept=logcpm.threshold, linetype="dashed") + 
+        xlab("Average logCPM") + ylab("Percent of windows in bin") +
+        coord_cartesian(xlim=quantile(a, c(0, 0.999)), ylim=c(0,5)) +
+        labs(title="Histogram of average window logCPM values",
+             subtitle="Colored by peak overlap"),
+    Violin=ggplot(adata) +
+        aes(x=PeakOverlap, y=logCPM) +
+        geom_violin(aes(fill=PeakOverlap), scale = "area") +
+        geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
+        geom_hline(yintercept=logcpm.threshold, linetype="dashed") + 
+        scale_fill_hue(guide="none") + 
+        coord_cartesian(ylim=quantile(a, c(0, 0.999))) +
+        labs(title="Violin plot of average window logCPM values",
+             subtitle="Grouped by peak overlap"))
+ggprint(p)
+summary(lm(logCPM ~ PeakOverlap, data=adata))
+```
+
+Happily, there is a clear bimodal distribution, which we presume separates bound from unbound promoters. We use the logCPM distribution of peak-overlapping promoters to choose a low-count filter threshold that keeps 99% of such promoters, and then we keep *all* promoters that pass this threshold, regardless of whether they contain a called peak. This ensures that we capture almost all activity in any peak-containing promoters without relying directly on the peak calls. Thus, if a promoter contains a peak that was not called because it is only present in certain conditions, it is still likely to be included based on this filter criterion.
+
+```{r filter_windows_by_peak_overlap}
+sexp <- sexp[a >= logcpm.threshold,]
+```
+
+# Exploratory Analysis
+
+Now we create a DGEList from the counts.
+
+```{r prepare_dgelist}
+## Extract gene metadata and colapse lists
+all.promoter.meta <- rowRanges(sexp) %>% as.data.frame %>%
+    rename(chr=seqnames) %>%
+    select(-width, -strand) 
+# Convert list columns to character vectors
+all.promoter.meta[] %<>% lapply(function(x) if (is.list(x)) sapply(x, str_c, collapse=",") else x)
+dge <- asDGEList(sexp) %>% 
+    assign_into(.$offset, NULL) %>%
+    assign_into(.$genes, all.promoter.meta) %>%
+    set_rownames(rownames(all.promoter.meta))
+```
+
+## Normalization
+
+Normalization is a non-trivial issue for ChIP-Seq data. We will test three normalizations, one scaling normalization based on background read coverage, another based on read counts in the promoter regions, and finally a non-linear loess-curve normalization based on the promoter counts.
+
+```{r compute_norm_factors}
+# Compute these in parallel
+bgnf %<-% normOffsets(bigbin.sexp, type="scaling", weighted=FALSE)
+pnf %<-% normOffsets(sexp, type="scaling", weighted=TRUE)
+loff %<-% { normOffsets(sexp, type="loess") + mean(getOffset(dge)) }
+sample.table$BGNormFactors <- colData(sexp)$BGNormFactors <- bgnf
+sample.table$PromoterNormFactors <- colData(sexp)$PromoterNormFactors <- pnf
+assay(sexp, "offsets.loess")  <- loff
+```
+
+We plot both normalizations against all relevant experimental factors:
+
+```{r plot_normfactors}
+p <- list(ggduo(as.data.frame(colData(sexp)),
+                columnsX=c("cell_type", "time_point", "donor_id", "totals"),
+                columnsY=c("BGNormFactors", "PromoterNormFactors")),
+         ggpairs(as.data.frame(colData(sexp)[c("totals", "BGNormFactors", "PromoterNormFactors")])))
+ggprint(p)
+```
+
+As in the genome-wide window data set, a strong anticorrelation is observed between the two scaling normalizations. This suggests that one of the normalizations is inappropriate, but does not give us any hint as to which one. To test these normalizations, we will look at their effect on the dispersion estimation step. But first, we must generate the design matrix in order to estimate dispersions.
+
+```{r build_design_matrix}
+design <- model.matrix(~0 + group, sample.table, strip.prefixes = TRUE)
+colnames(design)
+# Same design, but with an intercept, because sva requires it
+design.int <- model.matrix(~1 + group, sample.table)
+```
+
+
+## SVA
+
+To account for the variable effect of donor, efficiency bias, and as any other sources of systematic bias present in the data, we use SVA to estimate surrogate variables. We do so for each normalization method
+
+```{r sva}
+dges <- list(
+    BGNorm=dge %>% assign_into(.$samples$norm.factors, colData(sexp)$BGNormFactors),
+    PromoterNorm=dge %>% assign_into(.$samples$norm.factors, colData(sexp)$PromoterNormFactors),
+    LoessNorm=dge %>% assign_into(.$offset, assay(sexp, "offsets.loess")))
+logcpms <- lapply(dges, cpmWithOffset, prior.count=1)
+# Need a design with an intercept for sva
+svobjs <- bplapply(logcpms, sva, design.int)
+# We are expecting at least 1 SV. If there are no SVs, then the downstream code
+# needs changing.
+for (i in names(svobjs)) {
+    assert_that(svobjs[[i]]$n.sv > 0)
+}
+svmats <- lapply(svobjs, . %$% sv %>% cbind %>% add.numbered.colnames("SV"))
+sv.designs <- lapply(svmats, . %>% cbind(design, .))
+sv.designs.int <- lapply(svmats, . %>% cbind(design.int, .))
+numsv.table <- sapply(svobjs, . %$% n.sv) %>% data_frame(NormType=names(.) , NumSV=.)
+print(numsv.table)
+p <- list()
+for (i in names(svmats)) {
+    d <- cbind(sample.table, svmats[[i]])
+    p[[i]] <- ggduo(d, 
+                    columnsX=c("cell_type", "time_point", "donor_id", "totals"),
+                    columnsY=c(colnames(svmats[[i]]))) + 
+        labs(title="Covariates vs surrogate variables",
+             subtitle=sprintf("For SVs from %s normalization", i))
+}
+ggprint(p)
+```
+
+Nothing in this plots particularly stands out as problematic. By analogy to the window-based analysis, we would expect that SV1 in the background normalization will correspond to ChIP efficiency. However, since we only have read counts for promoter regions rather then the whole genome, we cannot easily check this.
+
+## Dispersion estimation
+
+Now we estimate the dispersions with and without empirical Bayes shrinkage, with and without surrogate variables.
+
+```{r estimate_disp_normtest}
+dges.noebayes <- bpmapply(estimateDisp, y=dges, design=sv.designs, MoreArgs=list(prior.df=0))
+dges.noebayes.nosv <- bpmapply(estimateDisp, y=dges, MoreArgs=list(design=design, prior.df=0))
+dges <- bpmapply(estimateDisp, y=dges, design=sv.designs, MoreArgs=list(robust=TRUE))
+dges.nosv <- bpmapply(estimateDisp, y=dges, MoreArgs=list(design=design, robust=TRUE))
+# Hopefully save memory by re-sharing common parts after running in separate processes
+for (i in names(dges)) {
+    for (slot in c("counts", "genes")) {
+        dges.noebayes[[i]][[slot]] <- 
+            dges.noebayes.nosv[[i]][[slot]] <- 
+            dges[[i]][[slot]] <- 
+            dges.nosv[[i]][[slot]] <- 
+            dge[[slot]]
+    }
+}
+xlims <- lapply(c(dges, dges.nosv), . %$% AveLogCPM %>% range) %>%
+    unlist %>% range %>% expand_range(mul=0.05)
+ylims <- lapply(c(dges, dges.nosv), . %$% c(quantile(tagwise.dispersion, c(0, 0.975)), trended.dispersion, common.dispersion) %>% range) %>%
+    unlist %>% c(0) %>% range %>% sqrt %>% pmax(0) %>% expand_range(mul=0.05)
+```
+
+We now inspect the dispersion plot for each of the normalizations.
+
+```{r plot_disp_normtest}
+p <- list()
+for (i in names(dges)) {
+    prior.df <- dges[[i]]$prior.df %>% median
+    p[[i]] <- ggplotBCV(dges[[i]], rawdisp=dges.noebayes[[i]]) +
+        coord_cartesian(xlim = xlims, ylim=ylims, expand=FALSE) +
+        labs(title=sprintf("BCV Plot with %s", i),
+             subtitle=sprintf("Prior d.f. = %.3g", prior.df))
+}
+ggprint(p)
+```
+
+The promoter-based scaling normalization and the loess normalization produce the smallest BCV estimates, while the background-based normalization produces substantially higher dispersion. Based on these plots, the background normalization is clearly problematic, but there is no clear reason to prefer either of the promoter-based scaling normalization or loess normalization over the other.
+
+We also inspect the BCV plot without SVA:
+
+```{r plot_disp_normtest_nosv}
+p <- list()
+for (i in names(dges.nosv)) {
+    prior.df <- dges.nosv[[i]]$prior.df %>% median
+    p[[i]] <- ggplotBCV(dges.nosv[[i]], rawdisp=dges.noebayes.nosv[[i]]) +
+        coord_cartesian(xlim = xlims, ylim=ylims, expand=FALSE) +
+        labs(title=sprintf("BCV Plot with %s and no SVA", i),
+             subtitle=sprintf("Prior d.f. = %.3g", prior.df))
+}
+ggprint(p)
+```
+
+The BCV values are definitely higher without SVA, but somewhat surprisingly, the BCV plots for the promoter-based normalizations are still well-behaved, appearing similar to the previous plots only shifted upward. The background normalization is clearly lacking without the support of SVA, however. We can quantify the effect of SVA by looking at the distribution of changes in BCV when the surrogate variables are added to the model.
+
+```{r sva_disp_effect}
+disptable <- lapply(names(dges), function(i) {
+    data_frame(NormType = i, Window = rownames(dges[[i]]),
+               DispSVA = dges[[i]]$tagwise.dispersion,
+               DispNoSVA = dges.nosv[[i]]$tagwise.dispersion)
+}) %>% do.call(what = rbind) %>%
+    mutate(BCV_SVA = sqrt(DispSVA), 
+           BCV_NoSVA = sqrt(DispNoSVA),
+           BCV_Change = BCV_SVA - BCV_NoSVA)
+# This isn't used any more and takes up a lot of memory, so delete it
+rm(dges.nosv, dges.noebayes, dges.noebayes.nosv); invisible(gc())
+disptable %>% group_by(NormType) %>% do({
+    summary(.$BCV_Change) %>% unclass %>% rbind %>% as_data_frame
+}) %>% inner_join(numsv.table, ., by="NormType")
+bcv_upper_limit <- disptable %>% select(BCV_SVA, BCV_NoSVA) %>% unlist %>% quantile(.999)
+ggplot(disptable) + 
+    aes(x=NormType, y=BCV_NoSVA) + 
+    geom_violin(aes(fill=NormType), scale = "area") +
+    geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
+    scale_fill_hue(guide="none") + 
+    coord_cartesian(ylim=c(0, bcv_upper_limit)) +
+    labs(title="BCV estimates without SVA") + 
+    xlab("Normalization Type") + 
+    ylab("BCV")
+ggplot(disptable) + 
+    aes(x=NormType, y=BCV_SVA) + 
+    geom_violin(aes(fill=NormType), scale = "area") +
+    geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
+    scale_fill_hue(guide="none") + 
+    coord_cartesian(ylim=c(0, bcv_upper_limit)) +
+    labs(title="BCV estimates with SVA") + 
+    xlab("Normalization Type") + 
+    ylab("BCV")
+ggplot(disptable) + 
+    aes(x=NormType, y=BCV_Change) + 
+    geom_hline(yintercept = 0, linetype="dashed", alpha=0.5) +
+    geom_violin(aes(fill=NormType), scale = "area") +
+    geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
+    scale_fill_hue(guide="none") + 
+    coord_cartesian(ylim=quantile(disptable$BCV_Change, c(.001, .999))) +
+    labs(title="Effect of SVA on BCV estimates") + 
+    xlab("Normalization Type") + 
+    ylab("Change in BCV with SVA")
+```
+
+As expected from the previous plots, we can see that the median change in BCV is under -0.1 for the promoter-based normalizations closer to -0.2 for the background normalizations. This highlights the degree to which the background normalization relies on sva to bring it in line with the performance of the promoter-based normalizations, again suggesting that sva might be correcting for improper normalization in this case. 
+
+Next, we examine the effect of each normalization on the MDS plot.
+
+## MDS Plots
+
+We compute the MDS coordinates after subtracting the effects of the surrogate variables for each normalization. The result is a plot showing the variation attributable to sources other than those unknown batch effects. To demonstrate the difference that batch subtraction makes, we also generate the same plots from the uncorrected data.
+
+```{r compute_mds_normtest}
+bcdata <- mapply(function(dge, des) { 
+    sv.cols <- colnames(des) %>% .[str_detect(., "^SV\\d+$")]
+    assert_that(length(sv.cols) > 0)
+    v <- voomWithOffset(dge, des)
+    v$E <- suppressMessages(subtractCoefs(v$E, des, coefsToSubtract = sv.cols))
+    v
+}, dge=dges, des=sv.designs.int)
+prep.mds <- function(x) {
+    mds <- suppressPlot(plotMDS(x))
+    mds.distances <- mds %$% distance.matrix %>% as.dist
+    df <- mds.distances %>% 
+    {suppressWarnings(cmdscale(., k=ncol(x)-1))} %>% 
+        add.numbered.colnames(prefix="Dim") %>%
+        as.data.frame %>%
+        cbind(sample.table)
+    # Use Naive D0 as the reference group, and flip the signs of each dimension
+    # such that the mean of this group is negative. This makes it more likely that 
+    mdscols <- colnames(df) %>% .[str_detect(., "Dim\\d+")]
+    needflip <- df %>% filter(group=="NaiveD0") %>%
+        .[mdscols] %>% colMeans %>% is_greater_than(0)
+    for (i in mdscols[needflip]) {
+        df[[i]] %<>% multiply_by(-1)
+    }
+    df
+}
+mdstabs <- lapply(bcdata, prep.mds)
+mdstabs.nosv <- lapply(dges, prep.mds)
+ggmds <- function(x) {
+     ggplot(x %>% arrange(cell_type, time_point, donor_id)) +
+        aes(x=Dim1, y=Dim2, label=SampleName, color=time_point,
+            shape=cell_type, linetype=donor_id, group=cell_type:donor_id) +
+        geom_encircle(aes(group=time_point:cell_type, color=NULL, fill=time_point), s_shape=0.75, expand=0.05, color=NA, alpha=0.2) +
+        geom_path(color=hcl(c=0, l=45), aes(color=NULL)) +
+        # geom_point(   size=4) +
+        geom_point(aes(size=totals)) +
+        scale_shape_manual(values=c(Naive=16, Memory=17)) +
+        scale_fill_hue(l=55) +
+        scale_linetype_manual(values=c("solid", "dashed", "dotdash", "twodash")) +
+        guides(shape = guide_legend(order=1, ncol=2, override.aes = list(size=4, color=hcl(c=0, l=80), fill=hcl(c=0, l=55))),
+               fill = guide_legend(order=2, ncol=2, override.aes = list(shape = 16, size=4)),
+               color = guide_legend(order=2, ncol=2),
+               linetype = guide_legend(order=3, ncol=2),
+               size = guide_legend(order=4, title = "total_reads")) +
+        coord_equal()
+}
+p12 <- p23 <- p12.nosv <- p23.nosv <- list()
+for (i in names(mdstabs)) {
+    p12[[i]] <- ggmds(mdstabs[[i]]) +
+        labs(title="MDS Principal Coordinates 1 & 2",
+             subtitle=sprintf("With %s normalization; SVs subtracted", i)) +
+        coord_equal()
+    p23[[i]] <- p12[[i]] + aes(x=Dim2, y=Dim3) +
+        labs(title="MDS Principal Coordinates 2 & 3")
+    p12.nosv[[i]] <- ggmds(mdstabs.nosv[[i]]) +
+        labs(title="MDS Principal Coordinates 1 & 2",
+             subtitle=sprintf("With %s normalization; SVs not subtracted", i)) +
+        coord_equal()
+    p23.nosv[[i]] <- p12.nosv[[i]] + aes(x=Dim2, y=Dim3) +
+        labs(title="MDS Principal Coordinates 2 & 3")
+}
+```
+
+```{r mds_pc12}
+ggprint(p12)
+```
+
+```{r mds_pc23}
+ggprint(p23)
+```
+
+All three normalizations produce broadly similar-looking plots, with the two promoter-based normalizations producing *very* similar plots for the first 2 PCs in particular. However, the loess normalization produces a single outlier in PC3, a behavior that has already been observed in the loess-normalized data for genome-wide windows. Interestingly, the naive ane memory cells start far apart at Day 0 and converge to the same point at Day 14, which makes sense since naive cells should have differentiated into memory cells by that time. In any case, these plots don't favor any particular normalization.
+
+## MDS plots without subtracting SV effects
+
+Now, we repeat the same plots as above, but with no subtraction of surrogate variable effects from the data.
+
+```{r mds_pc12_NoSV}
+ggprint(p12.nosv)
+```
+
+```{r mds_pc23_NoSV}
+ggprint(p23.nosv)
+```
+
+Without the surrogate variables, the MDS plots still have some recognizable structure, but the points in each group are more spread out and the groups are no longer cleanly separated, indicating the higher variance. This underscores the importance of modeling unknown sources of variation in the data using SVA. These unknown sources could include ChIP efficiency bias, GC bias, and other technical variables in the ChIP-Seq process that have nothing to do with the biology of the experiment. Because the donor ID was not included in the design, inter-donor variability could also be included in the surrogate variables.
+
+Based on all of the above, the promoter-based normalizations, both scaling and loess, perform very similarly. Since the scaling normalization is simpler and requires less stringent assumptions about the data, we will move forward using this normalization.
+
+## Variance Partitioning analysis
+
+To further investigate the sources of variance within the data, we can use the `variancePartition` package. We fit 4 models to the data so that we can see how the percent of variance explained changes depending on which terms are included in the model.
+
+```{r run_vpart}
+sample.table.with.sv <- cbind(sample.table, svmats$PromoterNorm)
+vp.formulas <- list(Group_Only = ~group,
+                    Group_and_Covars = ~ group + donor_id,
+                    Group_and_SV = as.formula(str_c(c("~ group", colnames(svmats$PromoterNorm)), collapse=" + ")),
+                    Group_and_Covars_and_SV = as.formula(str_c(c("~ group + donor_id", colnames(svmats$PromoterNorm)), collapse=" + ")))
+designs <- lapply(vp.formulas, model.matrix, data=sample.table.with.sv)
+elists <- bplapply(designs, voomWithOffset, dge=dges$PromoterNorm)
+# Function is already parallelized, so don't call it in parallel
+varParts <- mapply(function(...) try(fitExtractVarPartModel(...)), exprObj=elists, formula=vp.formulas, 
+                   MoreArgs=list(data=sample.table.with.sv))
+# Collapse SVs to a single column
+varTables <- list()
+for (i in names(varParts)) {
+    if (is(varParts[[i]], "try-error")) {
+        message("Could not run variancePartition for ", i, ", probably due to collinearity of covariates.")
+    } else {
+        assert_that(is(varParts[[i]], "varPartResults"))
+        x <- as(varParts[[i]], "data.frame")
+        x.sv <- x %>% select(matches("^SV\\d+$"))
+        if (ncol(x.sv) > 0) {
+            x.nosv <- x[setdiff(colnames(x), colnames(x.sv))]
+            x <- data.frame(x.nosv, SV=rowSums(x.sv))
+        }
+        varTables[[i]] <- cbind(select(x, -Residuals), select(x, Residuals))
+    }
+}
+```
+
+The variancePartition function failed to run for the model that included both known covariates and surrogate variables. This is expected if the surrogate variables are highly correlated with any of the known covariates, which we have already observed is the case for donor ID.
+
+```{r plot_vpart}
+p <- list()
+for (i in names(varTables)) {
+    incl <- str_replace_all(i, "_and_", " + ")
+    p[[i]] <- plotVarPart(varTables[[i]]) +
+        labs(title=str_c("Variance Partitions, ", incl))
+}
+ggprint(p)
+```
+
+It is an encouraging sign that no matter which covariates are included, the percent of variance explained by the main experimental effects (group) stays approximately the same. It seems that donor ID explains only a small amount of additional variance, while the surrogate variables explain much more. This can be justified more rigorously using the Bayesian Information Criterion:
+
+```{r selectModel}
+sm <- BPselectModel(voomWithOffset(dges$PromoterNorm, designs[[1]]), designs, criterion = "bic")
+as.data.frame(table(sm$pref)) %>% rename(Model=Var1)
+ggplot(melt(sm$IC) %>% rename(Model=Models, Probe=Probes, IC=value)) + 
+    aes(x=Model, fill=Model, y=IC) + geom_violin() +
+    geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
+    scale_fill_hue(guide="none") + 
+    ylab("BIC") + 
+    labs(title="Window BIC distribution by model",
+         subtitle="(lower is better)")
+ggplot(sm$IC) + aes(x=Group_and_SV, y=Group_and_Covars_and_SV) + 
+    geom_point(size=0.1) + 
+    geom_abline(slope=1, intercept=0, linetype = "longdash", color=muted("red", l=50, c=90)) + 
+    geom_density2d() +
+    coord_fixed() + 
+    labs(title="Window BIC with vs. without Donor & FRiP covariates")
+```
+
+When the donor is added into any model, the BIC for the average gene gets larger (i.e. worse), indicating that donor ID is not explaining enough additional variation to justify including them in the model. Note that this does not mean these are unimportant covariates, but that the surrogate variables inferred by SVA are already capturing most of the variation explained by these covariates, making their inclusion mostly redundant. Looking at the scatter plot above, we can see that there is a minority of windows below the identity line for which including donor improves the model, but the majority lie above the identity line, where the no-donor model is better.
+
+## MA plots
+
+Now we examine the effect of each normalization on the MA plots between samples. We will order the samples from smallest to largest ratio between the peak and background normalization factors, and then pair them up with the opposite: first with last, second with second-to-last, and so on. This will yield a range of MA plots, some between samples with very different normalizations and some with very similar normalizations.
+
+```{r prep_ma_plots}
+colData(sexp)$nf.logratio <- colData(sexp) %$% log2(PromoterNormFactors/BGNormFactors)
+middle.samples <- colData(sexp)$nf.logratio %>% abs %>% order
+bn.higher.samples <- colData(sexp)$nf.logratio %>% order
+pn.higher.samples <- rev(bn.higher.samples)
+
+logcpm <- cpm(dge, log=TRUE, prior.count=0.5)
+# The same measure used for the loess normalization
+AveLogCPM <- aveLogCPM(dge, dispersion = 0.05, prior.count = 0.5)
+logcpm.loess <- cpmWithOffset(dges$LoessNorm, log=TRUE, prior.count=0.5)
+bigbin.logcpm <- cpm(asDGEList(bigbin.sexp), log=TRUE, prior.count=0.5)
+
+getLineData <- function(s1, s2) {
+    c(BG="BGNorm",
+      Peaks="PromoterNorm") %>%
+        sapply(. %>% {dges[[.]]$samples$norm.factors} %>% log2 %>% {.[s2] - .[s1]}) %>%
+        data.frame(NormFactor=., NormType=names(.))
+}
+
+getOffsetLineData <- function(s1, s2, n=1000) {
+    x <- data.frame(A=aveLogCPM(dges$LoessNorm, dispersion=0.05, prior.count=0.5),
+                    Offset=dges$LoessNorm$offset %>% {.[,s2] - .[,s1]} %>% divide_by(log(2)))
+    f <- approxfun(x$A, x$Offset)
+    data.frame(A=seq(from=min(x$A), to=max(x$A), length.out = n)) %>%
+        mutate(M=f(A))
+}
+
+doMAPlot <- function(logcpm.matrix, s1, s2, linedata=getLineData(s1, s2), curvedata=NULL,
+                     AveLogCPM, Acutoff=-2) {
+    pointdata <- data.frame(S1=logcpm.matrix[,s1], S2=logcpm.matrix[,s2]) %>%
+        transmute(A=(S1+S2)/2, M=S2-S1)
+    if (!missing(AveLogCPM)) {
+        pointdata$A <- AveLogCPM
+    }
+    pointdata %<>% filter(A >= Acutoff)
+    ## Compute bandwidth and kernel smooth surface
+    H <- pointdata %>% Hbcv.diag(binned=TRUE) %>% divide_by(4)
+    k <- pointdata %>%
+        as.matrix %>%
+        kde(gridsize=1024, bgridsize=rep(1024, 2), verbose=TRUE,
+            H=H, binned=TRUE)
+    ## Sometimes the estimate goes a bit negative, which is no good
+
+    densdata <- melt(k$estimate) %>%
+        transmute(
+            A=k$eval.points[[1]][Var1],
+            M=k$eval.points[[2]][Var2],
+            Density=value %>% pmax(0),
+            ## Part of a hack to make the alpha look less bad
+            AlphaDens=value %>% pmax(1e-15))
+
+    p <- ggplot(pointdata) +
+        coord_fixed(ratio=1/2) +
+        ## MA Plot density
+        geom_raster(aes(x=A, y=M, fill=Density, alpha=AlphaDens),
+                    data=densdata,
+                    interpolate=TRUE) +
+        scale_fill_gradientn(colors=suppressWarnings(brewer.pal(Inf, "Blues")),
+                             trans=power_trans(1/8),
+                             name="Density") +
+        scale_alpha_continuous(trans=power_trans(1/40), guide=FALSE)
+    if (!is.null(linedata) && nrow(linedata) > 0) {
+        p <- p +
+            ## Normalization lines
+            geom_hline(data=linedata, aes(yintercept=NormFactor, color=NormType)) +
+            scale_color_discrete(name="Norm Type")
+    }
+    if (!is.null(curvedata)) {
+        p <- p + geom_line(data=curvedata, aes(x=A, y=M))
+    }
+    p
+}
+```
+
+With the preparatory code in place, we can now make the MA plots. First, we make basic MA plots, with log difference (M) on the y-axis and the log mean (A) on the x-axis. We also plot each normalization factor as a horizontal line, indicating where that normalization method would place the zero line.
+
+```{r maplot_windows}
+p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
+    lapply(function(i) {
+        s1 <- bn.higher.samples[i]
+        s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
+        doMAPlot(logcpm, s1, s2) +
+            labs(title=sprintf("MA plot of %s windows", params$window_size),
+                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+    })
+ggprint(p)
+```
+
+Now, we make the same plots, but for the x-axis, we use the average log2 CPM of the whole dataset, rather than the log mean of the two samples being plotted. The advantage of this is that it uses the exact same X coordinate for every window across all the MA plots, and it also allows us to add a curve representing the loess normalization, since the loess curve is fit along the same average log2 CPM scale. The disadvantage is that this smears the plots horizontally, since windows with similar counts in the two specific samples will have different counts in all the other samples, leading to a spreading of previously similar A values, so it is not a great visualization in general. In fact, in many cases it shows where the loess normalization falls short because at some points along the x-axis, it is trying unsuccesfully to interpolate between two modes. This could well be the source of the outliers observed in the MDS plots with loess normalization.
+
+```{r maplot_windows_Acommon}
+p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
+    lapply(function(i) {
+        s1 <- bn.higher.samples[i]
+        s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
+        doMAPlot(logcpm, s1, s2, AveLogCPM=AveLogCPM,
+                 curvedata=getOffsetLineData(s1, s2)) +
+            labs(title=sprintf("MA plot of %s windows with common A scale", params$window_size),
+                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+    })
+ggprint(p)
+```
+
+Next, instead of plotting the loess normalization line, we make the MA plot using loess-normalized log2 CPM values. If the loess normalization is appropriate, this should center each entire plot vertically on M = 0, using the loess normalization trend as a guide.
+
+```{r maplot_windows_loess_norm}
+p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
+    lapply(function(i) {
+        s1 <- bn.higher.samples[i]
+        s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
+        doMAPlot(logcpm.loess, s1, s2, linedata = NULL) +
+            geom_hline(yintercept=0) + 
+            labs(title=sprintf("MA plot of %s windows, loess normalized", params$window_size),
+                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+    })
+ggprint(p)
+```
+
+Next, we make the same MA plots using the same corrected data used to generate the MDS plots above. This data has been normalized using the peak-based factors and then had surrogate variable effects subtracted out, hopefully leaving only the biologically relevant variation. Since this data should already be normalized, we simply put a horizaontal line at zero for reference.
+
+```{r maplot_sva}
+p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
+    lapply(function(i) {
+        s1 <- bn.higher.samples[i]
+        s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
+        doMAPlot(bcdata$PromoterNorm$E, s1, s2, linedata = NULL) +
+            geom_hline(yintercept=0) + 
+            labs(title=sprintf("MA plot of %s windows, peak-normalized & SVA-corrected", params$window_size),
+                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+    })
+ggprint(p)
+```
+
+Last, we make MA plots for the 10kb bins that were used to compute the background normalization. The main purpose of these plots is to show that the distribution of abundances is generally bimodal, with a high-abundance mode representing peak-overlapping windows and a low-abundance mode representing non-peak windows. The background normalization line passes through the low-abundance mode, while the peak-based normalizations pass through the high-abundance mode. Any difference between them is presumbed to be due to differences in either ChIP efficiency or global changes in the histone mark.
+
+```{r maplot_bigbins}
+p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
+    lapply(function(i) {
+        s1 <- bn.higher.samples[i]
+        s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
+        doMAPlot(bigbin.logcpm, s1, s2) +
+            labs(title=sprintf("MA plot of %s bins", params$bigbin_size),
+                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+    })
+ggprint(p)
+```
+
+These plots seem to show that some samples have significant efficiency biases, visible as a trend in the MA plot. This further supports the choice not to use background normalization, as well as our choice to regress out systematic variation using SVA.
