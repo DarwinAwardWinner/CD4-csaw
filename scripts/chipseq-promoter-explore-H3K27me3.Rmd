@@ -100,7 +100,7 @@ allpeaks <- {
 }
 ```
 
-Now we'll load the ChIP-seq read count data set from RDS files containing SummarizedExperiment objects, and modify them to use the sample names as column names. We also ensure that the column order is identical between the two objects. Lastly, we filter out any windows with fewer than one count per sample. This is a very mild filtering criterion, but it often eliminates many windows, greatly easing the subsequent computational burden of computing the *real* filtering threshold.
+Now we'll load the ChIP-seq read count data set from RDS files containing SummarizedExperiment objects, and modify them to use the sample names as column names. We also ensure that the column order is identical between the two objects. Lastly, we filter out any promoters with fewer than one count per sample. This is a very mild filtering criterion, but it often eliminates many promoters, greatly easing the subsequent computational burden of computing the *real* filtering threshold.
 
 ```{r load_counts}
 sexpfile <- 
@@ -150,10 +150,10 @@ pct.peak.overlap <- mean(peak.overlap) * 100
 message(sprintf("Selected %i peaks at an IDR threshold of %.3g, with an average width of %.0f nucleotides and covering a total of %.3g%% of the genome, overlapping %.3g%% of promoters", length(peaks), idr.threshold, mean(width(peaks)), pct.covered, pct.peak.overlap))
 ```
 
-We need a strategy to filter out unbound promoters windows representing background regions of the genome where no specific binding is observed. First, we examine the overall distribution of average logCPM values, splitting the distribution based on which promoters overlap peaks:
+We need a strategy to filter out unbound promoters representing background regions of the genome where no specific binding is observed. First, we examine the overall distribution of average logCPM values, splitting the distribution based on which promoters overlap peaks:
 
 ```{r compute_aveLogCPM}
-a %<-% aveLogCPM(asDGEList(sexp), prior.count = 2)
+a <- aveLogCPM(asDGEList(sexp), prior.count = 2)
 ```
 
 ```{r plot_aveLogCPM}
@@ -170,9 +170,9 @@ p <- list(
         aes(x=logCPM, fill=PeakOverlap) +
         geom_histogram(aes(y=100*(..count..)/sum(..count..)), binwidth=0.1, boundary=0) +
         geom_vline(xintercept=logcpm.threshold, linetype="dashed") + 
-        xlab("Average logCPM") + ylab("Percent of windows in bin") +
+        xlab("Average logCPM") + ylab("Percent of promoters in bin") +
         coord_cartesian(xlim=quantile(a, c(0, 0.999)), ylim=c(0,5)) +
-        labs(title="Histogram of average window logCPM values",
+        labs(title="Histogram of average promoter logCPM values",
              subtitle="Colored by peak overlap"),
     Violin=ggplot(adata) +
         aes(x=PeakOverlap, y=logCPM) +
@@ -181,7 +181,7 @@ p <- list(
         geom_hline(yintercept=logcpm.threshold, linetype="dashed") + 
         scale_fill_hue(guide="none") + 
         coord_cartesian(ylim=quantile(a, c(0, 0.999))) +
-        labs(title="Violin plot of average window logCPM values",
+        labs(title="Violin plot of average promoter logCPM values",
              subtitle="Grouped by peak overlap"))
 ggprint(p)
 summary(lm(logCPM ~ PeakOverlap, data=adata))
@@ -189,7 +189,7 @@ summary(lm(logCPM ~ PeakOverlap, data=adata))
 
 There is a hint of biomodality in this plot, but there is no clear separation between the two modes. This means that any filtering threshold is probably going to includ a lot of "noise" promoters with no real histone modification activity in them. We use the logCPM distribution of peak-overlapping promoters to choose a low-count filter threshold that keeps 99% of such promoters, and then we keep *all* promoters that pass this threshold, regardless of whether they contain a called peak. This ensures that we capture almost all activity in any peak-containing promoters without relying directly on the peak calls. Thus, if a promoter contains a peak that was not called because it is only present in certain conditions, it is still likely to be included based on this filter criterion.
 
-```{r filter_windows_by_peak_overlap}
+```{r filter_promoters_by_peak_overlap}
 sexp <- sexp[a >= logcpm.threshold,]
 ```
 
@@ -341,7 +341,7 @@ Not only are the BCV values higher without SVA, the BCV also trends upward with 
 
 ```{r sva_disp_effect}
 disptable <- lapply(names(dges), function(i) {
-    data_frame(NormType = i, Window = rownames(dges[[i]]),
+    data_frame(NormType = i, Promoter = rownames(dges[[i]]),
                DispSVA = dges[[i]]$tagwise.dispersion,
                DispNoSVA = dges.nosv[[i]]$tagwise.dispersion)
 }) %>% do.call(what = rbind) %>%
@@ -534,17 +534,17 @@ ggplot(melt(sm$IC) %>% rename(Model=Models, Probe=Probes, IC=value)) +
     geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
     scale_fill_hue(guide="none") + 
     ylab("BIC") + 
-    labs(title="Window BIC distribution by model",
+    labs(title="Promoter BIC distribution by model",
          subtitle="(lower is better)")
 ggplot(sm$IC) + aes(x=Group_and_SV, y=Group_and_Covars_and_SV) + 
     geom_point(size=0.1) + 
     geom_abline(slope=1, intercept=0, linetype = "longdash", color=muted("red", l=50, c=90)) + 
     geom_density2d() +
     coord_fixed() + 
-    labs(title="Window BIC with vs. without Donor & FRiP covariates")
+    labs(title="Promoter BIC with vs. without Donor & FRiP covariates")
 ```
 
-When the donor is added into any model, the BIC for the average gene gets larger (i.e. worse), indicating that donor ID is not explaining enough additional variation to justify including them in the model. Note that this does not mean these are unimportant covariates, but that the surrogate variables inferred by SVA are already capturing most of the variation explained by these covariates, making their inclusion mostly redundant. Looking at the scatter plot above, we can see that there is a minority of windows below the identity line for which including donor improves the model, but the majority lie above the identity line, where the no-donor model is better.
+When the donor is added into any model, the BIC for the average gene gets larger (i.e. worse), indicating that donor ID is not explaining enough additional variation to justify including them in the model. Note that this does not mean these are unimportant covariates, but that the surrogate variables inferred by SVA are already capturing most of the variation explained by these covariates, making their inclusion mostly redundant. Looking at the scatter plot above, we can see that there is a minority of promoters below the identity line for which including donor improves the model, but the majority lie above the identity line, where the no-donor model is better.
 
 ## MA plots
 
@@ -626,28 +626,28 @@ doMAPlot <- function(logcpm.matrix, s1, s2, linedata=getLineData(s1, s2), curved
 
 With the preparatory code in place, we can now make the MA plots. First, we make basic MA plots, with log difference (M) on the y-axis and the log mean (A) on the x-axis. We also plot each normalization factor as a horizontal line, indicating where that normalization method would place the zero line.
 
-```{r maplot_windows}
+```{r maplot_promoters}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
     lapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm, s1, s2) +
-            labs(title=sprintf("MA plot of %s windows", params$window_size),
+            labs(title=sprintf("MA plot of %s-radius promoters", params$promoter_radius),
                  subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
     })
 ggprint(p)
 ```
 
-Now, we make the same plots, but for the x-axis, we use the average log2 CPM of the whole dataset, rather than the log mean of the two samples being plotted. The advantage of this is that it uses the exact same X coordinate for every window across all the MA plots, and it also allows us to add a curve representing the loess normalization, since the loess curve is fit along the same average log2 CPM scale. The disadvantage is that this smears the plots horizontally, since windows with similar counts in the two specific samples will have different counts in all the other samples, leading to a spreading of previously similar A values, so it is not a great visualization in general. In fact, in many cases it shows where the loess normalization falls short because at some points along the x-axis, it is trying unsuccesfully to interpolate between two modes. This could well be the source of the outliers observed in the MDS plots with loess normalization.
+Now, we make the same plots, but for the x-axis, we use the average log2 CPM of the whole dataset, rather than the log mean of the two samples being plotted. The advantage of this is that it uses the exact same X coordinate for every promoter across all the MA plots, and it also allows us to add a curve representing the loess normalization, since the loess curve is fit along the same average log2 CPM scale. The disadvantage is that this smears the plots horizontally, since promoters with similar counts in the two specific samples will have different counts in all the other samples, leading to a spreading of previously similar A values, so it is not a great visualization in general. In fact, in many cases it shows where the loess normalization falls short because at some points along the x-axis, it is trying unsuccesfully to interpolate between two modes. This could well be the source of the outliers observed in the MDS plots with loess normalization.
 
-```{r maplot_windows_Acommon}
+```{r maplot_promoters_Acommon}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
     lapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm, s1, s2, AveLogCPM=AveLogCPM,
                  curvedata=getOffsetLineData(s1, s2)) +
-            labs(title=sprintf("MA plot of %s windows with common A scale", params$window_size),
+            labs(title=sprintf("MA plot of %s-radius promoters with common A scale", params$promoter_radius),
                  subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
     })
 ggprint(p)
@@ -655,14 +655,14 @@ ggprint(p)
 
 Next, instead of plotting the loess normalization line, we make the MA plot using loess-normalized log2 CPM values. If the loess normalization is appropriate, this should center each entire plot vertically on M = 0, using the loess normalization trend as a guide.
 
-```{r maplot_windows_loess_norm}
+```{r maplot_promoters_loess_norm}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
     lapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm.loess, s1, s2, linedata = NULL) +
             geom_hline(yintercept=0) + 
-            labs(title=sprintf("MA plot of %s windows, loess normalized", params$window_size),
+            labs(title=sprintf("MA plot of %s-radius promoters, loess normalized", params$promoter_radius),
                  subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
     })
 ggprint(p)
@@ -677,13 +677,13 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(bcdata$PromoterNorm$E, s1, s2, linedata = NULL) +
             geom_hline(yintercept=0) + 
-            labs(title=sprintf("MA plot of %s windows, peak-normalized & SVA-corrected", params$window_size),
+            labs(title=sprintf("MA plot of %s-radius promoters, peak-normalized & SVA-corrected", params$promoter_radius),
                  subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
     })
 ggprint(p)
 ```
 
-Last, we make MA plots for the 10kb bins that were used to compute the background normalization. The main purpose of these plots is to show that the distribution of abundances is generally bimodal, with a high-abundance mode representing peak-overlapping windows and a low-abundance mode representing non-peak windows. The background normalization line passes through the low-abundance mode, while the peak-based normalizations pass through the high-abundance mode. Any difference between them is presumbed to be due to differences in either ChIP efficiency or global changes in the histone mark. This effect is less clear for H3K27me3 than for other histone marks, because of the low separation between the two modes.
+Last, we make MA plots for the 10kb bins that were used to compute the background normalization. The main purpose of these plots is to show that the distribution of abundances is generally bimodal, with a high-abundance mode representing peak-overlapping promoters and a low-abundance mode representing non-peak promoters. The background normalization line passes through the low-abundance mode, while the peak-based normalizations pass through the high-abundance mode. Any difference between them is presumbed to be due to differences in either ChIP efficiency or global changes in the histone mark. This effect is less clear for H3K27me3 than for other histone marks, because of the low separation between the two modes.
 
 ```{r maplot_bigbins}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
