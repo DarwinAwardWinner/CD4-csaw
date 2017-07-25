@@ -91,7 +91,7 @@ get_samplemeta_from_geo_pdata <- function(eset) {
 ## Only performs mutations if all of given names are present in .data
 mutate_if_present <- function(.data, names, ...) {
     if (all(names %in% base::names(.data))) {
-        mutate_(.data, .dots = lazyeval::lazy_dots(...))
+        mutate(.data, !!!quos(...))
     } else {
         .data
     }

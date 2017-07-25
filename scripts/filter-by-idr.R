@@ -62,7 +62,6 @@ library(stringr)
 library(stringi)
 library(rex)
 library(Biobase)
-library(lazyeval)
 
 print.var.vector <- function(v) {
     for (i in names(v)) {
