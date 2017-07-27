@@ -27,7 +27,8 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
                       # https://github.com/yihui/knitr/issues/572
                       cache.lazy=FALSE,
                       fig.height=8, fig.width=8,
-                      cache.path = paste0(file.path(params$basedir, "cache", "chipseq-explore", params$histone_mark), .Platform$file.sep))
+                      cache.path = paste0(file.path(params$basedir, "cache", "chipseq-explore",
+                                                    params$histone_mark), .Platform$file.sep))
 ```
 
 First we load the necessary libraries, along with a set of utility functions.
@@ -124,7 +125,7 @@ We extract the sample metadata from the SummarizedExperiment. We set all factors
 sample.table <- colData(sexp) %>%
     as.data.frame %>% autoFactorize %>%
     mutate(days_after_activation=time_point %>% str_extract("\\d+$") %>% as.numeric(),
-           time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
+           time_point=factor(days_after_activation) %>% `levels<-`(glue("D{levels(.)}")),
            group=interaction(cell_type, time_point, sep="")) %>% 
     autoFactorize %>%
     set_rownames(colnames(sexp))
@@ -147,7 +148,7 @@ peaks <- allpeaks[allpeaks$qValue >= -log10(idr.threshold)]
 pct.covered <- width(peaks) %>% sum %>% divide_by(genome.size) %>% multiply_by(100)
 peak.overlap <- overlapsAny(sexp, peaks)
 pct.peak.overlap <- mean(peak.overlap) * 100
-message(sprintf("Selected %i peaks at an IDR threshold of %.3g, with an average width of %.0f nucleotides and covering a total of %.3g%% of the genome, overlapping %.3g%% of promoters", length(peaks), idr.threshold, mean(width(peaks)), pct.covered, pct.peak.overlap))
+message(glue("Selected {length(peaks)} peaks at an IDR threshold of {format(idr.threshold, digits=3)}, with an average width of {round(mean(width(peaks)))} nucleotides and covering a total of {format(pct.covered, digits=3)}%% of the genome, containing on average {format(mean.pct.reads, digits=3)}%% of reads"))
 ```
 
 We need a strategy to filter out unbound promoters promoters representing background regions of the genome where no specific binding is observed. First, we examine the overall distribution of average logCPM values, splitting the distribution based on which promoters overlap peaks:
@@ -273,7 +274,7 @@ for (i in names(svmats)) {
                     columnsX=c("cell_type", "time_point", "donor_id", "totals"),
                     columnsY=c(colnames(svmats[[i]]))) + 
         labs(title="Covariates vs surrogate variables",
-             subtitle=sprintf("For SVs from %s normalization", i))
+             subtitle=glue("For SVs from {i} normalization"))
 }
 ggprint(p)
 ```
@@ -313,8 +314,8 @@ for (i in names(dges)) {
     prior.df <- dges[[i]]$prior.df %>% median
     p[[i]] <- ggplotBCV(dges[[i]], rawdisp=dges.noebayes[[i]]) +
         coord_cartesian(xlim = xlims, ylim=ylims, expand=FALSE) +
-        labs(title=sprintf("BCV Plot with %s", i),
-             subtitle=sprintf("Prior d.f. = %.3g", prior.df))
+        labs(title=glue("BCV Plot with {i}"),
+             subtitle=glue("Prior d.f. = {format(prior.df, digits=3)}"))
 }
 ggprint(p)
 ```
@@ -329,8 +330,8 @@ for (i in names(dges.nosv)) {
     prior.df <- dges.nosv[[i]]$prior.df %>% median
     p[[i]] <- ggplotBCV(dges.nosv[[i]], rawdisp=dges.noebayes.nosv[[i]]) +
         coord_cartesian(xlim = xlims, ylim=ylims, expand=FALSE) +
-        labs(title=sprintf("BCV Plot with %s and no SVA", i),
-             subtitle=sprintf("Prior d.f. = %.3g", prior.df))
+        labs(title=glue("BCV Plot with {i} and no SVA"),
+             subtitle=glue("Prior d.f. = {format(prior.df, digits=3)}"))
 }
 ggprint(p)
 ```
@@ -440,13 +441,13 @@ p12 <- p23 <- p12.nosv <- p23.nosv <- list()
 for (i in names(mdstabs)) {
     p12[[i]] <- ggmds(mdstabs[[i]]) +
         labs(title="MDS Principal Coordinates 1 & 2",
-             subtitle=sprintf("With %s normalization; SVs subtracted", i)) +
+             subtitle=glue("With {i} normalization; SVs subtracted")) +
         coord_equal()
     p23[[i]] <- p12[[i]] + aes(x=Dim2, y=Dim3) +
         labs(title="MDS Principal Coordinates 2 & 3")
     p12.nosv[[i]] <- ggmds(mdstabs.nosv[[i]]) +
         labs(title="MDS Principal Coordinates 1 & 2",
-             subtitle=sprintf("With %s normalization; SVs not subtracted", i)) +
+             subtitle=glue("With {i} normalization; SVs not subtracted")) +
         coord_equal()
     p23.nosv[[i]] <- p12.nosv[[i]] + aes(x=Dim2, y=Dim3) +
         labs(title="MDS Principal Coordinates 2 & 3")
@@ -632,8 +633,8 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm, s1, s2) +
-            labs(title=sprintf("MA plot of %s-radius promoters", params$promoter_radius),
-                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+            labs(title=glue("MA plot of {params$promoter_radius}-radius promoters"),
+                 subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
 ggprint(p)
 ```
@@ -647,8 +648,8 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm, s1, s2, AveLogCPM=AveLogCPM,
                  curvedata=getOffsetLineData(s1, s2)) +
-            labs(title=sprintf("MA plot of %s-radius promoters with common A scale", params$promoter_radius),
-                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+            labs(title=glue("MA plot of {params$promoter_radius}-radius promoters with common A scale"),
+                 subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
 ggprint(p)
 ```
@@ -662,8 +663,8 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm.loess, s1, s2, linedata = NULL) +
             geom_hline(yintercept=0) + 
-            labs(title=sprintf("MA plot of %s-radius promoters, loess normalized", params$promoter_radius),
-                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+            labs(title=glue("MA plot of {params$promoter_radius}-radius promoters, loess normalized"),
+                 subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
 ggprint(p)
 ```
@@ -677,8 +678,8 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(bcdata$PromoterNorm$E, s1, s2, linedata = NULL) +
             geom_hline(yintercept=0) + 
-            labs(title=sprintf("MA plot of %s-radius promoters, peak-normalized & SVA-corrected", params$promoter_radius),
-                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+            labs(title=glue("MA plot of {params$promoter_radius}-radius promoters, peak-normalized & SVA-corrected"),
+                 subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
 ggprint(p)
 ```
@@ -691,8 +692,8 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(bigbin.logcpm, s1, s2) +
-            labs(title=sprintf("MA plot of %s bins", params$bigbin_size),
-                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+            labs(title=glue("MA plot of {params$bigbin_size} bins"),
+                 subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
 ggprint(p)
 ```
