@@ -856,7 +856,7 @@ rule count_rnaseq_hisat2_ensembl:
         expected_bam_files=','.join(expand(
             'aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam',
             SRA_run=rnaseq_samplemeta['SRA_run'])),
-        bam_file_pattern='aligned/rnaseq_hisat2_grch38_snp_tran/{SAMPLE}/Aligned.bam',
+        bam_file_pattern='aligned/rnaseq_hisat2_grch38_snp_tran/{{SAMPLE}}/Aligned.bam',
     version: R_package_version('RSubread')
     threads: len(rnaseq_samplemeta)
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
@@ -892,7 +892,7 @@ rule count_rnaseq_hisat2_knownGene:
         expected_bam_files=','.join(expand(
             'aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam',
             SRA_run=rnaseq_samplemeta['SRA_run'])),
-        bam_file_pattern='aligned/rnaseq_hisat2_grch38_snp_tran/{SAMPLE}/Aligned.bam',
+        bam_file_pattern='aligned/rnaseq_hisat2_grch38_snp_tran/{{SAMPLE}}/Aligned.bam',
     version: R_package_version('RSubread')
     threads: len(rnaseq_samplemeta)
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
@@ -2250,7 +2250,7 @@ rule chipseq_promoter_explore:
                    params={
                        'basedir': os.getcwd(),
                        'histone_mark': wildcards.chip_antibody,
-                       'window_size': '500bp',
+                       'promoter_radius': wildcards.promoter_radius,
                        'fragment_length': '147bp',
                        'bigbin_size': '10kbp',
                    })
