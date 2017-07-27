@@ -32,6 +32,7 @@ First we load the necessary libraries, along with a set of utility functions.
 
 ```{r load_packages, message=FALSE, cache=FALSE}
 library(stringr)
+library(glue)
 library(magrittr)
 library(openxlsx)
 library(SummarizedExperiment)
@@ -100,7 +101,7 @@ Now we'll load the ChIP-seq read count data set from RDS files containing Summar
 ```{r load_counts}
 sexpfile <-
     file.path(params$basedir, "saved_data",
-              with(params, sprintf("csaw-counts_%s-windows_%s-reads_%s.RDS", window_size, fragment_length, histone_mark)))
+              glue_data(params, "csaw-counts_{window_size}-windows_{fragment_length}-reads_{histone_mark}.RDS"))
 full.sexp <- readRDS(sexpfile)
 colnames(full.sexp) <- colData(full.sexp)$SampleName
 sexp <- full.sexp %>% .[rowSums(assay(.)) >= ncol(.),]
@@ -115,7 +116,7 @@ We extract the sample metadata from the SummarizedExperiment. We set all factors
 sample.table <- colData(sexp) %>%
     as.data.frame %>% autoFactorize %>%
     mutate(days_after_activation=time_point %>% str_extract("\\d+$") %>% as.numeric(),
-           time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
+           time_point=factor(days_after_activation) %>% `levels<-`(glue("D{levels(.)}")),
            group=interaction(cell_type, time_point, sep="")) %>%
     autoFactorize %>%
     set_rownames(colnames(sexp))
@@ -138,7 +139,7 @@ pct.covered <- width(peaks) %>% sum %>% divide_by(genome.size) %>% multiply_by(1
 mean.pct.reads <- sexp %>% subsetByOverlaps(peaks) %>% assay("counts") %>%
     colSums %>% divide_by(colData(sexp) %$% {totals * CountDupFactor}) %>% multiply_by(100) %>%
     mean
-message(sprintf("Selected %i peaks at an IDR threshold of %.3g, with an average width of %.0f nucleotides and covering a total of %.3g%% of the genome, containing on average %.3g%% of reads", length(peaks), idr.threshold, mean(width(peaks)), pct.covered, mean.pct.reads))
+message(glue("Selected {length(peaks)} peaks at an IDR threshold of {format(idr.threshold, digits=3)}, with an average width of {round(mean(width(peaks)))} nucleotides and covering a total of {format(pct.covered, digits=3)}%% of the genome, containing on average {format(mean.pct.reads, digits=3)}%% of reads"))
 ```
 
 Then we select only the windows overlapping the selected peaks.
@@ -155,7 +156,7 @@ all.window.meta <- rowRanges(sexp) %>% as.data.frame %>%
     select(-width, -strand) %>% rename(chr=seqnames)
 # Convert list columns to character vectors
 all.window.meta[] %<>% lapply(function(x) if (is.list(x)) sapply(x, str_c, collapse=",") else x)
-rownames(all.window.meta) <- all.window.meta %$% sprintf("%s:%s-%s", chr, start, end)
+rownames(all.window.meta) <- glue_data(all.window.meta, "{chr}:{start}-{end}")
 dge <- asDGEList(sexp) %>%
     assign_into(.$offset, NULL) %>%
     assign_into(.$genes, all.window.meta) %>%
@@ -169,8 +170,7 @@ count.threshold <- 5
 filter.threshold <- aveLogCPM(count.threshold, lib.size=mean(dge$samples$lib.size))
 filt <- aveLogCPM(dge) >= filter.threshold
 dge <- dge[filt,]
-message(sprintf("Excluding %i out of %i peak-overlapping windows (%.3g%%) with average count below %s.",
-                sum(filt == FALSE), length(filt), 100*(1-mean(filt)), count.threshold))
+message(glue("Excluding {sum(filt == FALSE)} out of {length(filt)} peak-overlapping windows ({format(100*(1-mean(filt)), digits=3)}%%) with average count below {count.threshold}.")
 ```
 
 ## Model fitting
@@ -199,7 +199,7 @@ sv.cor.tests <- expand.grid(SV=colnames(svmat),
                             Var=c("cell_type", "time_point", "group", "donor_id", "totals")) %>%
     select(Var, SV) %>%
     group_by_all() %>% 
-    do(mod=list(lm(as.formula(sprintf("%s ~ %s", .$SV, .$Var)), data=cbind(sample.table, svmat)))) %>%
+    do(mod=list(lm(as.formula(glue("{.$SV} ~ {.$Var}")), data=cbind(sample.table, svmat)))) %>%
     mutate(aov=lapply(mod, anova)) %>%
     ungroup() %>%
     mutate(PValue=vapply(.$aov, . %$% {`Pr(>F)`[1]}, numeric(1)),
@@ -228,18 +228,17 @@ all.timepoints <- unique(sample.table$time_point)
 nonzero.timepoints <- setdiff(all.timepoints, "D0")
 
 timepoint.anova.tests <- setNames(llply(celltypes, function(ct) {
-    setNames(sprintf("%s%s - %sD0", ct, nonzero.timepoints, ct),
-             sprintf("%s.D0v%s", ct, nonzero.timepoints))
+    setNames(glue("{ct}{nonzero.timepoints} - {ct}D0"),
+             glue("{ct}.D0v{nonzero.timepoints}"))
 }), nm=str_c(celltypes, ".AllT"))
 timepoint.single.tests <- as.list(unlist(unname(timepoint.anova.tests)))
 celltype.singlet.tests <-
-    as.list(setNames(sprintf("Memory%s - Naive%s", all.timepoints, all.timepoints),
-                     sprintf("NvM.%s", all.timepoints)))
+    as.list(setNames(glue("Memory{all.timepoints} - Naive{all.timepoints}"),
+                     glue("NvM.{all.timepoints}")))
 celltype.allt.test <- list(NvM.AllT=unlist(celltype.singlet.tests))
 factorial.singlet.tests <-
-    as.list(setNames(sprintf("(Memory%s - MemoryD0) - (Naive%s - NaiveD0)",
-                             nonzero.timepoints, nonzero.timepoints),
-                     sprintf("Fac.%s", nonzero.timepoints)))
+    as.list(setNames(glue("(Memory{nonzero.timepoints} - MemoryD0) - (Naive{nonzero.timepoints} - NaiveD0)"),
+                     glue("Fac.{nonzero.timepoints}")))
 factorial.allt.test <- list(Fac.AllT=unlist(factorial.singlet.tests))
 mi.vs.nf.test <- list(MD0vND14="MemoryD0 - NaiveD14")
 sv.test <- list(SV=colnames(svmat))
@@ -267,8 +266,8 @@ p <- bplapply(names(window.results.tables), function(testname) {
     pvals <- window.results.tables[[testname]]$PValue
     pi0 <- pi0est(pvals)$pi0
     p <- plotpvals(pvals, ptn = pi0) +
-        labs(title=sprintf("P-value histogram for %s", testname),
-             subtitle=sprintf("Est. Non-Null Prop.: %g%%", (1 - pi0) * 100))
+        labs(title=glue("P-value histogram for {testname}"),
+             subtitle=glue("Est. Non-Null Prop.: {(format((1 - pi0) * 100, digits=3))}%%"))
 })
 ggprint(p)
 ```
@@ -294,8 +293,8 @@ p <- bplapply(names(peak.results.tables), function(testname) {
     pvals <- peak.results.tables[[testname]]$PValue
     pi0 <- pi0est(pvals)$pi0
     p <- plotpvals(pvals, ptn = pi0) +
-        labs(title=sprintf("P-value histogram for %s", testname),
-             subtitle=sprintf("Est. Non-Null Prop.: %g%%", (1 - pi0) * 100))
+        labs(title=glue("P-value histogram for {testname}"),
+             subtitle=glue("Est. Non-Null Prop.: {(format((1 - pi0) * 100, digits=3))}%%"))
 })
 ggprint(p)
 ```
@@ -316,8 +315,15 @@ peak.results.tables %>% lapply(function(rt) {
 filtered.peak.results.tables <- lapply(peak.results.tables, . %>% filter(FDR <= 0.1 | seq_len(nrow(.)) <= 100))
 dir.create(file.path(params$basedir, "saved_data", "ChIP-seq"), recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(params$basedir, "results", "ChIP-seq"), recursive = TRUE, showWarnings = FALSE)
-saveRDS(window.results.tables, file.path(params$basedir, 'saved_data', 'ChIP-seq', sprintf('%s-window-diffmod.RDS', params$histone_mark)))
-saveRDS(peak.results.tables, file.path(params$basedir, 'saved_data', 'ChIP-seq', sprintf('%s-peak-diffmod.RDS', params$histone_mark)))
-save.image(file.path(params$basedir, 'saved_data', 'ChIP-seq', sprintf('%s-diffmod.rda', params$histone_mark)))
-write.xlsx(filtered.peak.results.tables, file.path(params$basedir, "results", "ChIP-seq",sprintf('%s-peak-diffmod.xlsx', params$histone_mark)))
+saveRDS(window.results.tables,
+    file.path(params$basedir, 'saved_data', 'ChIP-seq',
+        glue('{params$histone_mark}-window-diffmod.RDS')))
+saveRDS(peak.results.tables,
+    file.path(params$basedir, 'saved_data', 'ChIP-seq',
+        glue('{params$histone_mark}-peak-diffmod.RDS')))
+save.image(file.path(params$basedir, 'saved_data', 'ChIP-seq',
+    glue('{params$histone_mark}-diffmod.rda')))
+write.xlsx(filtered.peak.results.tables,
+    file.path(params$basedir, "results", "ChIP-seq",
+        glue('{params$histone_mark}-peak-diffmod.xlsx')))
 ```
