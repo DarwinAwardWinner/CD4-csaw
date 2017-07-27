@@ -27,13 +27,15 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
                       # https://github.com/yihui/knitr/issues/572
                       cache.lazy=FALSE,
                       fig.height=8, fig.width=8,
-                      cache.path = paste0(file.path(params$basedir, "cache", "chipseq-explore", params$histone_mark), .Platform$file.sep))
+                      cache.path = paste0(file.path(params$basedir, "cache", "chipseq-explore", 
+                                                    params$histone_mark), .Platform$file.sep))
 ```
 
 First we load the necessary libraries, along with a set of utility functions.
 
 ```{r load_packages, message=FALSE, cache=FALSE}
 library(stringr)
+library(glue)
 library(magrittr)
 library(openxlsx)
 library(SummarizedExperiment)
@@ -104,9 +106,10 @@ Now we'll load the ChIP-seq read count data set from RDS files containing Summar
 ```{r load_counts}
 sexpfile <- 
     file.path(params$basedir, "saved_data",
-              with(params, sprintf("csaw-counts_%s-windows_%s-reads_%s.RDS", window_size, fragment_length, histone_mark)))
-bigbin.sexpfile <- file.path(params$basedir, "saved_data",
-                             with(params, sprintf("csaw-counts_%s-bigbins_%s.RDS", bigbin_size, histone_mark)))
+              glue_data(params, "csaw-counts_{window_size}-windows_{fragment_length}-reads_{histone_mark}.RDS"))
+bigbin.sexpfile <-
+    file.path(params$basedir, "saved_data",
+              glue_data(params, "csaw-counts_{bigbin_size}-bigbins_{histone_mark}.RDS"))
 bigbin.sexp <- readRDS(bigbin.sexpfile)
 full.sexp <- readRDS(sexpfile)
 colnames(full.sexp) <- colData(full.sexp)$SampleName
@@ -126,7 +129,7 @@ We extract the sample metadata from the SummarizedExperiment. We set all factors
 sample.table <- colData(sexp) %>%
     as.data.frame %>% autoFactorize %>%
     mutate(days_after_activation=time_point %>% str_extract("\\d+$") %>% as.numeric(),
-           time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
+           time_point=factor(days_after_activation) %>% `levels<-`(glue("D{levels(.)}")),
            group=interaction(cell_type, time_point, sep="")) %>% 
     autoFactorize %>%
     set_rownames(colnames(sexp))
@@ -140,6 +143,7 @@ for (i in names(sample.table)) {
 # Peak and Window Filtering
 
 We begin by selecting only peaks  with an IDR value of 0.05 or less.
+
 ```{r initial_filter_peaks}
 idr.threshold <- 0.05
 genome.size <- seqlengths(seqinfo(allpeaks)) %>% as.numeric %>% sum
@@ -148,7 +152,7 @@ pct.covered <- width(peaks) %>% sum %>% divide_by(genome.size) %>% multiply_by(1
 mean.pct.reads <- sexp %>% subsetByOverlaps(peaks) %>% assay("counts") %>%
     colSums %>% divide_by(colData(sexp) %$% {totals * CountDupFactor}) %>% multiply_by(100) %>%
     mean
-message(sprintf("Selected %i peaks at an IDR threshold of %.3g, with an average width of %.0f nucleotides and covering a total of %.3g%% of the genome, containing on average %.3g%% of reads", length(peaks), idr.threshold, mean(width(peaks)), pct.covered, mean.pct.reads))
+message(glue("Selected {length(peaks)} peaks at an IDR threshold of {format(idr.threshold, digits=3)}, with an average width of {round(mean(width(peaks)))} nucleotides and covering a total of {format(pct.covered, digits=3)}%% of the genome, containing on average {format(mean.pct.reads, digits=3)}%% of reads"))
 ```
 
 Now we need a strategy to filter out uninformative windows representing background regions of the genome where no specific binding is observed. First, we examine the overall distribution of average logCPM values, as well as the average logCPM distribution within called peaks:
@@ -190,7 +194,7 @@ pct.covered <- width(peaks) %>% sum %>% divide_by(genome.size) %>% multiply_by(1
 mean.pct.reads <- sexp %>% subsetByOverlaps(peaks) %>% assay("counts") %>%
     colSums %>% divide_by(colData(sexp) %$% {totals * CountDupFactor}) %>% multiply_by(100) %>%
     mean
-message(sprintf("Selected %i peaks at an IDR threshold of %.3g, with an average width of %.0f nucleotides and covering a total of %.3g%% of the genome, containing on average %.3g%% of reads", length(peaks), idr.threshold, mean(width(peaks)), pct.covered, mean.pct.reads))
+message(glue("Selected {length(peaks)} peaks at an IDR threshold of {format(idr.threshold, digits=3)}, with an average width of {round(mean(width(peaks)))} nucleotides and covering a total of {format(pct.covered, digits=3)}%% of the genome, containing on average {format(mean.pct.reads, digits=3)}%% of reads"))
 ```
 
 ```{r filter_windows_by_peak_overlap}
@@ -219,7 +223,7 @@ all.window.meta <- rowRanges(sexp) %>% as.data.frame %>%
     select(-width, -strand) %>% rename(chr=seqnames)
 # Convert list columns to character vectors
 all.window.meta[] %<>% lapply(function(x) if (is.list(x)) sapply(x, str_c, collapse=",") else x)
-rownames(all.window.meta) <- all.window.meta %$% sprintf("%s:%s-%s", chr, start, end)
+rownames(all.window.meta) <- all.window.meta %$% glue("{chr}:{start}-{end}")
 dge <- asDGEList(sexp) %>% 
     assign_into(.$offset, NULL) %>%
     assign_into(.$genes, all.window.meta) %>%
@@ -275,8 +279,7 @@ To account for the variable effect of donor, efficiency bias, and as any other s
 count.threshold <- 5
 filter.threshold <- aveLogCPM(count.threshold, lib.size=mean(dge$samples$lib.size))
 filt <- aveLogCPM(dge) >= filter.threshold
-message(sprintf("Excluding %i out of %i peak-overlapping windows (%.3g%%) with average count below %s.",
-                sum(filt == FALSE), length(filt), 100*(1-mean(filt)), count.threshold))
+message(glue("Excluding {sum(filt == FALSE)} out of {length(filt)} peak-overlapping windows ({format(100*(1-mean(filt)), digits=3)}%%) with average count below {count.threshold}."))
 dgefilt <- dge[filt,]
 dges <- list(
     BGNorm=dgefilt %>% assign_into(.$samples$norm.factors, colData(sexp)$BGNormFactors),
@@ -303,7 +306,7 @@ for (i in names(svmats)) {
                     columnsX=c("cell_type", "time_point", "donor_id", "totals", "FRiP"),
                     columnsY=c(colnames(svmats[[i]]))) + 
         labs(title="Covariates vs surrogate variables",
-             subtitle=sprintf("For SVs from %s normalization", i))
+             subtitle=glue("For SVs from {i} normalization"))
 }
 ggprint(p)
 ```
@@ -343,8 +346,8 @@ for (i in names(dges)) {
     prior.df <- dges[[i]]$prior.df %>% median
     p[[i]] <- ggplotBCV(dges[[i]], rawdisp=dges.noebayes[[i]]) +
         coord_cartesian(xlim = xlims, ylim=ylims, expand=FALSE) +
-        labs(title=sprintf("BCV Plot with %s", i),
-             subtitle=sprintf("Prior d.f. = %.3g", prior.df))
+        labs(title=glue("BCV Plot with {i}"),
+             subtitle=glue("Prior d.f. = {format(prior.df, digits=3)}"))
 }
 ggprint(p)
 ```
@@ -359,8 +362,8 @@ for (i in names(dges.nosv)) {
     prior.df <- dges.nosv[[i]]$prior.df %>% median
     p[[i]] <- ggplotBCV(dges.nosv[[i]], rawdisp=dges.noebayes.nosv[[i]]) +
         coord_cartesian(xlim = xlims, ylim=ylims, expand=FALSE) +
-        labs(title=sprintf("BCV Plot with %s and no SVA", i),
-             subtitle=sprintf("Prior d.f. = %.3g", prior.df))
+        labs(title=glue("BCV Plot with {i} and no SVA"),
+             subtitle=glue("Prior d.f. = {format(prior.df, digits=3)}"))
 }
 ggprint(p)
 ```
@@ -468,13 +471,13 @@ p12 <- p23 <- p12.nosv <- p23.nosv <- list()
 for (i in names(mdstabs)) {
     p12[[i]] <- ggmds(mdstabs[[i]]) +
         labs(title="MDS Principal Coordinates 1 & 2",
-             subtitle=sprintf("With %s normalization; SVs subtracted", i)) +
+             subtitle=glue("With {i} normalization; SVs subtracted")) +
         coord_equal()
     p23[[i]] <- p12[[i]] + aes(x=Dim2, y=Dim3) +
         labs(title="MDS Principal Coordinates 2 & 3")
     p12.nosv[[i]] <- ggmds(mdstabs.nosv[[i]]) +
         labs(title="MDS Principal Coordinates 1 & 2",
-             subtitle=sprintf("With %s normalization; SVs not subtracted", i)) +
+             subtitle=glue("With {i} normalization; SVs not subtracted")) +
         coord_equal()
     p23.nosv[[i]] <- p12.nosv[[i]] + aes(x=Dim2, y=Dim3) +
         labs(title="MDS Principal Coordinates 2 & 3")
@@ -659,8 +662,8 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm, s1, s2) +
-            labs(title=sprintf("MA plot of %s windows", params$window_size),
-                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+            labs(title=glue("MA plot of {params$window_size} windows"),
+                 subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
 ggprint(p)
 ```
@@ -674,8 +677,8 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm, s1, s2, AveLogCPM=AveLogCPM,
                  curvedata=getOffsetLineData(s1, s2)) +
-            labs(title=sprintf("MA plot of %s windows with common A scale", params$window_size),
-                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+            labs(title=glue("MA plot of {params$window_size} windows with common A scale"),
+                 subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
 ggprint(p)
 ```
@@ -689,8 +692,8 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm.loess, s1, s2, linedata = NULL) +
             geom_hline(yintercept=0) + 
-            labs(title=sprintf("MA plot of %s windows, loess normalized", params$window_size),
-                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+            labs(title=glue("MA plot of {params$window_size} windows, loess normalized"),
+                 subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
 ggprint(p)
 ```
@@ -704,8 +707,8 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(bcdata$PeakHANorm$E, s1, s2, linedata = NULL) +
             geom_hline(yintercept=0) + 
-            labs(title=sprintf("MA plot of %s windows, peak-normalized & SVA-corrected", params$window_size),
-                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+            labs(title=glue("MA plot of {params$window_size} windows, peak-normalized & SVA-corrected"),
+                 subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
 ggprint(p)
 ```
@@ -718,8 +721,8 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(bigbin.logcpm, s1, s2) +
-            labs(title=sprintf("MA plot of %s bins", params$bigbin_size),
-                 subtitle=sprintf("%s vs %s", colnames(dge)[s1], colnames(dge)[s2]))
+            labs(title=glue("MA plot of {params$bigbin_size} bins"),
+                 subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
 ggprint(p)
 ```
