@@ -148,7 +148,7 @@ peaks <- allpeaks[allpeaks$qValue >= -log10(idr.threshold)]
 pct.covered <- width(peaks) %>% sum %>% divide_by(genome.size) %>% multiply_by(100)
 peak.overlap <- overlapsAny(sexp, peaks)
 pct.peak.overlap <- mean(peak.overlap) * 100
-message(glue("Selected {length(peaks)} peaks at an IDR threshold of {format(idr.threshold, digits=3)}, with an average width of {round(mean(width(peaks)))} nucleotides and covering a total of {format(pct.covered, digits=3)}%% of the genome, containing on average {format(mean.pct.reads, digits=3)}%% of reads"))
+message(glue("Selected {length(peaks)} peaks at an IDR threshold of {format(idr.threshold, digits=3)}, with an average width of {round(mean(width(peaks)))} nucleotides and covering a total of {format(pct.covered, digits=3)}%% of the genome."))
 ```
 
 We need a strategy to filter out unbound promoters representing background regions of the genome where no specific binding is observed. First, we examine the overall distribution of average logCPM values, splitting the distribution based on which promoters overlap peaks:
