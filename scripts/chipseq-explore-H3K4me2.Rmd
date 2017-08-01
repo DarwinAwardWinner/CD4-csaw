@@ -3,20 +3,20 @@ title: "Exploration of CD4 ChIP-Seq Dataset"
 author: "Ryan C. Thompson"
 date: '`r gsub("\\s+", " ", format(Sys.time(), "%B %e, %Y"))`'
 output:
-  html_document: default
-  html_notebook: default
+    html_document: default
+    html_notebook: default
 subtitle: '`r paste0("For histone mark ", params$histone_mark)`'
 params:
-  basedir:
-    value: /home/ryan/Projects/CD4-csaw
-  histone_mark:
-    value: H3K4me2
-  window_size:
-    value: 500bp
-  fragment_length:
-    value: 147bp
-  bigbin_size:
-    value: 10kbp
+    basedir:
+        value: /home/ryan/Projects/CD4-csaw
+    histone_mark:
+        value: H3K4me2
+    window_size:
+        value: 500bp
+    fragment_length:
+        value: 147bp
+    bigbin_size:
+        value: 10kbp
 ---
 
 # Preliminary Setup
