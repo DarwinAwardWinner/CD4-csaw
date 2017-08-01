@@ -641,7 +641,7 @@ ggprint(p)
 
 Now, we make the same plots, but for the x-axis, we use the average log2 CPM of the whole dataset, rather than the log mean of the two samples being plotted. The advantage of this is that it uses the exact same X coordinate for every window across all the MA plots, and it also allows us to add a curve representing the loess normalization, since the loess curve is fit along the same average log2 CPM scale. The disadvantage is that this smears the plots horizontally, since windows with similar counts in the two specific samples will have different counts in all the other samples, leading to a spreading of previously similar A values, so it is not a great visualization in general. In fact, in many cases it shows where the loess normalization falls short because at some points along the x-axis, it is trying unsuccesfully to interpolate between two modes. This could well be the source of the outliers observed in the MDS plots with loess normalization.
 
-```{r maplot_windows_Acommon}
+```{r maplot_promoters_Acommon}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
     lapply(function(i) {
         s1 <- bn.higher.samples[i]
@@ -656,7 +656,7 @@ ggprint(p)
 
 Next, instead of plotting the loess normalization line, we make the MA plot using loess-normalized log2 CPM values. If the loess normalization is appropriate, this should center each entire plot vertically on M = 0, using the loess normalization trend as a guide.
 
-```{r maplot_windows_loess_norm}
+```{r maplot_promoters_loess_norm}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
     lapply(function(i) {
         s1 <- bn.higher.samples[i]
