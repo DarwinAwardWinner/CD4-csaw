@@ -155,6 +155,33 @@ def dfselect(dframe, what=None, where=None, **where_kwargs):
     else:
         return dframe[what]
 
+def df_cartesian_product(*dfs):
+    '''Return the cartesian product of 2 or more DataFrames.
+
+    None of dfs should share a column name with any other, or else the
+    column names will have arbitrary suffixes.
+
+    '''
+    if len(dfs) == 0:
+        raise ValueError("Cannot generate empty Cartesian product")
+    elif len(dfs) == 1:
+        return dfs[0]
+    else:
+        all_colnames = list(chain.from_iterable(df.columns for df in dfs))
+        # Get an unused column name
+        merge_key = 'key_to_merge_on_'
+        while merge_key in all_colnames:
+            merge_key += 'xxxxx'
+        merged_df = dfs[0].copy()
+        merged_df[merge_key] = 1
+        for next_df in (df.copy() for df in dfs[1:]):
+            next_df[merge_key] = 1
+            merged_df = merged_df.merge(next_df, on=merge_key)
+        for i in merged_df:
+            if i.startswith(merge_key):
+                merged_df.drop(i, 1, inplace=True)
+        return merged_df
+
 def recycled(it, length=None):
     '''Recycle iterable to specified length.
 
@@ -445,9 +472,17 @@ targets = {
         chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
     ),
     'promoter_eda': expand(
-        'reports/ChIP-seq/{chip_antibody}-{promoter_radius}-promoter-exploration.html',
-        zip, **promoter_radius_table,
+        'reports/ChIP-seq/{genome}_{transcriptome}_{chip_antibody}-{promoter_radius}-promoter-exploration.html',
+        zip_longest_recycled, genome=["hg38.analysisSet"],
+        **df_cartesian_product(pd.DataFrame({'transcriptome': ["knownGene", "ensembl.85"]}),
+                               promoter_radius_table),
     ),
+    # 'promoter_diffmod': expand(
+    #     'reports/ChIP-seq/{genome}_{transcriptome}_{chip_antibody}-{promoter_radius}-promoter-diffmod.html',
+    #     zip_longest_recycled, genome=["hg38.analysisSet"],
+    #     **df_cartesian_product(pd.DataFrame({'transcriptome': ["knownGene", "ensembl.85"]}),
+    #                            promoter_radius_table),
+    # ),
     'macs_predictd' : 'results/macs_predictd/output.log',
     'idr_peaks_epic' :expand(
         'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
@@ -551,6 +586,7 @@ rule all:
         targets['chipseq_eda'],
         targets['chipseq_diffmod'],
         targets['promoter_eda'],
+        # targets['promoter_diffmod'],
         targets['macs_predictd'],
         targets['idr_peaks_epic'],
         targets['idr_peaks_macs'],
@@ -2256,3 +2292,30 @@ rule chipseq_promoter_explore:
                        'fragment_length': '147bp',
                        'bigbin_size': '10kbp',
                    })
+
+# rule chipseq_promoter_diffmod:
+#     '''Perform differential modification analysis on ChIP-seq dataset'''
+#     input:
+#         rmd='scripts/chipseq-promoter-diffmod.Rmd',
+#         sexp='saved_data/promoter-counts_{genome}_{transcriptome}_{promoter_radius}-radius_147bp-reads_{chip_antibody}.RDS'
+#     output:
+#         html='reports/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}-{promoter_radius,[0-9.]+\\w*?bp}-promoter-diffmod.html',
+#         xlsx='results/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}-{promoter_radius,[0-9.]+\\w*?bp}-promoter-diffmod.xlsx',
+#         rds='saved_data/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}-{promoter_radius,[0-9.]+\\w*?bp}-promoter-diffmod.RDS',
+#         rda='saved_data/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}-{promoter_radius,[0-9.]+\\w*?bp}-promoter-diffmod.rda',
+#     version: R_package_version('rmarkdown')
+#     threads: 4
+#     resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_analyze']
+#     run:
+#         raise NotImplementedError("Still writing the script")
+#         os.environ['MC_CORES'] = str(threads)
+#         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
+#                    output_format='html_document',
+#                    params={
+#                        'basedir': os.getcwd(),
+#                        'genome': wildcards.genome,
+#                        'transcriptome': wildcards.transcriptome,
+#                        'histone_mark': wildcards.chip_antibody,
+#                        'promoter_radius': wildcards.promoter_radius,
+#                        'fragment_length': '147bp',
+#                    })
