@@ -2237,9 +2237,9 @@ rule chipseq_promoter_explore:
     '''Perform exploratory data analysis on ChIP-seq dataset'''
     input:
         rmd='scripts/chipseq-promoter-explore-{chip_antibody}.Rmd',
-        sexp='saved_data/promoter-counts_hg38.analysisSet_knownGene_{promoter_radius}-radius_147bp-reads_{chip_antibody}.RDS'
+        sexp='saved_data/promoter-counts_{genome}_{transcriptome}_{promoter_radius}-radius_147bp-reads_{chip_antibody}.RDS'
     output:
-        html='reports/ChIP-seq/{chip_antibody}-{promoter_radius,[0-9.]+\\w*?bp}-promoter-exploration.html',
+        html='reports/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}-{promoter_radius,[0-9.]+\\w*?bp}-promoter-exploration.html',
     version: R_package_version('rmarkdown')
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_analyze']
@@ -2249,6 +2249,8 @@ rule chipseq_promoter_explore:
                    output_format='html_document',
                    params={
                        'basedir': os.getcwd(),
+                       'genome': wildcards.genome,
+                       'transcriptome': wildcards.transcriptome,
                        'histone_mark': wildcards.chip_antibody,
                        'promoter_radius': wildcards.promoter_radius,
                        'fragment_length': '147bp',

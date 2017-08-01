@@ -1,22 +1,26 @@
 ---
-title: "Exploration of CD4 ChIP-Seq Dataset"
+title: "Exploration of CD4 ChIP-Seq Promoter Dataset"
 author: "Ryan C. Thompson"
 date: '`r gsub("\\s+", " ", format(Sys.time(), "%B %e, %Y"))`'
 output:
-  html_document: default
-  html_notebook: default
-subtitle: '`r paste0("For histone mark ", params$histone_mark)`'
+    html_document: default
+    html_notebook: default
+subtitle: '`r glue::glue_data(params, "For histone mark {histone_mark} using {transcriptome} annotation on {genome} genome")`'
 params:
-  basedir:
-    value: /home/ryan/Projects/CD4-csaw
-  histone_mark:
-    value: H3K4me3
-  promoter_radius:
-    value: 1kbp
-  fragment_length:
-    value: 147bp
-  bigbin_size:
-    value: 10kbp
+    basedir:
+        value: /home/ryan/Projects/CD4-csaw
+    genome:
+        value: hg38.analysisSet
+    transcriptome:
+        value: ensembl.85
+    histone_mark:
+        value: H3K4me3
+    promoter_radius:
+        value: 1kbp
+    fragment_length:
+        value: 147bp
+    bigbin_size:
+        value: 10kbp
 ---
 
 # Preliminary Setup
@@ -91,8 +95,10 @@ set.seed(1986)
 First we load the consensus peaks called from the reads pooled from all samples. This consensus peak set is not biased toward or against any sample or condition, and therefore the peak significance is expected to be independent of any differential binding in that peak.
 
 ```{r load_peaks}
+# Currently no other genome supported, but it could be.
+assert_that(params$genome == "hg38.analysisSet")
 peakfile <- file.path(
-    params$basedir, "peak_calls", "epic_hg38.analysisSet",
+    params$basedir, "peak_calls", glue("epic_{params$genome}"),
     glue_data(params, "{histone_mark}_condition.ALL_donor.ALL"),
     "peaks_noBL_IDR.narrowPeak")
 allpeaks <- {
@@ -106,7 +112,7 @@ Now we'll load the ChIP-seq read count data set from RDS files containing Summar
 ```{r load_counts}
 sexpfile <- 
     file.path(params$basedir, "saved_data",
-              glue_data(params, "promoter-counts_hg38.analysisSet_knownGene_{promoter_radius}-radius_{fragment_length}-reads_{histone_mark}.RDS"))
+              glue_data(params, "promoter-counts_{genome}_{transcriptome}_{promoter_radius}-radius_{fragment_length}-reads_{histone_mark}.RDS"))
 bigbin.sexpfile <- file.path(params$basedir, "saved_data",
                              glue_data(params, "csaw-counts_{bigbin_size}-bigbins_{histone_mark}.RDS"))
 bigbin.sexp <- readRDS(bigbin.sexpfile)
