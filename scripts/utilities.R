@@ -328,8 +328,7 @@ voomWithOffset <-
         j <- fit$pivot[1:fit$rank]
         fitted.values <- fit$coef[, j, drop = FALSE] %*%
             t(fit$design[, j, drop = FALSE])
-    }
-    else {
+    } else {
         fitted.values <- fit$coef %*% t(fit$design)
     }
     fitted.cpm <- 2^fitted.values
@@ -342,9 +341,11 @@ voomWithOffset <-
     out$weights <- w
     out$design <- design
     out$effective.lib.size <- effective.lib.size
-    if (is.null(out$targets))
+    if (is.null(out$targets)) {
         out$targets <- data.frame(lib.size = exp(colMeans(offset)))
-    else out$targets$lib.size <- exp(colMeans(offset))
+    } else {
+        out$targets$lib.size <- exp(colMeans(offset))
+    }
     new("EList", out)
 }
 
@@ -382,8 +383,7 @@ voomWithQualityWeightsAndOffset <-
         v$weights <- wts
         v$sample.weights <- aw
         return(v)
-    }
-    else {
+    } else {
         return(wts)
     }
 }
