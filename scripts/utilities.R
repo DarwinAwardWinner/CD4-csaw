@@ -244,31 +244,24 @@ estimateDispByGroup <- function(dge, group=as.factor(dge$samples$group), batch, 
     })
 }
 
-# Versions of cpm and aveLogCPM that use an offset matrix instead of lib sizes
+# Versions of cpm and aveLogCPM that use an offset matrix instead of
+# lib sizes
 cpmWithOffset <-
-    function(dge, offset=expandAsMatrix(getOffset(dge), dim(dge)),
-             log = FALSE, prior.count = 0.25, preserve.mean=TRUE, ...)
+    function(dge, offset=getOffset(dge)),
+        log = FALSE, prior.count = 0.25, preserve.mean=TRUE, ...)
 {
-    x <- dge$counts
     if (preserve.mean) {
-        # Ensure that the mean logcpm is not changed by the offsets, by setting
-        # each row mean to the mean offset derived from the library sizes
-        mean.lib.size.offset <- dge %>% assign_into(.$offset, NULL) %>% getOffset %>% mean
-        offset %<>% subtract(rowMeans(.)) %>% add(mean.lib.size.offset)
+        dge <- scaleOffset(dge, offset)
+    } else {
+        dge$offset <- offset
     }
-    effective.lib.size <- exp(offset)
-    if (log) {
-        prior.count.scaled <- effective.lib.size/mean(effective.lib.size) * prior.count
-        effective.lib.size <- effective.lib.size + 2 * prior.count.scaled
-    }
-    effective.lib.size <- 1e-06 * effective.lib.size
-    if (log)
-        log2((x + prior.count.scaled) / effective.lib.size)
-    else x / effective.lib.size
+    cpm(dge, lib.size=exp(getOffset(dge)), log=log, prior.count=prior.count, ...)
 }
 
+## FIXME: This is basically obsolete now that aveLogCPM gained an
+## offset argument of its own.
 aveLogCPMWithOffset <- function(y, ...) {
-    UseMethod("aveLogCPM")
+    UseMethod("aveLogCPMWithOffset")
 }
 
 aveLogCPMWithOffset.default <-
