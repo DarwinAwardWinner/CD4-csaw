@@ -246,10 +246,8 @@ estimateDispByGroup <- function(dge, group=as.factor(dge$samples$group), batch, 
 
 # Versions of cpm and aveLogCPM that use an offset matrix instead of
 # lib sizes
-cpmWithOffset <-
-    function(dge, offset=getOffset(dge)),
-        log = FALSE, prior.count = 0.25, preserve.mean=TRUE, ...)
-{
+cpmWithOffset <- function(dge, offset=getOffset(dge),
+                         log = FALSE, prior.count = 0.25, preserve.mean=TRUE, ...) {
     if (preserve.mean) {
         dge <- scaleOffset(dge, offset)
     } else {
