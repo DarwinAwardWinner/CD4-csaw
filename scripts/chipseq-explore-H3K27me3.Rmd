@@ -23,11 +23,11 @@ params:
 
 ```{r setup, include=FALSE, cache=FALSE}
 knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
-                      cache.extra = list(params=params), 
+                      cache.extra = list(params=params),
                       # https://github.com/yihui/knitr/issues/572
                       cache.lazy=FALSE,
                       fig.height=8, fig.width=8,
-                      cache.path = paste0(file.path(params$basedir, "cache", "chipseq-explore", 
+                      cache.path = paste0(file.path(params$basedir, "cache", "chipseq-explore",
                                                     params$histone_mark), .Platform$file.sep))
 ```
 
@@ -104,7 +104,7 @@ allpeaks <- {
 Now we'll load the ChIP-seq read count data set from RDS files containing SummarizedExperiment objects, and modify them to use the sample names as column names. We also ensure that the column order is identical between the two objects. Lastly, we filter out any windows with fewer than one count per sample. This is a very mild filtering criterion, but it often eliminates many windows, greatly easing the subsequent computational burden of computing the *real* filtering threshold.
 
 ```{r load_counts}
-sexpfile <- 
+sexpfile <-
     file.path(params$basedir, "saved_data",
               glue_data(params, "csaw-counts_{window_size}-windows_{fragment_length}-reads_{histone_mark}.RDS"))
 bigbin.sexpfile <-
@@ -118,7 +118,7 @@ colnames(bigbin.sexp) <- colData(bigbin.sexp)$SampleName
 bigbin.sexp %<>% .[,colnames(full.sexp)]
 assert_that(all(colnames(full.sexp) == colnames(bigbin.sexp)))
 sexp <- full.sexp %>% .[rowSums(assay(.)) >= ncol(.),]
-# Exepected number of counts per read, based on overlapping multiple windows. 
+# Exepected number of counts per read, based on overlapping multiple windows.
 # NOTE: Assumes windows exactly tile the genome (no overlaps, no gaps).
 colData(sexp)$CountDupFactor <- (colData(sexp)$ext - 1) / median(width(rowRanges(sexp))) + 1
 ```
@@ -130,7 +130,7 @@ sample.table <- colData(sexp) %>%
     as.data.frame %>% autoFactorize %>%
     mutate(days_after_activation=time_point %>% str_extract("\\d+$") %>% as.numeric(),
            time_point=factor(days_after_activation) %>% `levels<-`(glue("D{levels(.)}")),
-           group=interaction(cell_type, time_point, sep="")) %>% 
+           group=interaction(cell_type, time_point, sep="")) %>%
     autoFactorize %>%
     set_rownames(colnames(sexp))
 for (i in names(sample.table)) {
@@ -177,7 +177,7 @@ p <- list(
         aes(x=PeakOverlap, y=logCPM) +
         geom_violin(aes(fill=PeakOverlap), scale = "area") +
         geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
-        scale_fill_hue(guide="none") + 
+        scale_fill_hue(guide="none") +
         coord_cartesian(ylim=quantile(a, c(0, 0.999))) +
         labs(title="Violin plot of average window logCPM values",
              subtitle="Grouped by peak overlap"))
@@ -224,7 +224,7 @@ all.window.meta <- rowRanges(sexp) %>% as.data.frame %>%
 # Convert list columns to character vectors
 all.window.meta[] %<>% lapply(function(x) if (is.list(x)) sapply(x, str_c, collapse=",") else x)
 rownames(all.window.meta) <- all.window.meta %$% glue("{chr}:{start}-{end}")
-dge <- asDGEList(sexp) %>% 
+dge <- asDGEList(sexp) %>%
     assign_into(.$offset, NULL) %>%
     assign_into(.$genes, all.window.meta) %>%
     set_rownames(rownames(all.window.meta))
@@ -302,9 +302,9 @@ print(numsv.table)
 p <- list()
 for (i in names(svmats)) {
     d <- cbind(sample.table, svmats[[i]])
-    p[[i]] <- ggduo(d, 
+    p[[i]] <- ggduo(d,
                     columnsX=c("cell_type", "time_point", "donor_id", "totals", "FRiP"),
-                    columnsY=c(colnames(svmats[[i]]))) + 
+                    columnsY=c(colnames(svmats[[i]]))) +
         labs(title="Covariates vs surrogate variables",
              subtitle=glue("For SVs from {i} normalization"))
 }
@@ -325,10 +325,10 @@ dges.nosv <- bpmapply(estimateDisp, y=dges, MoreArgs=list(design=design, robust=
 # Hopefully save memory by re-sharing common parts after running in separate processes
 for (i in names(dges)) {
     for (slot in c("counts", "genes")) {
-        dges.noebayes[[i]][[slot]] <- 
-            dges.noebayes.nosv[[i]][[slot]] <- 
-            dges[[i]][[slot]] <- 
-            dges.nosv[[i]][[slot]] <- 
+        dges.noebayes[[i]][[slot]] <-
+            dges.noebayes.nosv[[i]][[slot]] <-
+            dges[[i]][[slot]] <-
+            dges.nosv[[i]][[slot]] <-
             dgefilt[[slot]]
     }
 }
@@ -376,7 +376,7 @@ disptable <- lapply(names(dges), function(i) {
                DispSVA = dges[[i]]$tagwise.dispersion,
                DispNoSVA = dges.nosv[[i]]$tagwise.dispersion)
 }) %>% do.call(what = rbind) %>%
-    mutate(BCV_SVA = sqrt(DispSVA), 
+    mutate(BCV_SVA = sqrt(DispSVA),
            BCV_NoSVA = sqrt(DispNoSVA),
            BCV_Change = BCV_SVA - BCV_NoSVA)
 # This isn't used any more and takes up a lot of memory, so delete it
@@ -385,33 +385,33 @@ disptable %>% group_by(NormType) %>% do({
     summary(.$BCV_Change) %>% unclass %>% rbind %>% as_data_frame
 }) %>% inner_join(numsv.table, ., by="NormType")
 bcv_upper_limit <- disptable %>% select(BCV_SVA, BCV_NoSVA) %>% unlist %>% quantile(.999)
-ggplot(disptable) + 
-    aes(x=NormType, y=BCV_NoSVA) + 
+ggplot(disptable) +
+    aes(x=NormType, y=BCV_NoSVA) +
     geom_violin(aes(fill=NormType), scale = "area") +
     geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
-    scale_fill_hue(guide="none") + 
+    scale_fill_hue(guide="none") +
     coord_cartesian(ylim=c(0, bcv_upper_limit)) +
-    labs(title="BCV estimates without SVA") + 
-    xlab("Normalization Type") + 
+    labs(title="BCV estimates without SVA") +
+    xlab("Normalization Type") +
     ylab("BCV")
-ggplot(disptable) + 
-    aes(x=NormType, y=BCV_SVA) + 
+ggplot(disptable) +
+    aes(x=NormType, y=BCV_SVA) +
     geom_violin(aes(fill=NormType), scale = "area") +
     geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
-    scale_fill_hue(guide="none") + 
+    scale_fill_hue(guide="none") +
     coord_cartesian(ylim=c(0, bcv_upper_limit)) +
-    labs(title="BCV estimates with SVA") + 
-    xlab("Normalization Type") + 
+    labs(title="BCV estimates with SVA") +
+    xlab("Normalization Type") +
     ylab("BCV")
-ggplot(disptable) + 
-    aes(x=NormType, y=BCV_Change) + 
+ggplot(disptable) +
+    aes(x=NormType, y=BCV_Change) +
     geom_hline(yintercept = 0, linetype="dashed", alpha=0.5) +
     geom_violin(aes(fill=NormType), scale = "area") +
     geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
-    scale_fill_hue(guide="none") + 
+    scale_fill_hue(guide="none") +
     coord_cartesian(ylim=quantile(disptable$BCV_Change, c(.001, .999))) +
-    labs(title="Effect of SVA on BCV estimates") + 
-    xlab("Normalization Type") + 
+    labs(title="Effect of SVA on BCV estimates") +
+    xlab("Normalization Type") +
     ylab("Change in BCV with SVA")
 ```
 
@@ -422,7 +422,7 @@ We can see that the median change in BCV is around -0.1 for the peak-based norma
 We compute the MDS coordinates after subtracting the effects of the surrogate variables for each normalization. The result is a plot showing the variation attributable to sources other than those unknown batch effects. To demonstrate the difference that batch subtraction makes, we also generate the same plots from the uncorrected data.
 
 ```{r compute_mds_normtest}
-bcdata <- mapply(function(dge, des) { 
+bcdata <- mapply(function(dge, des) {
     sv.cols <- colnames(des) %>% .[str_detect(., "^SV\\d+$")]
     assert_that(length(sv.cols) > 0)
     v <- voomWithOffset(dge, des)
@@ -432,13 +432,13 @@ bcdata <- mapply(function(dge, des) {
 prep.mds <- function(x) {
     mds <- suppressPlot(plotMDS(x))
     mds.distances <- mds %$% distance.matrix %>% as.dist
-    df <- mds.distances %>% 
-    {suppressWarnings(cmdscale(., k=ncol(x)-1))} %>% 
+    df <- mds.distances %>%
+    {suppressWarnings(cmdscale(., k=ncol(x)-1))} %>%
         add.numbered.colnames(prefix="Dim") %>%
         as.data.frame %>%
         cbind(sample.table)
     # Use Naive D0 as the reference group, and flip the signs of each dimension
-    # such that the mean of this group is negative. This makes it more likely that 
+    # such that the mean of this group is negative. This makes it more likely that
     mdscols <- colnames(df) %>% .[str_detect(., "Dim\\d+")]
     needflip <- df %>% filter(group=="NaiveD0") %>%
         .[mdscols] %>% colMeans %>% is_greater_than(0)
@@ -521,7 +521,7 @@ vp.formulas <- list(Group_Only = ~group,
 designs <- lapply(vp.formulas, model.matrix, data=sample.table.with.sv)
 elists <- bplapply(designs, voomWithOffset, dge=dges$PeakHANorm)
 # Function is already parallelized, so don't call it in parallel
-varParts <- mapply(function(...) try(fitExtractVarPartModel(...)), exprObj=elists, formula=vp.formulas, 
+varParts <- mapply(function(...) try(fitExtractVarPartModel(...)), exprObj=elists, formula=vp.formulas,
                    MoreArgs=list(data=sample.table.with.sv))
 # Collapse SVs to a single column
 varTables <- list()
@@ -558,18 +558,18 @@ It is an encouraging sign that no matter which covariates are included, the perc
 ```{r selectModel}
 sm <- BPselectModel(voomWithOffset(dges$PeakHANorm, designs[[1]]), designs, criterion = "bic")
 as.data.frame(table(sm$pref)) %>% rename(Model=Var1)
-ggplot(melt(sm$IC) %>% rename(Model=Models, Probe=Probes, IC=value)) + 
+ggplot(melt(sm$IC) %>% rename(Model=Models, Probe=Probes, IC=value)) +
     aes(x=Model, fill=Model, y=IC) + geom_violin() +
     geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
-    scale_fill_hue(guide="none") + 
-    ylab("BIC") + 
+    scale_fill_hue(guide="none") +
+    ylab("BIC") +
     labs(title="Window BIC distribution by model",
          subtitle="(lower is better)")
-ggplot(sm$IC) + aes(x=Group_and_SV, y=Group_and_Covars_and_SV) + 
-    geom_point(size=0.1) + 
-    geom_abline(slope=1, intercept=0, linetype = "longdash", color=muted("red", l=50, c=90)) + 
+ggplot(sm$IC) + aes(x=Group_and_SV, y=Group_and_Covars_and_SV) +
+    geom_point(size=0.1) +
+    geom_abline(slope=1, intercept=0, linetype = "longdash", color=muted("red", l=50, c=90)) +
     geom_density2d() +
-    coord_fixed() + 
+    coord_fixed() +
     labs(title="Window BIC with vs. without Donor & FRiP covariates")
 ```
 
@@ -687,7 +687,7 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm.loess, s1, s2, linedata = NULL) +
-            geom_hline(yintercept=0) + 
+            geom_hline(yintercept=0) +
             labs(title=glue("MA plot of {params$window_size} windows, loess normalized"),
                  subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
@@ -702,7 +702,7 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(bcdata$PeakHANorm$E, s1, s2, linedata = NULL) +
-            geom_hline(yintercept=0) + 
+            geom_hline(yintercept=0) +
             labs(title=glue("MA plot of {params$window_size} windows, peak-normalized & SVA-corrected"),
                  subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
