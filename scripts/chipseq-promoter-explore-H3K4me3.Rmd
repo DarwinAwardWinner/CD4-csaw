@@ -146,15 +146,15 @@ for (i in names(sample.table)) {
 
 We begin by selecting only peaks  with an IDR value of 0.05 or less, and then determine the set of promoters that overlap these peaks.
 
-```{r initial_filter_peaks}
+```{r filter_peaks}
 idr.threshold <- 0.05
 genome.size <- seqlengths(seqinfo(allpeaks)) %>% as.numeric %>% sum
 # IDR is encoded in the qValue field of the narrowPeak file
 peaks <- allpeaks[allpeaks$qValue >= -log10(idr.threshold)]
-pct.covered <- width(peaks) %>% sum %>% divide_by(genome.size) %>% multiply_by(100)
+pct.genome.covered <- width(peaks) %>% sum %>% divide_by(genome.size) %>% multiply_by(100)
 peak.overlap <- overlapsAny(sexp, peaks)
-pct.peak.overlap <- mean(peak.overlap) * 100
-message(glue("Selected {length(peaks)} peaks at an IDR threshold of {format(idr.threshold, digits=3)}, with an average width of {round(mean(width(peaks)))} nucleotides and covering a total of {format(pct.covered, digits=3)}%% of the genome."))
+pct.promoters.covered <- mean(peak.overlap) * 100
+message(glue("Selected {length(peaks)} peaks at an IDR threshold of {format(idr.threshold, digits=3)}, with an average width of {round(mean(width(peaks)))}, covering a total of {format(pct.genome.covered, digits=3)}%% of the genome and {format(pct.promoters.covered, digits=3)}% of promoters."))
 ```
 
 We need a strategy to filter out unbound promoters representing background regions of the genome where no specific binding is observed. First, we examine the overall distribution of average logCPM values, splitting the distribution based on which promoters overlap peaks:
@@ -165,7 +165,7 @@ a <- aveLogCPM(asDGEList(sexp), prior.count = 2)
 
 ```{r plot_aveLogCPM}
 adata <- data.frame(logCPM=a, PeakOverlap=peak.overlap)
-threshold.q <- 0.01
+threshold.q <- 0.05
 logcpm.threshold <- adata %>% filter(PeakOverlap) %$% quantile(logCPM, threshold.q)
 count.threshold <- 2^logcpm.threshold * mean(colData(sexp)$totals) / 1e6
 message(glue("
@@ -194,7 +194,7 @@ ggprint(p)
 summary(lm(logCPM ~ PeakOverlap, data=adata))
 ```
 
-Happily, there is a clear bimodal distribution, which we presume separates bound from unbound promoters. We use the logCPM distribution of peak-overlapping promoters to choose a low-count filter threshold that keeps 99% of such promoters, and then we keep *all* promoters that pass this threshold, regardless of whether they contain a called peak. This ensures that we capture almost all activity in any peak-containing promoters without relying directly on the peak calls. Thus, if a promoter contains a peak that was not called because it is only present in certain conditions, it is still likely to be included based on this filter criterion.
+Happily, there is a clear bimodal distribution, which we presume separates bound from unbound promoters. We use the logCPM distribution of peak-overlapping promoters to choose a low-count filter threshold that keeps 95% of such promoters, and then we keep *all* promoters that pass this threshold, regardless of whether they contain a called peak. This ensures that we capture almost all activity in any peak-containing promoters without relying directly on the peak calls. Thus, if a promoter contains a peak that was not called because it is only present in certain conditions, it is still likely to be included based on this filter criterion.
 
 ```{r filter_promoters_by_peak_overlap}
 sexp <- sexp[a >= logcpm.threshold,]
