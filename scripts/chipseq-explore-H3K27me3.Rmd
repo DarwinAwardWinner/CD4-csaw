@@ -592,19 +592,15 @@ logcpm.loess <- cpmWithOffset(dges$LoessNorm, log=TRUE, prior.count=0.5)
 bigbin.logcpm <- cpm(asDGEList(bigbin.sexp), log=TRUE, prior.count=0.5)
 
 getLineData <- function(s1, s2) {
-    c(BG="BGNorm",
-      Peaks="PeakNorm",
-      PeaksHA="PeakHANorm") %>%
-        sapply(. %>% {dges[[.]]$samples$norm.factors} %>% log2 %>% {.[s2] - .[s1]}) %>%
-        data.frame(NormFactor=., NormType=names(.))
+    linenames <- c(BG="BGNorm",
+                   Peaks="PeakNorm",
+                   PeaksHA="PeakHANorm")
+    dgelists <- dges[linenames] %>% setNames(names(linenames))
+    getNormLineData(dgelists, s1, s2)
 }
 
-getOffsetLineData <- function(s1, s2, n=1000) {
-    x <- data.frame(A=aveLogCPM(dges$LoessNorm, dispersion=0.05, prior.count=0.5),
-                    Offset=dges$LoessNorm$offset %>% {.[,s2] - .[,s1]} %>% divide_by(log(2)))
-    f <- approxfun(x$A, x$Offset)
-    data.frame(A=seq(from=min(x$A), to=max(x$A), length.out = n)) %>%
-        mutate(M=f(A))
+getOffsetCurveData <- function(s1, s2, n=1000) {
+    getOffsetNormCurveData(dges$LoessNorm, s1, s2, n)
 }
 
 doMAPlot <- function(logcpm.matrix, s1, s2, linedata=getLineData(s1, s2), curvedata=NULL,
@@ -676,7 +672,7 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm, s1, s2, AveLogCPM=AveLogCPM,
-                 curvedata=getOffsetLineData(s1, s2)) +
+                 curvedata=getOffsetCurveData(s1, s2)) +
             labs(title=glue("MA plot of {params$window_size} windows with common A scale"),
                  subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })

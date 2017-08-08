@@ -14,6 +14,8 @@ library(future)
 library(Rtsne)
 library(qvalue)
 library(fdrtool)
+library(edgeR)
+library(csaw)
 
 # Inverse of sitools::f2si
 si2f <- function(string, unit="") {
@@ -877,4 +879,42 @@ BPselectModel <- function (y, designlist, criterion = "aic", df.prior = 0, s2.pr
     pref <- factor(apply(IC, 1, which.min), levels = 1:nmodels,
         labels = models)
     list(IC = IC, pref = pref, criterion = criterion)
+}
+
+# Return TRUE if namefun(obj) is a non-NULL character vector with no missing
+# elements.
+is.fully.named <- function(obj, namefun=names) {
+    the.names <- namefun(obj)
+    if (is.null(the.names)) {
+        return(FALSE)
+    } else if (!is.character(the.names)) {
+        return(FALSE)
+    } else if (any(is.na(the.names))) {
+        return(FALSE)
+    } else {
+        return(TRUE)
+    }
+}
+
+# Get log2-fold-change y-axis position of normalization lines between two
+# samples for a list of DGEList objects.
+getNormLineData <- function(dgelists, s1, s2) {
+    assert_that(is.fully.named(dgelists))
+    names(dgelists) %>%
+        sapply(. %>% {dges[[.]]$samples$norm.factors} %>% log2 %>% {.[s2] - .[s1]}) %>%
+        data.frame(NormFactor=., NormType=names(dgelists))
+}
+
+# Get a curve representing the loess-based normaliation inplied by the offsets
+# of two samples in a DGEList object. N is the number of points to interpolate the curve at.
+getOffsetNormCurveData <- function(dge, s1, s2, n=1000) {
+    assert_that(is.numeric(dge$offset))
+    a <- aveLogCPM(dge, dispersion=0.05, prior.count=0.5)
+    # Need to subtract the library size difference out of the offset
+    raw.offset <- dge$offset %>% {.[,s2] - .[,s1]} %>% divide_by(log(2))
+    lib.size.offset <- dge$samples$lib.size %>% {.[s2] / .[s1]} %>% log2
+    x <- data.frame(A=a, Offset=raw.offset - lib.size.offset)
+    f <- approxfun(x$A, x$Offset)
+    data.frame(A=seq(from=min(x$A), to=max(x$A), length.out = n)) %>%
+        mutate(M=f(A))
 }
