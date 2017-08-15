@@ -431,7 +431,7 @@ bcdata <- mapply(function(dge, des) {
     v <- voomWithOffset(dge, des)
     v$E <- suppressMessages(subtractCoefs(v$E, des, coefsToSubtract = sv.cols))
     v
-}, dge=dges, des=sv.designs.int)
+}, dge=dges, des=sv.designs.int, SIMPLIFY=FALSE)
 prep.mds <- function(x) {
     mds <- suppressPlot(plotMDS(x))
     mds.distances <- mds %$% distance.matrix %>% as.dist
