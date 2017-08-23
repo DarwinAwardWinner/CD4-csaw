@@ -891,8 +891,8 @@ is.fully.named <- function(obj, namefun=names) {
 # samples for a list of DGEList objects.
 getNormLineData <- function(dgelists, s1, s2) {
     assert_that(is.fully.named(dgelists))
-    names(dgelists) %>%
-        sapply(. %>% {dges[[.]]$samples$norm.factors} %>% log2 %>% {.[s2] - .[s1]}) %>%
+    dgelists %>%
+        sapply(. %>% {.$samples$norm.factors} %>% log2 %>% {.[s2] - .[s1]}) %>%
         data.frame(NormFactor=., NormType=names(dgelists))
 }
 

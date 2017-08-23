@@ -320,10 +320,10 @@ With the background normalization, we can clearly see that the first surrogate v
 Now we estimate the dispersions with and without empirical Bayes shrinkage, with and without surrogate variables.
 
 ```{r estimate_disp_normtest}
-dges.noebayes <- bpmapply(estimateDisp, y=dges, design=sv.designs, MoreArgs=list(prior.df=0))
-dges.noebayes.nosv <- bpmapply(estimateDisp, y=dges, MoreArgs=list(design=design, prior.df=0))
-dges <- bpmapply(estimateDisp, y=dges, design=sv.designs, MoreArgs=list(robust=TRUE))
-dges.nosv <- bpmapply(estimateDisp, y=dges, MoreArgs=list(design=design, robust=TRUE))
+dges <- bpmapply(estimateDisp, y=dges, design=sv.designs, MoreArgs=list(robust=TRUE), SIMPLIFY = FALSE)
+dges.nosv <- bpmapply(estimateDisp, y=dges, MoreArgs=list(design=design, robust=TRUE), SIMPLIFY = FALSE)
+dges.noebayes <- bpmapply(estimateDisp, y=dges, design=sv.designs, MoreArgs=list(prior.df=0), SIMPLIFY = FALSE)
+dges.noebayes.nosv <- bpmapply(estimateDisp, y=dges, MoreArgs=list(design=design, prior.df=0), SIMPLIFY = FALSE)
 # Hopefully save memory by re-sharing common parts after running in separate processes
 for (i in names(dges)) {
     for (slot in c("counts", "genes")) {
@@ -334,15 +334,15 @@ for (i in names(dges)) {
             dgefilt[[slot]]
     }
 }
-xlims <- lapply(c(dges, dges.nosv), . %$% AveLogCPM %>% range) %>%
-    unlist %>% range %>% expand_range(mul=0.05)
-ylims <- lapply(c(dges, dges.nosv), . %$% c(quantile(tagwise.dispersion, c(0, 0.975)), trended.dispersion, common.dispersion) %>% range) %>%
-    unlist %>% c(0) %>% range %>% sqrt %>% pmax(0) %>% expand_range(mul=0.05)
 ```
 
 We now inspect the dispersion plot for each of the normalizations.
 
 ```{r plot_disp_normtest}
+xlims <- lapply(c(dges, dges.nosv), . %$% AveLogCPM %>% range) %>%
+    unlist %>% range %>% expand_range(mul=0.05)
+ylims <- lapply(c(dges, dges.nosv), . %$% c(quantile(tagwise.dispersion, c(0, 0.975)), trended.dispersion, common.dispersion) %>% range) %>%
+    unlist %>% c(0) %>% range %>% sqrt %>% pmax(0) %>% expand_range(mul=0.05)
 p <- list()
 for (i in names(dges)) {
     prior.df <- dges[[i]]$prior.df %>% median
@@ -660,7 +660,7 @@ With the preparatory code in place, we can now make the MA plots. First, we make
 
 ```{r maplot_windows}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
-    lapply(function(i) {
+    bplapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm, s1, s2) +
@@ -674,7 +674,7 @@ Now, we make the same plots, but for the x-axis, we use the average log2 CPM of 
 
 ```{r maplot_windows_Acommon}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
-    lapply(function(i) {
+    bplapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm, s1, s2, AveLogCPM=AveLogCPM,
@@ -689,7 +689,7 @@ Next, instead of plotting the loess normalization line, we make the MA plot usin
 
 ```{r maplot_windows_loess_norm}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
-    lapply(function(i) {
+    bplapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm.loess, s1, s2, linedata = NULL) +
@@ -704,7 +704,7 @@ Next, we make the same MA plots using the same corrected data that was used to g
 
 ```{r maplot_sva}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
-    lapply(function(i) {
+    bplapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(bcdata$PeakHANorm$E, s1, s2, linedata = NULL) +
@@ -719,7 +719,7 @@ Last, we make MA plots for the 10kb bins that were used to compute the backgroun
 
 ```{r maplot_bigbins}
 p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
-    lapply(function(i) {
+    bplapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(bigbin.logcpm, s1, s2) +
