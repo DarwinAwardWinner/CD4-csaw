@@ -10,7 +10,7 @@ params:
   basedir:
     value: /home/ryan/Projects/CD4-csaw
   histone_mark:
-    value: H3K27me3
+    value: H3K4me3
   window_size:
     value: 500bp
   fragment_length:
@@ -170,7 +170,7 @@ count.threshold <- 5
 filter.threshold <- aveLogCPM(count.threshold, lib.size=mean(dge$samples$lib.size))
 filt <- aveLogCPM(dge) >= filter.threshold
 dge <- dge[filt,]
-message(glue("Excluding {sum(filt == FALSE)} out of {length(filt)} peak-overlapping windows ({format(100*(1-mean(filt)), digits=3)}%%) with average count below {count.threshold}.")
+message(glue("Excluding {sum(filt == FALSE)} out of {length(filt)} peak-overlapping windows ({format(100*(1-mean(filt)), digits=3)}%%) with average count below {count.threshold}."))
 ```
 
 ## Model fitting
