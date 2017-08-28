@@ -519,7 +519,7 @@ for (i in names(varParts)) {
 }
 ```
 
-The variancePartition function failed to run for the model that included both known covariates and surrogate variables. This is expected if the surrogate variables are highly correlated with any of the known covariates, which we have already observed is the case for donor ID.
+We now plot the percent of variance explained by each factor in each model.
 
 ```{r plot_vpart}
 p <- list()
@@ -572,7 +572,7 @@ bigbin.logcpm <- cpm(asDGEList(bigbin.sexp), log=TRUE, prior.count=0.5)
 getLineData <- function(s1, s2) {
     linenames <- c(BG="BGNorm",
                    Promoters="PromoterNorm")
-    assert_that(all(linenames %in% names(dg)))
+    assert_that(all(linenames %in% names(dges)))
     dgelists <- dges[linenames] %>% setNames(names(linenames))
     getNormLineData(dgelists, s1, s2)
 }
@@ -650,7 +650,7 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm, s1, s2, AveLogCPM=AveLogCPM,
-                 curvedata=getOffsetLineData(s1, s2)) +
+                 curvedata=getOffsetCurveData(s1, s2)) +
             labs(title=glue("MA plot of {params$promoter_radius}-radius promoters with common A scale"),
                  subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
