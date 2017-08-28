@@ -253,11 +253,9 @@ cpmWithOffset <- function(dge, offset=getOffset(dge),
     } else {
         dge$offset <- offset
     }
-    cpm(dge, lib.size=exp(getOffset(dge)), log=log, prior.count=prior.count, ...)
+    cpm(dge$counts, lib.size=exp(getOffset(dge)), log=log, prior.count=prior.count, ...)
 }
 
-## FIXME: This is basically obsolete now that aveLogCPM gained an
-## offset argument of its own.
 aveLogCPMWithOffset <- function(y, ...) {
     UseMethod("aveLogCPMWithOffset")
 }
