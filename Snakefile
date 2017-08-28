@@ -2310,7 +2310,6 @@ rule chipseq_promoter_diffmod:
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_analyze']
     run:
-        raise NotImplementedError("Still writing the script")
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
                    output_format='html_document',
