@@ -49,6 +49,7 @@ library(doParallel)
 ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
 registerDoParallel(cores=ncores)
 library(BiocParallel)
+BiocParallel:::.registry_init() # Workaround for https://github.com/Bioconductor/BiocParallel/issues/65
 register(DoparParam())
 
 source(file.path(params$basedir, "scripts/utilities.R"))
