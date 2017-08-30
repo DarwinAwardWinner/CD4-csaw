@@ -795,7 +795,7 @@ clamp_trans <- function(lower_threshold=0, upper_threshold=1) {
 
 # Do multiple runs of t-SNE and pick the one with the lowest final
 # cost. (TODO: Make reproducible)
-Rtsne.multi <- function(..., num.repeats=10, BPPARAM=BPPARAM()) {
+Rtsne.multi <- function(..., num.repeats=10, BPPARAM=bpparam()) {
     args <- list(...)
     results <- bplapply(seq_len(num.repeats), function(i) {
         do.call(Rtsne, args)
