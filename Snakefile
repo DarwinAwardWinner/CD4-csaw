@@ -25,8 +25,10 @@ from snakemake.utils import min_version
 min_version('3.7.1')
 
 from snakemake.remote.FTP import RemoteProvider as FTPRemoteProvider
+from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
 
 FTP = FTPRemoteProvider()
+HTTP = HTTPRemoteProvider()
 
 pandas2ri.activate()
 rpy2.rinterface.set_writeconsole_warnerror(lambda x: sys.stderr.write(x))
@@ -1150,6 +1152,25 @@ rule get_liftover_chain:
     output: 'saved_data/{src_genome}ToHg38.over.chain'
     shell: 'zcat {input:q} > {output:q}'
 
+rule get_motifmap:
+    '''Download MotifMap data for hg19
+
+    http://motifmap.igb.uci.edu/
+
+    '''
+    input: tar=HTTP.remote('www.igb.uci.edu/~motifmap/motifmap/HUMAN/hg19/multiz46way_placental/HUMAN.hg19_multiz46way.tar.bz2', insecure=True, static=True)
+    output: bed='saved_data/MotifMap_HUMAN_hg19_BBLS_1_00_FDR_0_10.bed'
+    params: file_inside_tar='HUMAN_hg19_BBLS_1_00_FDR_0_10.bed'
+    shell: '''tar -O -xjf {input.tar:q} {params.file_inside_tar:q} > {output.bed:q}'''
+
+rule liftover_motifmap:
+    '''Use LiftOver to translate MotifMap BED to hg38 coordinates.'''
+    input: bed='saved_data/MotifMap_HUMAN_hg19_BBLS_1_00_FDR_0_10.bed',
+           chain='saved_data/hg19ToHg38.over.chain',
+    output: bed='saved_data/MotifMap_HUMAN_hg38_BBLS_1_00_FDR_0_10.bed'
+    params: allow_gap=2
+    script: 'scripts/liftOver-MotifMap.R'
+
 # http://genome.ucsc.edu/cgi-bin/hgFileUi?db=hg19&g=wgEncodeMapability
 rule get_blacklist_regions:
     '''Download UCSC "consensus excludable regions" tracks.
@@ -1158,7 +1179,7 @@ rule get_blacklist_regions:
 
     '''
     input: FTP.remote('hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeMapability/{track_name}.bed.gz', static=True)
-    output: 'saved_data/{track_name}_hg19.bed'
+    output: 'saved_data/{track_name,wgEncode.*}_hg19.bed'
     shell: '''zcat {input:q} > {output:q}'''
 
 rule liftover_blacklist_regions:

@@ -1,21 +1,26 @@
-library(stringr)
-library(rex)
-library(glue)
-library(sitools)
-library(glue)
-library(sitools)
-library(rex)
-library(magrittr)
-library(dplyr)
-library(assertthat)
-library(BiocParallel)
-library(lazyeval)
-library(future)
-library(Rtsne)
-library(qvalue)
-library(fdrtool)
-library(edgeR)
-library(csaw)
+suppressMessages({
+    library(stringr)
+    library(rex)
+    library(glue)
+    library(sitools)
+    library(glue)
+    library(sitools)
+    library(rex)
+    library(magrittr)
+    library(dplyr)
+    library(readr)
+    library(tidyr)
+    library(assertthat)
+    library(BiocParallel)
+    library(lazyeval)
+    library(future)
+    library(Rtsne)
+    library(qvalue)
+    library(fdrtool)
+    library(edgeR)
+    library(csaw)
+    library(rtracklayer)
+})
 
 # Inverse of sitools::f2si
 si2f <- function(string, unit="") {
@@ -906,4 +911,42 @@ getOffsetNormCurveData <- function(dge, s1, s2, n=1000) {
     f <- approxfun(x$A, x$Offset)
     data.frame(A=seq(from=min(x$A), to=max(x$A), length.out = n)) %>%
         mutate(M=f(A))
+}
+
+## Read MotifMap-provided BED file into a GRanges object. We can't use
+## rtracklayer::import.bed because it chokes on spaces in fields,
+## which MotifMap contains.
+read.motifmap <- function(x, parse_name=TRUE) {
+    tab <- read_tsv(x, col_names=c("chr", "start", "end", "name", "score", "strand"),
+                    col_types="ciicdc", progress=FALSE)
+    if (parse_name) {
+        tab %<>% separate(name, into=c("motif_ID", "TF_name"), sep="=")
+    }
+    gr <- as(tab, "GRanges")
+    ## Convert USSC coordinates to IRanges coordinates
+    start(gr) <- start(gr) + 1
+    gr
+}
+
+write.motifmap <- function(x, file) {
+    assert_that(is(x, "GRanges"))
+    if (! "name" %in% names(mcols(x))) {
+        assert_that(all(c("motif_ID", "TF_name") %in% names(mcols(x))))
+        mcols(x) %<>% as.data.frame %>% unite(name, c(motif_ID, TF_name), sep="=") %>% as("DataFrame")
+    }
+    export(x, file, format="BED")
+}
+
+## Like rtracklayer::liftOver but "fills in" small gaps induced by the
+## liftOver process (i.e. no larger than allow.gap). If allow.gap is
+## zero, this is equivalent to liftOver.
+liftOverLax <- function(x, chain, ..., allow.gap=0) {
+    newx <- liftOver(x, chain)
+    if (allow.gap > 0) {
+        gapped <- which(lengths(newx) > 1)
+        newx.gapped.reduced <- reduce(newx[gapped], min.gapwidth = allow.gap + 1, with.revmap=TRUE)
+        mcols(newx.gapped.reduced@unlistData) <- rep(mcols(x[gapped]), lengths(newx.gapped.reduced))
+        newx[gapped] <- newx.gapped.reduced
+    }
+    return(newx)
 }
