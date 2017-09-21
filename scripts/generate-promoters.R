@@ -125,6 +125,8 @@ get.options <- function(opts) {
                     help="Maximum distance from a gene's transcription start site that is considered part of the promoter."),
         make_option(c("-o", "--output-file"), metavar="FILENAME.RDS", type="character",
                     help="Output file name. The GRanges object containing the promoter regions will be saved here using saveRDS, so it should end in '.RDS'."),
+        make_option(c("-a", "--additional-gene-info"), metavar="FILENAME", type="character",
+                    help="RDS/RData/xlsx/csv file containing a table of gene metadata. Row names (or the first column of the file if there are no row names) should be gene/feature IDs that match the ones used in the main annotation, and these should be unique. This can also be a GFF3 file where the metadata is in the attributes of elements of type 'gene', where the 'ID' attribute specifies the gene ID."),
         make_option(c("-j", "--threads"), metavar="N", type="integer", default=num.cores,
                     help="Number of threads to use while counting reads"))
     progname <- na.omit(c(get_Rscript_filename(), "rnaseq-count.R"))[1]
@@ -164,6 +166,8 @@ library(assertthat)
 library(dplyr)
 library(magrittr)
 library(stringr)
+library(glue)
+library(future)
 library(GenomicRanges)
 library(BiocParallel)
 library(doParallel)
@@ -268,6 +272,56 @@ get.txdb <- function(txdbname) {
     })
 }
 
+read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL,
+                               dataframe.class="data.frame") {
+    suppressWarnings({
+        read.table.args %<>% as.list
+        read.table.args$file <- filename
+        read.table.args$header <- TRUE
+        read.xlsx.args %<>% as.list
+        read.xlsx.args$xlsxFile <- filename
+        lazy.results <- list(
+            rdata=future(read.RDS.or.RDA(filename, dataframe.class), lazy=TRUE),
+            table=future(do.call(read.table, read.table.args), lazy=TRUE),
+            csv=future(do.call(read.csv, read.table.args), lazy=TRUE),
+            xlsx=future(do.call(read.xlsx, read.xlsx.args), lazy=TRUE))
+        for (lzresult in lazy.results) {
+            result <- tryCatch({
+                x <- as(value(lzresult), dataframe.class)
+                assert_that(is(x, dataframe.class))
+                x
+            }, error=function(...) NULL)
+            if (!is.null(result)) {
+                return(result)
+            }
+        }
+        stop(glue("Could not read a data frame from {deparse{filename}} as R data, csv, or xlsx"))
+    })
+}
+
+read.additional.gene.info <- function(filename, gff_format="GFF3", geneFeatureType="gene", ...) {
+    df <- tryCatch({
+        gff <- tryCatch({
+            read.RDS.or.RDA(filename, "GRanges")
+        }, error=function(...) {
+            import(filename, format=gff_format)
+        })
+        assert_that(is(gff, "GRanges"))
+        gff %>% .[.$type %in% geneFeatureType] %>%
+            mcols %>% cleanup.mcols(mcols_df=.)
+    }, error=function(...) {
+        tab <- read.table.general(filename, ..., dataframe.class="DataFrame")
+        ## Nonexistent or automatic row names
+        if (.row_names_info(tab) <= 0) {
+            row.names(tab) <- tab[[1]]
+        }
+        tab
+    })
+    df %<>% DataFrame
+    assert_that(is(df, "DataFrame"))
+    return(df)
+}
+
 print.var.vector <- function(v) {
     for (i in names(v)) {
         cat(i, ": ", deparse(v[[i]]), "\n", sep="")
@@ -295,9 +349,9 @@ print.var.vector <- function(v) {
 
     tsmsg("Reading annotation data")
     txdb <- get.txdb(cmdopts$annotation_txdb)
-    tsmsg(glue("Getting {format.bp(cmdopts$promoter_radius)}-radius promoters", ))
+    tsmsg(glue("Getting {format.bp(cmdopts$promoter_radius)}-radius promoters"))
     all.promoters <- suppressWarnings(promoters(txdb, upstream=cmdopts$promoter_radius, downstream = cmdopts$promoter_radius)) %>%
-        trim %>% keepSeqlevels(std.chr)
+        trim %>% keepSeqlevels(std.chr, pruning.mode="coarse")
 
     tsmsg("Annotating promoters")
     mcols(all.promoters) %<>%
@@ -320,6 +374,30 @@ print.var.vector <- function(v) {
         gp.reduced$TxID <- CharacterList(split(gp$TxID, pgroup))[gp.reduced$PromoterID]
         gp.reduced
     }) %>% unname %>% GRangesList %>% unlist
+
+    if ("additional_gene_info" %in% names(cmdopts)) {
+        tsmsg("Reading additional gene annotation metadata")
+        additional_gene_info <- read.additional.gene.info(cmdopts$additional_gene_info)
+        genes_without_info <- setdiff(names(gene.promoters), rownames(additional_gene_info))
+        if (length(genes_without_info) > 0) {
+            empty_row <- list(character(0)) %>% rep(ncol(additional_gene_info)) %>% setNames(colnames(additional_gene_info))
+            single.val.cols <- sapply(additional_gene_info, function(x) all(lengths(x) == 1))
+            for (i in seq_along(empty_row)) {
+                if (single.val.cols[i]) {
+                    empty_row[[i]] <- NA
+                } else {
+                    empty_row[[i]] <- list(logical(0)) %>% as(class(additional_gene_info[[i]]))
+                }
+            }
+            empty_row %<>% DataFrame
+            empty_gene_table <- empty_row[rep(1, length(genes_without_info)),] %>%
+                set_rownames(genes_without_info)
+            additional_gene_info %<>% rbind(empty_gene_table)
+        }
+        assert_that(all(merged.promoters$GeneID %in% rownames(additional_gene_info)))
+        mcols(merged.promoters)[colnames(additional_gene_info)] <- additional_gene_info[merged.promoters$GeneID,]
+        metadata(merged.promoters) %<>% c(metadata(additional_gene_info))
+    }
 
     tsmsg("Saving output file")
     save.RDS.or.RDA(merged.promoters, cmdopts$output_file)

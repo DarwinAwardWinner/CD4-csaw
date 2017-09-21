@@ -1232,6 +1232,7 @@ rule generate_promoter_regions_ensembl:
     '''Generate a file describing promoter regions for UCSC knownGene.'''
     input:
         txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v{release}.sqlite3'),
+        genemeta=hg38_ref('genemeta.ensembl.85.RDS')
     output:
         rds="saved_data/promoter-regions_hg38.analysisSet_ensembl.{release}_{radius,[0-9.]+.*?bp}.RDS",
     threads: 32
@@ -1240,11 +1241,14 @@ rule generate_promoter_regions_ensembl:
       -j {threads:q} \
       --txdb {input.txdb:q} \
       --promoter-radius {wildcards.radius:q} \
+      --additional-gene-info {input.genemeta:q}
       --output-file {output.rds:q}
     '''
 
 rule generate_promoter_regions_knownGene:
     '''Generate a file describing promoter regions for UCSC knownGene.'''
+    input:
+        genemeta=hg38_ref('genemeta.org.Hs.eg.db.RDS'),
     params:
         txdb='TxDb.Hsapiens.UCSC.hg38.knownGene'
     output:
@@ -1255,6 +1259,7 @@ rule generate_promoter_regions_knownGene:
       -j {threads:q} \
       --txdb {params.txdb:q} \
       --promoter-radius {wildcards.radius:q} \
+      --additional-gene-info {input.genemeta:q}
       --output-file {output.rds:q}
     '''
 
