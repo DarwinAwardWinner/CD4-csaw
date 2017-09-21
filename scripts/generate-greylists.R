@@ -63,7 +63,7 @@ input.sample.table <- sample.table %>% filter(ChIP == "input")
 tsmsg("Preparing SeqInfo for HG38 standard chromosomes")
 std.chr <- extractSeqlevels("Homo sapiens", "UCSC")
 std.seqinfo <- BSgenome.Hsapiens.UCSC.hg38 %>%
-    seqinfo %>% keepSeqlevels(std.chr)
+    seqinfo %>% keepSeqlevels(std.chr, pruning.mode="coarse")
 
 set.seed(1986)
 
