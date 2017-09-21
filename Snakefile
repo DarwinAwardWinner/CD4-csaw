@@ -1171,6 +1171,10 @@ rule liftover_motifmap:
     params: allow_gap=2
     script: 'scripts/liftOver-MotifMap.R'
 
+rule get_cpg:
+    output: 'saved_data/UCSC_hg38_cpgIslandExtUnmasked.RDS'
+    script: 'scripts/get-CpG.R'
+
 # http://genome.ucsc.edu/cgi-bin/hgFileUi?db=hg19&g=wgEncodeMapability
 rule get_blacklist_regions:
     '''Download UCSC "consensus excludable regions" tracks.
