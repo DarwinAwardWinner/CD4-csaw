@@ -922,9 +922,7 @@ read.motifmap <- function(x, parse_name=TRUE) {
     if (parse_name) {
         tab %<>% separate(name, into=c("motif_ID", "TF_name"), sep="=")
     }
-    gr <- as(tab, "GRanges")
-    ## Convert USSC coordinates to IRanges coordinates
-    start(gr) <- start(gr) + 1
+    gr <- makeGRangesFromDataFrame(tab, starts.in.df.are.0based=TRUE)
     gr
 }
 
