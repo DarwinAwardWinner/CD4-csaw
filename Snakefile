@@ -1245,7 +1245,7 @@ rule generate_promoter_regions_ensembl:
       -j {threads:q} \
       --txdb {input.txdb:q} \
       --promoter-radius {wildcards.radius:q} \
-      --additional-gene-info {input.genemeta:q}
+      --additional-gene-info {input.genemeta:q} \
       --output-file {output.rds:q}
     '''
 
@@ -1263,7 +1263,7 @@ rule generate_promoter_regions_knownGene:
       -j {threads:q} \
       --txdb {params.txdb:q} \
       --promoter-radius {wildcards.radius:q} \
-      --additional-gene-info {input.genemeta:q}
+      --additional-gene-info {input.genemeta:q} \
       --output-file {output.rds:q}
     '''
 
@@ -1998,7 +1998,7 @@ rule csaw_count_promoters:
     scripts/csaw-count-regions.R \
       --samplemeta-file {input.samplemeta:q} \
       --sample-id-column SRA_run \
-      --bam-file-pattern 'aligned/chipseq_bowtie2_hg38.analysisSet/%s/Aligned.bam' \
+      --bam-file-pattern 'aligned/chipseq_bowtie2_hg38.analysisSet/{{SAMPLE}}/Aligned.bam' \
       --regions {input.promoters:q} \
       --read-extension {wildcards.read_ext:q} \
       --blacklist {input.blacklist:q} \

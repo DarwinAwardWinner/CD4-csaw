@@ -136,13 +136,14 @@ get.options <- function(opts) {
 ## Terminate early on argument-processing errors
 invisible(get.options(commandArgs(TRUE)))
 
+library(dplyr)
+library(glue)
+library(Matrix)
+library(future)
 library(GenomicRanges)
 library(rtracklayer)
 library(SummarizedExperiment)
-library(dplyr)
 library(csaw)
-library(Matrix)
-library(future)
 
 regionCountsParallel <- function(bam.files, ..., BPPARAM=bpparam()) {
     reslist <- bplapply(X=bam.files, FUN=regionCounts, ..., BPPARAM=BPPARAM)
@@ -178,7 +179,7 @@ read.RDS.or.RDA <- function(filename, expected.class="ANY") {
 ## TODO: Move to utilities.R
 
 ## Read a table from a R data file, csv, or xlsx file. Returns a data
-## frame or thorws an error.
+## frame or throws an error.
 read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL,
                                dataframe.class="data.frame") {
     suppressWarnings({
@@ -188,10 +189,10 @@ read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NU
         read.xlsx.args %<>% as.list
         read.xlsx.args$xlsxFile <- filename
         lazy.results <- list(
-            rdata=lazy(read.RDS.or.RDA(filename, dataframe.class)),
-            table=lazy(do.call(read.table, read.table.args)),
-            csv=lazy(do.call(read.csv, read.table.args)),
-            xlsx=lazy(do.call(read.xlsx, read.xlsx.args)))
+            rdata=future(read.RDS.or.RDA(filename, dataframe.class), lazy=TRUE),
+            table=future(do.call(read.table, read.table.args), lazy=TRUE),
+            csv=future(do.call(read.csv, read.table.args), lazy=TRUE),
+            xlsx=future(do.call(read.xlsx, read.xlsx.args), lazy=TRUE))
         for (lzresult in lazy.results) {
             result <- tryCatch({
                 x <- as(value(lzresult), dataframe.class)
@@ -217,11 +218,11 @@ read.saf <- function(filename, ...) {
 read.regions <- function(filename) {
     suppressWarnings({
         lazy.results <- list(
-            rdata=lazy(read.RDS.or.RDA(filename)),
-            bed=lazy(import(filename, format="bed")),
-            gff=lazy(import(filename, format="gff")),
-            saf=lazy(read.saf(filename)),
-            table=lazy(read.table.general(filename)))
+            rdata=future(read.RDS.or.RDA(filename), lazy=TRUE),
+            bed=future(import(filename, format="bed"), lazy=TRUE),
+            gff=future(import(filename, format="gff"), lazy=TRUE),
+            saf=future(read.saf(filename), lazy=TRUE),
+            table=future(read.table.general(filename), lazy=TRUE))
         for (lzresult in lazy.results) {
             result <- tryCatch({
                 x <- value(lzresult)
@@ -245,6 +246,16 @@ print.var.vector <- function(v) {
     }
     invisible(v)
 }
+
+## cmdopts <- list(
+##     samplemeta_file="saved_data/samplemeta-ChIPSeq.RDS",
+##     sample_id_column="SRA_run",
+##     bam_file_pattern="aligned/chipseq_bowtie2_hg38.analysisSet/{SAMPLE}/Aligned.bam",
+##     regions="saved_data/promoter-regions_hg38.analysisSet_knownGene_2.5kbp.RDS",
+##     output_file="saved_data/promoter-counts_hg38.analysisSet_knownGene_2.5kbp-radius_147bp-reads.RDS",
+##     read_extension=147,
+##     blacklist="saved_data/ChIPSeq-merged-blacklist.bed",
+##     threads=4)
 
 {
     cmdopts <- get.options(commandArgs(TRUE))
@@ -271,7 +282,7 @@ print.var.vector <- function(v) {
 
     sample.table <- readRDS(cmdopts$samplemeta_file) %>%
         ## Compute full path to BAM file
-        mutate(bam_file=glue(cmdopts$bam_file_pattern, SAMPLE=.[[cmdopts$sample_id_column]], .envir=emptyenv())) %>%
+        mutate(bam_file=glue(cmdopts$bam_file_pattern, SAMPLE=.[[cmdopts$sample_id_column]])) %>%
         ## Ensure that days_after_activation is a factor and can't be
         ## interpreted as a numeric
         mutate(days_after_activation=days_after_activation %>%
