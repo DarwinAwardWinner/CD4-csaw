@@ -315,6 +315,8 @@ ggprint(p)
 
 ## Salmon vs Kallisto
 
+The next comparison is between Salmon and Kallisto, two conceptually very similar pseudoalignment-based methods.
+
 ```{r plot_salmon_vs_kallisto, message=FALSE}
 logcpm_A <- logcpm$kallisto_hg38.analysisSet_ensembl.85 %>% 
     select(ENSEMBL, Sample, logCPM) %>%
@@ -337,6 +339,8 @@ ggprint(p)
 ```
 
 ## Salmon vs Shoal
+
+Last, we compare the basic Salmon results to the same results regularized by Shoal.
 
 ```{r plot_shoal_vs_salmon, message=FALSE}
 logcpm_A <- logcpm$salmon_hg38.analysisSet_ensembl.85 %>% 
