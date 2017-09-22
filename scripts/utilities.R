@@ -103,7 +103,7 @@ withGC <- function(expr) {
 # "assays(x[[1]])$counts[3,5] <- 45". But now you can do it like: "x %>%
 # assign_into(assays(.[[1]])$counts[3,5], 45) %>% another_fun() %>% ..."
 assign_into <- function(x, expr, value) {
-    expr <- lazy(expr)$expr
+    expr <- lazyeval::lazy(expr)$expr
     f_eval(f_interp(~ x %>% { uq(expr) <- uq(value); . }))
 }
 
