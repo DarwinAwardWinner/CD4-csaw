@@ -229,8 +229,8 @@ plotQLDisp(fit)
 Next, we define the differential expression tests we wish to perform as contrasts. Each contrast is an arithmetic expression in terms of the model coefficients.
 
 ```{r define_contrasts}
-celltypes <- sort(unique(sample.table$cell_type))
-all.timepoints <- unique(sample.table$time_point)
+celltypes <- levels(sample.table$cell_type)
+all.timepoints <- levels(sample.table$time_point)
 nonzero.timepoints <- setdiff(all.timepoints, "D0")
 
 timepoint.anova.tests <- setNames(llply(celltypes, function(ct) {
