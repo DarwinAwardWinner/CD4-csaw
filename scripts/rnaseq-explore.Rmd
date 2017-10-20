@@ -8,7 +8,7 @@ params:
   basedir:
     value: "/home/ryan/Projects/CD4-csaw"
   dataset:
-    value: "hisat2_grch38_snp_tran_knownGene"
+    value: "rnaseq_salmon_hg38.analysisSet_knownGene"
 ---
 
 # Preliminary Setup
@@ -158,7 +158,7 @@ if ("length" %in% assayNames(sexp)) {
 We plot the distribution of average log2 CPM values to verify that our chosen presence threshold is appropriate. The distribution is expected to be bimodal, with a low-abundance peak representing non-expressed genes and a high-abundance peak representing expressed genes. The chosen threshold should separate the two peaks of the bimodal distribution.
 
 ```{r aveLogCPM_plots}
-a <- aveLogCPM(dge)
+a <- aveLogCPMWithOffset(dge)
 avelogcpm.presence.threshold <- -1
 
 p <- list(
