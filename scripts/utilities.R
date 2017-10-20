@@ -10,6 +10,8 @@ suppressMessages({
     library(dplyr)
     library(readr)
     library(tidyr)
+    library(forcats)
+    library(rlang)
     library(assertthat)
     library(BiocParallel)
     library(lazyeval)
@@ -947,4 +949,14 @@ liftOverLax <- function(x, chain, ..., allow.gap=0) {
         newx[gapped] <- newx.gapped.reduced
     }
     return(newx)
+}
+
+# Relevel multple columns using fct_relevel
+relevel_columns <- function(df, ...) {
+    relevel_specs <- list(...)
+    assert_that(is_named(relevel_specs))
+    for (i in names(relevel_specs)) {
+        df[[i]] %<>% fct_relevel(relevel_specs[[i]])
+    }
+    df
 }

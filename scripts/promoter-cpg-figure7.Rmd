@@ -1,0 +1,233 @@
+---
+title: "Reproduction of Lamere 2016 Figure 7"
+author: "Ryan C. Thompson"
+date: '`r gsub("\\s+", " ", format(Sys.time(), "%B %e, %Y"))`'
+output:
+    html_document: default
+    html_notebook: default
+subtitle: "Promoter ChIP-Seq and CpG Island Analysis"
+params:
+    genome:
+        value: hg38.analysisSet
+    transcriptome:
+        value: ensembl.85
+    rna_dataset:
+        value: "hisat2_grch38_snp_tran"
+---
+
+# Preliminary Setup
+
+```{r setup, include=FALSE, cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
+                      cache.extra = list(params=params),
+                      # https://github.com/yihui/knitr/issues/572
+                      cache.lazy=FALSE,
+                      fig.height=8, fig.width=8,
+                      cache.path = here::here("cache", "chipseq-explore", params$histone_mark))
+```
+
+First we load the necessary libraries, along with a set of utility functions.
+
+```{r load_packages, message=FALSE, cache=FALSE}
+library(stringr)
+library(glue)
+library(magrittr)
+library(openxlsx)
+library(SummarizedExperiment)
+library(dplyr)
+library(edgeR)
+library(limma)
+library(csaw)
+library(sva)
+library(ggplot2)
+library(scales)
+library(GGally)
+library(ggalt)
+library(ggthemes)
+library(splines)
+library(reshape2)
+library(assertthat)
+library(ggfortify)
+library(broom)
+library(ks)
+library(RColorBrewer)
+library(here)
+
+library(BSgenome.Hsapiens.UCSC.hg38)
+
+library(doParallel)
+ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
+options(mc.cores=ncores)
+registerDoParallel(cores=ncores)
+library(BiocParallel)
+register(DoparParam())
+
+options(future.globals.maxSize=4 * 1024^3)
+library(future)
+plan(multicore)
+
+source(here("scripts/utilities.R"))
+
+# Required in order to use DGEList objects with future
+length.DGEList <- function(x) {
+    length(unclass(x))
+}
+```
+
+# Data Loading and Preprocessing
+
+First we load the data files that were saved at the end of the promoter differential modification analysis and the RNA-seq differential expression analysis, which contain all the results and intermediate values from those analyses.
+
+```{r load_diffmod_data}
+h3k4me2_promoter_results <- within(list(), load(here("saved_data", "ChIP-seq", glue_data(params, '{genome}_{transcriptome}_H3K4me2-1kbp-promoter-diffmod.rda'))))
+h3k4me3_promoter_results <- within(list(), load(here("saved_data", "ChIP-seq", glue_data(params, '{genome}_{transcriptome}_H3K4me3-1kbp-promoter-diffmod.rda'))))
+rnaseq_results <- within(list(), load(here("saved_data", "RNA-seq", glue_data(params, '{rna_dataset}_{transcriptome}-diffexp.rda'))))
+```
+
+    Next, we load the list of CpG islands.
+
+```{r load_cpgi}
+cpgi <- readRDS(here("saved_data/UCSC_hg38_cpgIslandExtUnmasked.RDS"))
+```
+
+# Reproducing Lamere 2016 Figure 7
+
+Note that the plots below do not all exactly reproduce the original figures, but attempt to answer the same questions as the originals, sometimes through a different kind of plot.
+
+## Fig. 7a
+
+```{r fig7a}
+f7a <- within(list(), {
+    results.tables <- c(H3K4me2=h3k4me2_promoter_results$results.tables[c("Naive.D0vD5", "Memory.D0vD5")],
+                        H3K4me3=h3k4me3_promoter_results$results.tables[c("Naive.D0vD5", "Memory.D0vD5")])
+    # Add CpGi status
+    for (i in names(results.tables)) {
+        results.tables[[i]] %<>% mutate(CpGi = overlapsAny(as(., "GRanges"), cpgi))
+    }
+    sig.results.tables <- lapply(results.tables, function(rt) {
+        rt %>% filter(FDR <= 0.1) %>%
+            mutate(Direction=ifelse(logFC > 0, "Up", "Down") %>% factor(levels=c("Up", "Down"))) %>%
+            split(.$Direction)
+    }) %>% unlist(recursive = FALSE)
+    for (cellt in c("Naive", "Memory")) {
+        for (dir in c("Up", "Down")) {
+            newname <- glue("Both.{cellt}.D0vD5.{dir}")
+            tomerge <- glue("{mark}.{cellt}.D0vD5.{dir}", mark=c("H3K4me2", "H3K4me3"))
+            sig.results.tables[[newname]] <- sig.results.tables[[tomerge[1]]] %>%
+                filter(PromoterID %in% sig.results.tables[[tomerge[2]]]$PromoterID)
+        }
+    }
+    
+    cpgi.stats <- data.frame(Name=names(sig.results.tables)) %>% 
+        separate(Name, into=c("HistoneMark", "Celltype", "Test", "Direction"), sep=rex("."), remove=FALSE) %>%
+        mutate(
+            TotalPromoters = sapply(sig.results.tables, nrow),
+            TotalGenes = sapply(sig.results.tables, . %$% sum(!duplicated(GeneID))),
+            CpGiPromoters = sapply(sig.results.tables, . %$% sum(CpGi)),
+            CpGiGenes = sapply(sig.results.tables, function(rt) {
+                rt %>%
+                    group_by(GeneID) %>%
+                    summarize(CpGi=any(CpGi)) %$%
+                    sum(CpGi)
+            }),
+            FractionCpGiPromoters = CpGiPromoters / TotalPromoters,
+            FractionCpGiGenes = CpGiGenes / TotalGenes) %>%
+        relevel_columns(
+            HistoneMark=c("H3K4me2", "H3K4me3", "Both"),
+            Celltype=c("Naive", "Memory"),
+            Direction=c("Up", "Down"))
+
+    p <- ggplot(cpgi.stats) + 
+        aes(x=Celltype, y=FractionCpGiGenes) + 
+        facet_grid(~ HistoneMark + Direction) +
+        geom_col() + ylim(0, 1) + 
+        ggtitle("CpG island frequencies relating to promoter histone changes at 5 days during\nCD4 T-cell activation") + 
+        xlab("Cell type") + ylab("Fraction of gene promoters containing CpG islands")
+})
+print(f7a$cpgi.stats)
+print(f7a$p)
+```
+
+## Fig. 7b
+
+```{r fig7b}
+f7b <- within(list(), {
+    cpgi.stats <- f7a$cpgi.stats %>% filter(HistoneMark != "Both") %>% group_by(HistoneMark, Celltype) %>% 
+        summarize(
+            TotalPromoters=sum(TotalPromoters),
+            TotalGenes=sum(TotalGenes), 
+            CpGiPromoters=sum(CpGiPromoters),
+            CpGiGenes=sum(CpGiGenes)) %>%
+        mutate(
+            FractionCpGiPromoters = CpGiPromoters / TotalPromoters,
+            FractionCpGiGenes = CpGiGenes / TotalGenes)
+    p <- ggplot(cpgi.stats) + 
+        aes(x=HistoneMark:Celltype, y=FractionCpGiGenes) + 
+        geom_col() + ylim(0,1) + 
+        ggtitle("CpG island frequencies for genes with histone changes\nat day 5 after CD4 T-cell activation") + 
+        xlab("Gene group") + ylab("Fraction of gene promoters containing CpG islands")
+})
+print(f7b$cpgi.stats)
+print(f7b$p)
+```
+
+## Fig. 7c&d
+
+```{r fig7cd}
+f7cd <- within(list(), {
+    results.tables <- f7a$results.tables
+    qqtables <- lapply(results.tables, function(rt) {
+        x <- split(rt$logFC, rt$CpGi)
+        suppressPlot(qqplot(x[["FALSE"]], x[["TRUE"]])) %>% 
+            do.call(what=data.frame) %>%
+            rename(CpGi="y", NoCpGi="x")
+    })
+    qqtable <- data.frame(Test=names(qqtables)) %>%
+        separate(Test, into = c("HistoneMark", "Celltype", "Contrast"), remove=FALSE) %>%
+        .[rep(seq_len(nrow(.)), sapply(qqtables, nrow)),] %>%
+        cbind(do.call(rbind, qqtables))
+    lim <- max(abs(unlist(qqtable[c("CpGi", "NoCpGi")])))
+    
+    p <- ggplot(qqtable) + 
+        facet_grid(HistoneMark ~ Celltype) +
+        aes(x=NoCpGi, y=CpGi) +
+        geom_abline(slope=1, intercept=0, color="gray40", linetype="dotted") + 
+        geom_line(size=0.1, alpha=0.2) +
+        geom_smooth(method="lm", fullrange=TRUE, alpha=0) +
+        geom_point(size=0.1) +
+        coord_fixed() + 
+        ggtitle("Promoter logFC QQ plots, CpGi vs non-CpGi\n5 days after CD4 T-cell activation") + 
+        xlab("logFC quantiles for non-CpGi promoters") +
+        ylab("logFC quantiles for CpGi-overlapping promoters")
+        
+    
+    vartests <- results.tables %>% 
+        lapply(. %$% 
+                   split(logFC, ifelse(CpGi, "CpGi", "NoCpGi")) %$%
+                   var.test(NoCpGi, CpGi))
+})
+print(f7cd$p)
+print(f7cd$vartests)
+```
+
+## Fig. 7e
+
+```{r fig7e}
+f7e <- within(list(), {
+    chipseq.results.tables <- f7a$results.tables[c("H3K4me2.Naive.D0vD5", "H3K4me3.Naive.D0vD5")]
+    cpgi.genes <- chipseq.results.tables[[1]] %>% filter(CpGi) %$% GeneID %>% unique
+    both.down.naive.5d.genes <- chipseq.results.tables %>%
+        lapply(. %>% filter(FDR <= 0.1 & logFC <= 0) %$% GeneID) %>%
+        unname %>% do.call(what=intersect)
+    rnaseq.table <- rnaseq_results$results.tables[c("Naive.D0vD1", "Naive.D0vD5", "Naive.D0vD14")] %>%
+        lapply(. %>% filter(ENSEMBL %in% both.down.naive.5d.genes) %>% mutate(CpGi = ifelse(ENSEMBL %in% cpgi.genes, "CpGi", "NoCpGi"))) %>%
+        Map(cbind, ., Test=names(.)) %>%
+        do.call(what=rbind)
+    p <- ggplot(rnaseq.table) + 
+        aes(x=Test, y=logFC) + geom_boxplot(notch = TRUE) + 
+        facet_wrap(~CpGi) + 
+        ggtitle("RNA-seq logFC distributions for genes with H3K4me2 and H3K4me3 down at 5 days\nafter CD4 T-cell activation")
+    print(p)
+    lm(logFC ~ 0 + Test:CpGi, rnaseq.table) %>% summary %>% print
+})
+```
