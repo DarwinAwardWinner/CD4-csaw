@@ -2341,10 +2341,10 @@ rule chipseq_promoter_diffmod:
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_analyze']
     run:
         os.environ['MC_CORES'] = str(threads)
-        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
+        rmd_render(input=input.rmd,
+                   output_file=os.path.join(os.getcwd(), output.html),
                    output_format='html_document',
                    params={
-                       'basedir': os.getcwd(),
                        'genome': wildcards.genome,
                        'transcriptome': wildcards.transcriptome,
                        'histone_mark': wildcards.chip_antibody,

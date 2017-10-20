@@ -139,7 +139,7 @@ pct.covered <- width(peaks) %>% sum %>% divide_by(genome.size) %>% multiply_by(1
 mean.pct.reads <- sexp %>% subsetByOverlaps(peaks) %>% assay("counts") %>%
     colSums %>% divide_by(colData(sexp) %$% {totals * CountDupFactor}) %>% multiply_by(100) %>%
     mean
-message(glue("Selected {length(peaks)} peaks at an IDR threshold of {format(idr.threshold, digits=3)}, with an average width of {round(mean(width(peaks)))} nucleotides and covering a total of {format(pct.covered, digits=3)}%% of the genome, containing on average {format(mean.pct.reads, digits=3)}%% of reads"))
+message(glue("Selected {length(peaks)} peaks at an IDR threshold of {format(idr.threshold, digits=3)}, with an average width of {round(mean(width(peaks)))} nucleotides and covering a total of {format(pct.covered, digits=3)}% of the genome, containing on average {format(mean.pct.reads, digits=3)}% of reads"))
 ```
 
 Then we select only the windows overlapping the selected peaks.
@@ -170,7 +170,7 @@ count.threshold <- 5
 filter.threshold <- aveLogCPM(count.threshold, lib.size=mean(dge$samples$lib.size))
 filt <- aveLogCPM(dge) >= filter.threshold
 dge <- dge[filt,]
-message(glue("Excluding {sum(filt == FALSE)} out of {length(filt)} peak-overlapping windows ({format(100*(1-mean(filt)), digits=3)}%%) with average count below {count.threshold}."))
+message(glue("Excluding {sum(filt == FALSE)} out of {length(filt)} peak-overlapping windows ({format(100*(1-mean(filt)), digits=3)}%) with average count below {count.threshold}."))
 ```
 
 ## Model fitting
@@ -223,13 +223,13 @@ plotQLDisp(fit)
 Next, we define the differential expression tests we wish to perform as contrasts. Each contrast is an arithmetic expression in terms of the model coefficients.
 
 ```{r define_contrasts}
-celltypes <- sort(unique(sample.table$cell_type))
-all.timepoints <- unique(sample.table$time_point)
+celltypes <- levels(sample.table$cell_type)
+all.timepoints <- levels(sample.table$time_point)
 nonzero.timepoints <- setdiff(all.timepoints, "D0")
 
-timepoint.anova.tests <- setNames(llply(celltypes, function(ct) {
+timepoint.anova.tests <- setNames(lapply(celltypes, function(ct) {
     setNames(glue("{ct}{nonzero.timepoints} - {ct}D0"),
-             glue("{ct}.D0v{nonzero.timepoints}"))
+             nm=glue("{ct}.D0v{nonzero.timepoints}"))
 }), nm=str_c(celltypes, ".AllT"))
 timepoint.single.tests <- as.list(unlist(unname(timepoint.anova.tests)))
 celltype.singlet.tests <-
@@ -247,7 +247,7 @@ alltests <- c(timepoint.anova.tests, timepoint.single.tests,
               factorial.allt.test, factorial.singlet.tests,
               mi.vs.nf.test,
               sv.test
-              )
+              ) %>% lapply(as_glue)
 print(alltests)
 ```
 
@@ -267,7 +267,7 @@ p <- bplapply(names(window.results.tables), function(testname) {
     pi0 <- pi0est(pvals)$pi0
     p <- plotpvals(pvals, ptn = pi0) +
         labs(title=glue("P-value histogram for {testname}"),
-             subtitle=glue("Est. Non-Null Prop.: {(format((1 - pi0) * 100, digits=3))}%%"))
+             subtitle=glue("Est. Non-Null Prop.: {(format((1 - pi0) * 100, digits=3))}%"))
 })
 ggprint(p)
 ```
@@ -294,7 +294,7 @@ p <- bplapply(names(peak.results.tables), function(testname) {
     pi0 <- pi0est(pvals)$pi0
     p <- plotpvals(pvals, ptn = pi0) +
         labs(title=glue("P-value histogram for {testname}"),
-             subtitle=glue("Est. Non-Null Prop.: {(format((1 - pi0) * 100, digits=3))}%%"))
+             subtitle=glue("Est. Non-Null Prop.: {(format((1 - pi0) * 100, digits=3))}%"))
 })
 ggprint(p)
 ```

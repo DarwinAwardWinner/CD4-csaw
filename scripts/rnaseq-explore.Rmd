@@ -8,7 +8,7 @@ params:
   basedir:
     value: "/home/ryan/Projects/CD4-csaw"
   dataset:
-    value: "rnaseq_salmon_hg38.analysisSet_knownGene"
+    value: "salmon_hg38.analysisSet_knownGene"
 ---
 
 # Preliminary Setup

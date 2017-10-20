@@ -272,8 +272,8 @@ ggprint(p)
 Next, we define the differential expression tests we wish to perform as contrasts. Each contrast is an arithmetic expression in terms of the model coefficients.
 
 ```{r define_contrasts}
-celltypes <- unique(sample.table$cell_type)
-all.timepoints <- unique(sample.table$time_point)
+celltypes <- levels(sample.table$cell_type)
+all.timepoints <- levels(sample.table$time_point)
 nonzero.timepoints <- setdiff(all.timepoints, "D0")
 
 timepoint.anova.tests <- setNames(llply(celltypes, function(ct) {
@@ -295,7 +295,7 @@ donor.var.test <- list(InterDonor=sample.table$donor_id %>% levels %>% {sprintf(
 alltests <- c(timepoint.anova.tests, timepoint.single.tests,
               celltype.allt.test, celltype.singlet.tests,
               factorial.allt.test, factorial.singlet.tests,
-              mi.vs.nf.test, donor.var.test)
+              mi.vs.nf.test, donor.var.test) %>% lapply(as_glue)
 print(alltests)
 ```
 
