@@ -596,6 +596,7 @@ rule all:
         targets['idr_plots_all_cond'],
         targets['ccf_plots'],
         targets['site_profile_plot'],
+        'reports/lamere_2016_fig7.html',
 
 rule all_rnaseq:
     '''This rule aggregates all the final outputs of the pipeline.'''
@@ -618,6 +619,7 @@ rule all_chipseq:
         targets['idr_plots_all_cond'],
         targets['ccf_plots'],
         targets['site_profile_plot'],
+        'reports/lamere_2016_fig7.html',
 
 rule all_rnaseq_counts:
     input: targets['rnaseq_counts']
