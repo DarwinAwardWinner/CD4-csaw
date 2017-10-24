@@ -59,7 +59,8 @@ peakfiles <- here(
     "peaks_noBL_IDR.narrowPeak") %>% setNames(histone.marks)
 assert_that(all(file.exists(peakfiles)))
 allpeaks <- bplapply(peakfiles, . %>% read.narrowPeak %>% as("GRanges") %>%
-        assign_into(seqinfo(.), seqinfo(BSgenome.Hsapiens.UCSC.hg38)[seqlevels(.)]))
+        assign_into(seqinfo(.), seqinfo(BSgenome.Hsapiens.UCSC.hg38)[seqlevels(.)])) %>%
+        setNames(.$name)
 ```
 
 # Peak width analysis

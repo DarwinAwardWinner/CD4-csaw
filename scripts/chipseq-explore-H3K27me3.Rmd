@@ -97,7 +97,8 @@ peakfile <- file.path(
     "peaks_noBL_IDR.narrowPeak")
 allpeaks <- {
     read.narrowPeak(peakfile) %>% as("GRanges") %>%
-        assign_into(seqinfo(.), seqinfo(BSgenome.Hsapiens.UCSC.hg38)[seqlevels(.)])
+        assign_into(seqinfo(.), seqinfo(BSgenome.Hsapiens.UCSC.hg38)[seqlevels(.)]) %>%
+        setNames(.$name)
 }
 ```
 
