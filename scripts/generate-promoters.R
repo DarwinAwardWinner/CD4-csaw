@@ -6,10 +6,6 @@ library(assertthat)
 library(rex)
 library(sitools)
 
-num.cores <- 1
-## Don't default to more than 4 cores
-try({library(parallel); num.cores <- detectCores(); }, silent=TRUE)
-
 ## Extension of match.arg with automatic detection of the argument
 ## name for use in error messages.
 match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg), ignore.case=FALSE) {
@@ -126,9 +122,7 @@ get.options <- function(opts) {
         make_option(c("-o", "--output-file"), metavar="FILENAME.RDS", type="character",
                     help="Output file name. The GRanges object containing the promoter regions will be saved here using saveRDS, so it should end in '.RDS'."),
         make_option(c("-a", "--additional-gene-info"), metavar="FILENAME", type="character",
-                    help="RDS/RData/xlsx/csv file containing a table of gene metadata. Row names (or the first column of the file if there are no row names) should be gene/feature IDs that match the ones used in the main annotation, and these should be unique. This can also be a GFF3 file where the metadata is in the attributes of elements of type 'gene', where the 'ID' attribute specifies the gene ID."),
-        make_option(c("-j", "--threads"), metavar="N", type="integer", default=num.cores,
-                    help="Number of threads to use while counting reads"))
+                    help="RDS/RData/xlsx/csv file containing a table of gene metadata. Row names (or the first column of the file if there are no row names) should be gene/feature IDs that match the ones used in the main annotation, and these should be unique. This can also be a GFF3 file where the metadata is in the attributes of elements of type 'gene', where the 'ID' attribute specifies the gene ID."))
     progname <- na.omit(c(get_Rscript_filename(), "rnaseq-count.R"))[1]
     parser <- OptionParser(
         usage="Usage: %prog [options] -t TXDB -r RADIUS -o OUTPUT.RDS",
@@ -169,10 +163,6 @@ library(stringr)
 library(glue)
 library(future)
 library(GenomicRanges)
-library(BiocParallel)
-library(doParallel)
-options(mc.preschedule=FALSE)
-register(DoparParam())
 
 tsmsg <- function(...) {
     message(date(), ": ", ...)
@@ -335,10 +325,6 @@ print.var.vector <- function(v) {
 
     tsmsg("Args:")
     print.var.vector(cmdopts)
-
-    cmdopts$threads %<>% round %>% max(1)
-    tsmsg("Running with ", cmdopts$threads, " threads")
-    registerDoParallel(cores=cmdopts$threads)
 
     ## Delete the output file if it exists
     suppressWarnings(file.remove(cmdopts$output_file))
