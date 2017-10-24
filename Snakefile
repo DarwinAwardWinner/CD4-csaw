@@ -2276,7 +2276,6 @@ rule chipseq_explore:
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
                    output_format='html_document',
                    params={
-                       'basedir': os.getcwd(),
                        'histone_mark': wildcards.chip_antibody,
                        'window_size': '500bp',
                        'fragment_length': '147bp',
@@ -2303,7 +2302,6 @@ rule chipseq_diffmod:
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
                    output_format='html_document',
                    params={
-                       'basedir': os.getcwd(),
                        'histone_mark': wildcards.chip_antibody,
                        'window_size': '500bp',
                        'fragment_length': '147bp',
@@ -2339,7 +2337,6 @@ rule chipseq_promoter_explore:
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
                    output_format='html_document',
                    params={
-                       'basedir': os.getcwd(),
                        'genome': wildcards.genome,
                        'transcriptome': wildcards.transcriptome,
                        'histone_mark': wildcards.chip_antibody,
