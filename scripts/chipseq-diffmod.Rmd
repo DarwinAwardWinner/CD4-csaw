@@ -175,7 +175,7 @@ dge <- dge[filt,]
 message(glue("Excluding {sum(filt == FALSE)} out of {length(filt)} peak-overlapping windows ({format(100*(1-mean(filt)), digits=3)}%) with average count below {count.threshold}."))
 ```
 
-## Model fitting
+# Model fitting
 
 Now we are ready to fit a model to the data. We begin by building the design matrix, inclulding coefficients for the interaction of cell type and time point (group).
 
