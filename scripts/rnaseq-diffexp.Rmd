@@ -5,8 +5,6 @@ date: '`r gsub("[[:space:]]+", " ", format(Sys.time(), "%B %e, %Y"))`'
 output: html_notebook
 subtitle: '`r paste0("Using Dataset ", params$dataset)`'
 params:
-  basedir:
-    value: "/home/ryan/Projects/CD4-csaw"
   dataset:
     value: "shoal_hg38.analysisSet_ensembl.85"
 ---
@@ -17,7 +15,9 @@ params:
 knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
                       cache.extra = list(params=params),
                       fig.height=8, fig.width=8,
-                      cache.path = paste0(file.path(params$basedir, "cache", "rnaseq-diffexp", params$dataset), .Platform$file.sep))
+                      cache.path = paste0(
+                          here("cache", "rnaseq-diffexp", params$dataset),
+                          .Platform$file.sep))
 ```
 
 First we load the necessary libraries, along with a set of utility functions.
@@ -52,7 +52,7 @@ library(BiocParallel)
 BiocParallel:::.registry_init() # Workaround for https://github.com/Bioconductor/BiocParallel/issues/65
 register(DoparParam())
 
-source(file.path(params$basedir, "scripts/utilities.R"))
+source(here("scripts/utilities.R"))
 ```
 
 We also set the random seed for reproducibility:
@@ -66,8 +66,7 @@ set.seed(1986)
 Now we'll load the RNA-seq data set from an RDS file containing a SummarizedExperiment object, and modify it to use the sample names as column names.
 
 ```{r load_data}
-sexpfile <- file.path(params$basedir, "saved_data",
-                      sprintf("SummarizedExperiment_rnaseq_%s.RDS", params$dataset))
+sexpfile <- here("saved_data", sprintf("SummarizedExperiment_rnaseq_%s.RDS", params$dataset))
 sexp <- readRDS(sexpfile)
 colnames(sexp) <- colData(sexp)$SampleName
 ```
@@ -335,11 +334,11 @@ We save the full result tables to an R data file and the tables of significant r
 ```{r save_results}
 # Take all genes significant at 10% FDR or top 100 genes, whichever is more
 filtered.results.tables <- lapply(results.tables, . %>% filter(FDR <= 0.1 | seq_len(nrow(.)) <= 100))
-dir.create(file.path(params$basedir, "saved_data", "RNA-seq"), recursive = TRUE, showWarnings = FALSE)
-dir.create(file.path(params$basedir, "results", "RNA-seq"), recursive = TRUE, showWarnings = FALSE)
-saveRDS(results.tables, file.path(params$basedir, 'saved_data', 'RNA-seq', sprintf('%s-diffexp-tables.RDS', params$dataset)))
-save.image(file.path(params$basedir, 'saved_data', 'RNA-seq', sprintf('%s-diffexp.rda', params$dataset)))
-write.xlsx(filtered.results.tables, file.path(params$basedir, "results", "RNA-seq",sprintf('%s-diffexp.xlsx', params$dataset)))
+dir.create(here("saved_data", "RNA-seq"), recursive = TRUE, showWarnings = FALSE)
+dir.create(here("results", "RNA-seq"), recursive = TRUE, showWarnings = FALSE)
+saveRDS(results.tables, here('saved_data', 'RNA-seq', sprintf('%s-diffexp-tables.RDS', params$dataset)))
+save.image(here('saved_data', 'RNA-seq', sprintf('%s-diffexp.rda', params$dataset)))
+write.xlsx(filtered.results.tables, here("results", "RNA-seq",sprintf('%s-diffexp.xlsx', params$dataset)))
 ```
 
 To have confidence in the significance measures returned, we should verify that the p-value distributions for each test look reasonable. Ideally, each p-value histogram should either be uniform or biased toward zero. Any other shape is indicative of a failure of some modelling step. 

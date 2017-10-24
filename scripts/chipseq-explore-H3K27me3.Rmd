@@ -7,8 +7,6 @@ output:
     html_notebook: default
 subtitle: '`r paste0("For histone mark ", params$histone_mark)`'
 params:
-    basedir:
-        value: /home/ryan/Projects/CD4-csaw
     histone_mark:
         value: H3K27me3
     window_size:
@@ -27,13 +25,15 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
                       # https://github.com/yihui/knitr/issues/572
                       cache.lazy=FALSE,
                       fig.height=8, fig.width=8,
-                      cache.path = paste0(file.path(params$basedir, "cache", "chipseq-explore",
-                                                    params$histone_mark), .Platform$file.sep))
+                      cache.path = paste0(
+                          here("cache", "chipseq-explore", params$histone_mark),
+                          .Platform$file.sep))
 ```
 
 First we load the necessary libraries, along with a set of utility functions.
 
 ```{r load_packages, message=FALSE, cache=FALSE}
+library(here)
 library(stringr)
 library(glue)
 library(magrittr)
@@ -72,7 +72,7 @@ options(future.globals.maxSize=4 * 1024^3)
 library(future)
 plan(multicore)
 
-source(file.path(params$basedir, "scripts/utilities.R"))
+source(here("scripts/utilities.R"))
 
 # Required in order to use DGEList objects with future
 length.DGEList <- function(x) {
@@ -92,7 +92,7 @@ First we load the consensus peaks called from the reads pooled from all samples.
 
 ```{r load_peaks}
 peakfile <- file.path(
-    params$basedir, "peak_calls", "epic_hg38.analysisSet",
+    "peak_calls", "epic_hg38.analysisSet",
     str_c(params$histone_mark, "_condition.ALL_donor.ALL"),
     "peaks_noBL_IDR.narrowPeak")
 allpeaks <- {
@@ -105,11 +105,11 @@ Now we'll load the ChIP-seq read count data set from RDS files containing Summar
 
 ```{r load_counts}
 sexpfile <-
-    file.path(params$basedir, "saved_data",
-              glue_data(params, "csaw-counts_{window_size}-windows_{fragment_length}-reads_{histone_mark}.RDS"))
+    here("saved_data",
+         glue_data(params, "csaw-counts_{window_size}-windows_{fragment_length}-reads_{histone_mark}.RDS"))
 bigbin.sexpfile <-
-    file.path(params$basedir, "saved_data",
-              glue_data(params, "csaw-counts_{bigbin_size}-bigbins_{histone_mark}.RDS"))
+    here("saved_data",
+         glue_data(params, "csaw-counts_{bigbin_size}-bigbins_{histone_mark}.RDS"))
 bigbin.sexp <- readRDS(bigbin.sexpfile)
 full.sexp <- readRDS(sexpfile)
 colnames(full.sexp) <- colData(full.sexp)$SampleName

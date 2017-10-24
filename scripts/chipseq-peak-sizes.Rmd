@@ -5,9 +5,6 @@ date: '`r gsub("\\s+", " ", format(Sys.time(), "%B %e, %Y"))`'
 output:
   html_document: default
   html_notebook: default
-params:
-  basedir:
-    value: /home/ryan/Projects/CD4-csaw
 ---
 
 # Preliminary Setup
@@ -17,12 +14,14 @@ knitr::opts_chunk$set(
     echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
     cache.extra = list(params=params), 
     fig.height=8, fig.width=8,
-    cache.path = paste0(file.path(params$basedir, "cache", "chipseq-peak-sizes"), .Platform$file.sep))
+    cache.path = paste0(here::here("cache", "chipseq-peak-sizes"),
+                        .Platform$file.sep)
 ```
 
 First we load the necessary libraries, along with a set of utility functions.
 
 ```{r load_packages, message=FALSE, cache=FALSE}
+library(here)
 library(stringr)
 library(magrittr)
 library(dplyr)
@@ -45,7 +44,7 @@ options(future.globals.maxSize=4 * 1024^3)
 library(future)
 plan(multicore)
 
-source(file.path(params$basedir, "scripts/utilities.R"))
+source(here("scripts/utilities.R"))
 ```
 
 # Data Loading and Preprocessing
@@ -54,8 +53,8 @@ First we load the consensus peaks called from the reads pooled from all samples.
 
 ```{r load_peaks}
 histone.marks <- c("H3K4me3", "H3K4me2", "H3K27me3") %>% setNames(., .)
-peakfiles <- file.path(
-    params$basedir, "peak_calls", "epic_hg38.analysisSet",
+peakfiles <- here(
+    "peak_calls", "epic_hg38.analysisSet",
     str_c(histone.marks, "_condition.ALL_donor.ALL"),
     "peaks_noBL_IDR.narrowPeak") %>% setNames(histone.marks)
 assert_that(all(file.exists(peakfiles)))

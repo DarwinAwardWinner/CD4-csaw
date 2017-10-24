@@ -3,9 +3,6 @@ title: "Comparison of Quantification methods for CD4 RNA-Seq Dataset"
 author: "Ryan C. Thompson"
 date: "`r gsub('\\s+', ' ', format(Sys.time(), '%B %e, %Y'))`"
 output: html_notebook
-params:
-  basedir:
-    value: "/home/ryan/Projects/CD4-csaw"
 ---
 
 # Preliminary Setup
@@ -14,13 +11,15 @@ params:
 knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
                       cache.extra = list(params=params),
                       fig.height=8, fig.width=8,
-                      cache.path = paste0(file.path(params$basedir, "cache", "rnaseq-compare"), .Platform$file.sep))
+                      cache.path = paste0(here::here("cache", "rnaseq-compare"),
+                                          .Platform$file.sep)
 options(dplyr.show_progress=FALSE)
 ```
 
 First we load the necessary libraries.
 
 ```{r load_packages, message=FALSE, cache=FALSE}
+library(here)
 library(stringr)
 library(magrittr)
 library(openxlsx)
@@ -44,7 +43,7 @@ registerDoParallel(cores=ncores)
 library(BiocParallel)
 register(DoparParam())
 
-source(file.path(params$basedir, "scripts/utilities.R"))
+source(here"scripts/utilities.R"))
 ```
 
 # Data Loading and Preprocessing
@@ -66,8 +65,8 @@ datasetmeta <- datasets %>% str_match("^([^_]+)_(.+)_([^_]+)$") %>%
     as_data_frame %>% setNames(c("dataset", "program", "genome", "transcriptome"))
 assert_that(all(table(datasetmeta$program) == 2))
 assert_that(all(table(datasetmeta$transcriptome) == 5))
-sexp.files <- setNames(file.path(params$basedir, "saved_data",
-                                sprintf("SummarizedExperiment_rnaseq_%s.RDS", datasets)),
+sexp.files <- setNames(here"saved_data",
+                       sprintf("SummarizedExperiment_rnaseq_%s.RDS", datasets)),
                       datasets)
 sexps <- bplapply(sexp.files, readRDS)
 for (dset in names(sexps)) {

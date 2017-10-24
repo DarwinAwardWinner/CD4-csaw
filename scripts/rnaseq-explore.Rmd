@@ -5,8 +5,6 @@ author: "Ryan C. Thompson"
 date: "`r gsub('\\s+', ' ', format(Sys.time(), '%B %e, %Y'))`"
 output: html_notebook
 params:
-  basedir:
-    value: "/home/ryan/Projects/CD4-csaw"
   dataset:
     value: "salmon_hg38.analysisSet_knownGene"
 ---
@@ -17,12 +15,15 @@ params:
 knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
                       cache.extra = list(params=params),
                       fig.height=8, fig.width=8,
-                      cache.path = paste0(file.path(params$basedir, "cache", "rnaseq-explore", params$dataset), .Platform$file.sep))
+                      cache.path = paste0(
+                          here("cache", "rnaseq-explore", params$dataset),
+                          .Platform$file.sep))
 ```
 
 First we load the necessary libraries, along with a set of utility functions.
 
 ```{r load_packages, message=FALSE, cache=FALSE}
+library(here)
 library(stringr)
 library(magrittr)
 library(Matrix)
@@ -50,13 +51,13 @@ library(BiocParallel)
 BiocParallel:::.registry_init() # Workaround for https://github.com/Bioconductor/BiocParallel/issues/65
 register(DoparParam())
 
-source(file.path(params$basedir, "scripts/utilities.R"))
+source(here("scripts/utilities.R"))
 ```
 
 We also set the output directory for all plot files.
 
 ```{r set_plotdir}
-plotdir <- file.path(params$basedir, "plots/RNA-seq", params$dataset)
+plotdir <- here("plots/RNA-seq", params$dataset)
 dir.create(plotdir, recursive = TRUE, showWarnings = FALSE)
 ```
 
@@ -71,8 +72,7 @@ set.seed(1986)
 Now we load the RNA-seq data set from an RDS file containing a SummarizedExperiment object and edit it to use the sample names as column names.
 
 ```{r load_data}
-sexpfile <- file.path(params$basedir, "saved_data",
-                      sprintf("SummarizedExperiment_rnaseq_%s.RDS", params$dataset))
+sexpfile <- here("saved_data", sprintf("SummarizedExperiment_rnaseq_%s.RDS", params$dataset))
 sexp <- readRDS(sexpfile)
 colnames(sexp) <- colData(sexp)$SampleName
 ```

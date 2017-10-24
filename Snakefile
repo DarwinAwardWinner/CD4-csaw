@@ -2198,7 +2198,7 @@ rule rnaseq_explore:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
                    output_format='html_document',
-                   params={ 'basedir': os.getcwd(), 'dataset': wildcards.dataset, })
+                   params={ 'dataset': wildcards.dataset, })
 
 rule rnaseq_compare:
     '''Perform basic comparisons between RNA-seq quantification methods'''
@@ -2237,7 +2237,7 @@ rule rnaseq_diffexp:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
                    output_format='html_document',
-                   params={ 'basedir': os.getcwd(), 'dataset': wildcards.dataset, })
+                   params={ 'dataset': wildcards.dataset, })
 
 rule chipseq_peak_size_analysis:
     input:
@@ -2251,8 +2251,7 @@ rule chipseq_peak_size_analysis:
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
-                   output_format='html_document',
-                   params={ 'basedir': os.getcwd(), })
+                   output_format='html_document')
 
 rule chipseq_explore:
     '''Perform exploratory data analysis on ChIP-seq dataset'''

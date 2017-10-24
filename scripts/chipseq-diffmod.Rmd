@@ -7,8 +7,6 @@ output:
   html_notebook: default
 subtitle: '`r paste0("For histone mark ", params$histone_mark)`'
 params:
-  basedir:
-    value: /home/ryan/Projects/CD4-csaw
   histone_mark:
     value: H3K4me3
   window_size:
@@ -25,12 +23,15 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
                       # https://github.com/yihui/knitr/issues/572
                       cache.lazy=FALSE,
                       fig.height=8, fig.width=8,
-                      cache.path = paste0(file.path(params$basedir, "cache", "chipseq-explore", params$histone_mark), .Platform$file.sep))
+                      cache.path = paste0(
+                          here::here("cache", "chipseq-explore", params$histone_mark),
+                          .Platform$file.sep))
 ```
 
 First we load the necessary libraries, along with a set of utility functions.
 
 ```{r load_packages, message=FALSE, cache=FALSE}
+library(here)
 library(stringr)
 library(glue)
 library(magrittr)
@@ -67,7 +68,7 @@ options(future.globals.maxSize=4 * 1024^3)
 library(future)
 plan(multicore)
 
-source(file.path(params$basedir, "scripts/utilities.R"))
+source(here("scripts", "utilities.R"))
 
 # Required in order to use DGEList objects with future
 length.DGEList <- function(x) {
@@ -86,9 +87,9 @@ set.seed(1986)
 First we load the consensus peaks called from the reads pooled from all samples. This consensus peak set is not biased toward or against any sample or condition, and therefore the peak significance is expected to be independent of any differential binding in that peak.
 
 ```{r load_peaks}
-peakfile <- file.path(
-    params$basedir, "peak_calls", "epic_hg38.analysisSet",
-    str_c(params$histone_mark, "_condition.ALL_donor.ALL"),
+peakfile <- here(
+    "peak_calls", "epic_hg38.analysisSet",
+    glue("{params$histone_mark}_condition.ALL_donor.ALL"),
     "peaks_noBL_IDR.narrowPeak")
 allpeaks <- {
     read.narrowPeak(peakfile) %>% as("GRanges") %>%
@@ -100,8 +101,8 @@ Now we'll load the ChIP-seq read count data set from RDS files containing Summar
 
 ```{r load_counts}
 sexpfile <-
-    file.path(params$basedir, "saved_data",
-              glue_data(params, "csaw-counts_{window_size}-windows_{fragment_length}-reads_{histone_mark}.RDS"))
+    here("saved_data",
+         glue_data(params, "csaw-counts_{window_size}-windows_{fragment_length}-reads_{histone_mark}.RDS"))
 full.sexp <- readRDS(sexpfile)
 colnames(full.sexp) <- colData(full.sexp)$SampleName
 sexp <- full.sexp %>% .[rowSums(assay(.)) >= ncol(.),]
@@ -313,17 +314,17 @@ peak.results.tables %>% lapply(function(rt) {
 ```{r save_results}
 # Take all genes significant at 10% FDR or top 100 genes, whichever is more
 filtered.peak.results.tables <- lapply(peak.results.tables, . %>% filter(FDR <= 0.1 | seq_len(nrow(.)) <= 100))
-dir.create(file.path(params$basedir, "saved_data", "ChIP-seq"), recursive = TRUE, showWarnings = FALSE)
-dir.create(file.path(params$basedir, "results", "ChIP-seq"), recursive = TRUE, showWarnings = FALSE)
+dir.create(here("saved_data", "ChIP-seq"), recursive = TRUE, showWarnings = FALSE)
+dir.create(here("results", "ChIP-seq"), recursive = TRUE, showWarnings = FALSE)
 saveRDS(window.results.tables,
-    file.path(params$basedir, 'saved_data', 'ChIP-seq',
-        glue('{params$histone_mark}-window-diffmod.RDS')))
+        here('saved_data', 'ChIP-seq',
+             glue('{params$histone_mark}-window-diffmod.RDS')))
 saveRDS(peak.results.tables,
-    file.path(params$basedir, 'saved_data', 'ChIP-seq',
-        glue('{params$histone_mark}-peak-diffmod.RDS')))
-save.image(file.path(params$basedir, 'saved_data', 'ChIP-seq',
-    glue('{params$histone_mark}-diffmod.rda')))
+        here('saved_data', 'ChIP-seq',
+             glue('{params$histone_mark}-peak-diffmod.RDS')))
+save.image(here('saved_data', 'ChIP-seq',
+                glue('{params$histone_mark}-diffmod.rda')))
 write.xlsx(filtered.peak.results.tables,
-    file.path(params$basedir, "results", "ChIP-seq",
-        glue('{params$histone_mark}-peak-diffmod.xlsx')))
+           here("results", "ChIP-seq",
+                glue('{params$histone_mark}-peak-diffmod.xlsx')))
 ```
