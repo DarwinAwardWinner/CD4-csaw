@@ -473,6 +473,10 @@ targets = {
         'reports/ChIP-seq/{chip_antibody}-diffmod.html',
         chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
     ),
+    'chipseq_nvm_diminish': expand(
+        'reports/ChIP-seq/{chip_antibody}-NvM-diminish-analysis.html',
+        chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
+    ),
     'promoter_eda': expand(
         'reports/ChIP-seq/{genome}_{transcriptome}_{chip_antibody}-{promoter_radius}-promoter-exploration.html',
         zip_longest_recycled, genome=["hg38.analysisSet"],
@@ -587,6 +591,7 @@ rule all:
         targets['rnaseq_diffexp'],
         targets['chipseq_eda'],
         targets['chipseq_diffmod'],
+        targets['chipseq_nvm_diminish'],
         targets['promoter_eda'],
         targets['promoter_diffmod'],
         targets['macs_predictd'],
@@ -610,6 +615,7 @@ rule all_chipseq:
     input:
         targets['chipseq_eda'],
         targets['chipseq_diffmod'],
+        targets['chipseq_nvm_diminish'],
         targets['promoter_eda'],
         targets['promoter_diffmod'],
         targets['macs_predictd'],
@@ -2302,6 +2308,21 @@ rule chipseq_diffmod:
                        'window_size': '500bp',
                        'fragment_length': '147bp',
                    })
+
+
+rule chipseq_NvM_diminish_analysis:
+    '''Test the hypothesis of diminishing NvM differences over time.'''
+    input:
+        rmd='scripts/chipseq-NvM-diminish-{chip_antibody}.Rmd',
+        rda='saved_data/ChIP-seq/{chip_antibody}-diffmod.rda',
+    output:
+        html='reports/ChIP-seq/{chip_antibody}-NvM-diminish-analysis.html',
+    version: R_package_version('rmarkdown')
+    threads: 1
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_analyze']
+    run:
+        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
+                   output_format='html_document')
 
 rule chipseq_promoter_explore:
     '''Perform exploratory data analysis on ChIP-seq dataset'''

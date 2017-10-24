@@ -1,0 +1,133 @@
+---
+title: "Analysis of Diminishing Differences Between Naive and Memory in CD4 ChIP-Seq dataset"
+author: "Ryan C. Thompson"
+date: '`r gsub("\\s+", " ", format(Sys.time(), "%B %e, %Y"))`'
+output:
+  html_document: default
+  html_notebook: default
+subtitle: '`r paste0("For histone mark ", params$histone_mark)`'
+params:
+  histone_mark:
+    value: H3K4me2
+---
+
+# Preliminary Setup
+
+```{r setup, include=FALSE, cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
+                      cache.extra = list(params=params),
+                      # https://github.com/yihui/knitr/issues/572
+                      cache.lazy=FALSE,
+                      fig.height=8, fig.width=8,
+                      cache.path = paste0(
+                          here::here("cache", "chipseq-diffmod", params$histone_mark),
+                          .Platform$file.sep))
+```
+
+First we load the necessary libraries, along with a set of utility functions.
+
+```{r load_packages, message=FALSE, cache=FALSE}
+library(here)
+library(stringr)
+library(glue)
+library(magrittr)
+library(openxlsx)
+library(SummarizedExperiment)
+library(dplyr)
+library(edgeR)
+library(limma)
+library(csaw)
+library(sva)
+library(ggplot2)
+library(scales)
+library(GGally)
+library(ggalt)
+library(ggthemes)
+library(splines)
+library(reshape2)
+library(assertthat)
+library(ggfortify)
+library(broom)
+library(ks)
+library(RColorBrewer)
+
+library(BSgenome.Hsapiens.UCSC.hg38)
+
+library(doParallel)
+ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
+options(mc.cores=ncores)
+registerDoParallel(cores=ncores)
+library(BiocParallel)
+register(DoparParam())
+
+options(future.globals.maxSize=4 * 1024^3)
+library(future)
+plan(multicore)
+
+source(here("scripts", "utilities.R"))
+
+# Required in order to use DGEList objects with future
+length.DGEList <- function(x) {
+    length(unclass(x))
+}
+```
+
+We also set the random seed for reproducibility:
+
+```{r set_random_seed}
+set.seed(1986)
+```
+
+# Data Loading 
+
+We start by loading the already-completed differential modification analysis data.
+
+```{r load_data}
+load(here('saved_data', 'ChIP-seq',
+          glue('{params$histone_mark}-diffmod.rda')))
+```
+
+# Number of DE genes as a function of time
+
+We begin with a simple analysis by looking at the number of genes significantly differentially expressed between naive and memory at each time point. If differences between the two cell types are diminishing over time, these numbers should show a downward trend. To make sure the number of significant genes is comparable across contrasts, we do a global p-value adjustment using all p-values from all contrasts before thresholding on the resulting FDR values.
+
+```{r num_de_analysis}
+nvm.contrasts <- c("NvM.D0", "NvM.D1", "NvM.D5", "NvM.D14")
+all.pvals <- peak.results.tables[nvm.contrasts] %>% sapply(. %$% PValue)
+all.padj <- all.pvals
+all.padj[] %<>% p.adjust(method="BH")
+num.sig.table <-
+    data.frame(Contrast=colnames(all.padj) %>% fct_inorder,
+               FDR05=colSums(all.padj <= 0.05),
+               FDR10=colSums(all.padj <= 0.1),
+               FDR20=colSums(all.padj <= 0.2))
+print(num.sig.table)
+num.sig.table %>% gather(Measure, Count, -Contrast) %>% ggplot() + 
+    aes(x=Contrast, y=Count, color=Measure, group=Measure) + geom_point() + geom_line()
+```
+
+This analysis doesn't support a hypothesis of monotonically diminishing differences between cell types, but it does imply that there are minimal differences in the last time point.
+
+# LogFC variance as a function of time
+
+Instead of looking at significant genes, we can also look at the spread of logFC values. To do this, we need to return to the individual window results, since the logFC can be different for each window within a peak. We look at the standard deviation of logFC values at each time point, and we also use a non-parametric test for equality of variances to assess whether there is a significant difference in variance between each pair of successive time points.
+
+```{r logFC_spread}
+all.logFC <- window.results.tables[nvm.contrasts] %>% sapply(. %$% logFC) %>%
+    as_tibble %>% gather(Contrast, logFC) %>%
+    mutate(Contrast=fct_inorder(Contrast))
+ggplot(all.logFC) + aes(x=Contrast, y=logFC) + geom_boxplot() + ylab("Window logFC")
+all.logFC %>% group_by(Contrast) %>% do(as_tibble(cbind(rbind(summary(.$logFC)), `Std. Dev.`=sd(.$logFC))))
+day.comparisons <- list(
+    Overall = nvm.contrasts,
+    D0vD1 = nvm.contrasts[1:2],
+    D1vD5 = nvm.contrasts[2:3],
+    D5vD14 = nvm.contrasts[3:4])
+lapply(day.comparisons, function(ct) {
+    all.logFC %>% filter(Contrast %in% ct) %>%
+        fligner.test(logFC ~ Contrast, data=.) %>%
+        glance
+}) %>% do.call(what=rbind) %>% mutate(Contrast=rownames(.)) %>% select(Contrast, everything())
+```
+
+According to this, the variance of logFC values is decreasing monotonically and significantly between each time point and the next, lending credence to the hypothesis of diminishing differences between cell types after activation.
