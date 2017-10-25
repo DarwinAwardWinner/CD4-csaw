@@ -16,7 +16,7 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
                       cache.extra = list(params=params),
                       fig.height=8, fig.width=8,
                       cache.path = paste0(
-                          here("cache", "rnaseq-explore", params$dataset),
+                          here::here("cache", "rnaseq-explore", params$dataset),
                           .Platform$file.sep))
 ```
 
