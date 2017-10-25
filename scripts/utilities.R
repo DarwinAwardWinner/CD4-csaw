@@ -960,3 +960,59 @@ relevel_columns <- function(df, ...) {
     }
     df
 }
+
+# Variant of save.image that allows excluding specific names
+save.image.filtered <- function (file = ".RData", version = NULL, ascii = FALSE, compress = !ascii,
+                                 safe = TRUE, exclude = NULL)
+{
+    if (!is.character(file) || file == "")
+        stop("'file' must be non-empty string")
+    opts <- getOption("save.image.defaults")
+    if (is.null(opts))
+        opts <- getOption("save.defaults")
+    if (missing(safe) && !is.null(opts$safe))
+        safe <- opts$safe
+    if (missing(ascii) && !is.null(opts$ascii))
+        ascii <- opts$ascii
+    if (missing(compress) && !is.null(opts$compress))
+        compress <- opts$compress
+    if (missing(version))
+        version <- opts$version
+    if (safe) {
+        outfile <- paste0(file, "Tmp")
+        i <- 0
+        while (file.exists(outfile)) {
+            i <- i + 1
+            outfile <- paste0(file, "Tmp", i)
+        }
+    }
+    else outfile <- file
+    on.exit(file.remove(outfile))
+    vars.to.save <- setdiff(names(.GlobalEnv), exclude)
+    save(list = vars.to.save, file = outfile, version = version,
+         ascii = ascii, compress = compress, envir = .GlobalEnv,
+         precheck = FALSE)
+    if (safe)
+        if (!file.rename(outfile, file)) {
+            on.exit()
+            stop(gettextf("image could not be renamed and is left in %s",
+                          outfile), domain = NA)
+        }
+    on.exit()
+}
+
+# Unlike load, returns the environment itself
+load.in.new.env <- function(file, envir=new.env(), ...) {
+    load(file, envir, ...)
+    return(envir)
+}
+
+load.filtered <- function(file, envir = parent.frame(), ..., exclude=NULL) {
+    if (!length(exclude)) {
+        return(load(file, envir, ...))
+    }
+    tempenv <- load.in.new.env(file=file, ...)
+    for (i in setdiff(names(tempenv), exclude)) {
+        envir[[i]] <- tempenv[[i]]
+    }
+}

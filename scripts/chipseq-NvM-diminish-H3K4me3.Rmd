@@ -83,8 +83,9 @@ set.seed(1986)
 We start by loading the already-completed differential modification analysis data.
 
 ```{r load_data}
-load(here('saved_data', 'ChIP-seq',
-          glue('{params$histone_mark}-diffmod.rda')))
+load.filtered(here('saved_data', 'ChIP-seq',
+                   glue('{params$histone_mark}-diffmod.rda')),
+              exclude="params")
 ```
 
 # Number of DE genes as a function of time
