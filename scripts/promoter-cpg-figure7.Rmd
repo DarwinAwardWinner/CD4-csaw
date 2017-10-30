@@ -25,7 +25,7 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
                       fig.height=8, fig.width=8,
                       cache.path = paste0(
                           here::here("cache", "promoter-cpg-figure7"),
-                          .Platform$file.sep)
+                          .Platform$file.sep))
 ```
 
 First we load the necessary libraries, along with a set of utility functions.

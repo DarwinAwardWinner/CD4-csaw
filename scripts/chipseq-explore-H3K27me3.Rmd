@@ -91,7 +91,7 @@ set.seed(1986)
 First we load the consensus peaks called from the reads pooled from all samples. This consensus peak set is not biased toward or against any sample or condition, and therefore the peak significance is expected to be independent of any differential binding in that peak.
 
 ```{r load_peaks}
-peakfile <- file.path(
+peakfile <- here(
     "peak_calls", "epic_hg38.analysisSet",
     str_c(params$histone_mark, "_condition.ALL_donor.ALL"),
     "peaks_noBL_IDR.narrowPeak")

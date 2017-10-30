@@ -20,7 +20,7 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
                       cache.lazy=FALSE,
                       fig.height=8, fig.width=8,
                       cache.path = paste0(
-                          here::here("cache", "chipseq-diffmod", params$histone_mark),
+                          here::here("cache", "chipseq-diminish", params$histone_mark),
                           .Platform$file.sep))
 ```
 
