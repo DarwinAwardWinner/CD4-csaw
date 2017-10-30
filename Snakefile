@@ -320,9 +320,26 @@ def call_R_external(f, *args, **kwargs):
 def dict_to_R_named_list(d):
     return r['list'](**d)
 
+rmd_default_formats = {
+    # The notebook format for html has additional bells & whistles
+    # that are useful even outside the context of interactive
+    # operation, so we use that format for html output.
+    'html': 'html_notebook',
+    'pdf': 'pdf_document',
+}
+
 def rmd_render(input, output_file, output_format=None, **kwargs):
     if output_format is None:
-        output_format = os.path.splitext(outfile)[1] + '_document'
+        ext = os.path.splitext(output_file)[1][1:]
+        try:
+            output_format = rmd_default_formats[ext]
+        # If no specific output format is specified, just append
+        # "_document" and hope that works
+        except KeyError:
+            if ext == '':
+                raise ValueError("Cannot determine output format from file name.")
+            else:
+                output_format = ext + '_document'
     arg_converters = {
         'params': dict_to_R_named_list,
         'output_options': dict_to_R_named_list,
@@ -332,9 +349,11 @@ def rmd_render(input, output_file, output_format=None, **kwargs):
             kwargs[k] = convfun(kwargs[k])
     with TemporaryDirectory() as tmpdir:
         out_basename = os.path.basename(output_file)
-        tmp_outfile = os.path.join(tmpdir, out_basename)
-        call_R_external('rmarkdown::render', input=input, output_file=tmp_outfile, output_format=output_format, **kwargs)
-        shutil.move(tmp_outfile, output_file)
+        # The output name must not have a file extension because of
+        # https://github.com/rstudio/rmarkdown/issues/1180
+        tmp_output_file = os.path.join(tmpdir, "output_file")
+        call_R_external('rmarkdown::render', input=input, output_file=tmp_output_file, output_format=output_format, **kwargs)
+        shutil.move(tmp_output_file, output_file)
 
 # Run a separate Snakemake workflow (if needed) to fetch the sample
 # metadata, which must be avilable before evaluating the rules below.
@@ -2319,8 +2338,7 @@ rule chipseq_NvM_diminish_analysis:
     threads: 1
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_analyze']
     run:
-        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
-                   output_format='html_document')
+        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html))
 
 rule chipseq_promoter_explore:
     '''Perform exploratory data analysis on ChIP-seq dataset'''
