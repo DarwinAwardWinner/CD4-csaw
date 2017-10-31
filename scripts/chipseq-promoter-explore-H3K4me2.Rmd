@@ -98,7 +98,7 @@ First we load the consensus peaks called from the reads pooled from all samples.
 # Currently no other genome supported, but it could be.
 assert_that(params$genome == "hg38.analysisSet")
 peakfile <- here(
-    params$basedir, "peak_calls", glue("epic_{params$genome}"),
+    "peak_calls", glue("epic_{params$genome}"),
     glue_data(params, "{histone_mark}_condition.ALL_donor.ALL"),
     "peaks_noBL_IDR.narrowPeak")
 allpeaks <- {

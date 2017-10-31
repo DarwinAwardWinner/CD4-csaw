@@ -65,9 +65,9 @@ datasetmeta <- datasets %>% str_match("^([^_]+)_(.+)_([^_]+)$") %>%
     as_data_frame %>% setNames(c("dataset", "program", "genome", "transcriptome"))
 assert_that(all(table(datasetmeta$program) == 2))
 assert_that(all(table(datasetmeta$transcriptome) == 5))
-sexp.files <- setNames(here"saved_data",
-                       sprintf("SummarizedExperiment_rnaseq_%s.RDS", datasets)),
-                      datasets)
+sexp.files <- setNames(here("saved_data",
+                            sprintf("SummarizedExperiment_rnaseq_%s.RDS", datasets)),
+                       datasets)
 sexps <- bplapply(sexp.files, readRDS)
 for (dset in names(sexps)) {
     sexps[[dset]] %<>% set_colnames(.$SampleName)
