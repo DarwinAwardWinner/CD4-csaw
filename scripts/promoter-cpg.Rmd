@@ -1,0 +1,213 @@
+---
+title: "Promoter ChIP-Seq and CpG Island Analysis"
+author: "Ryan C. Thompson"
+date: '`r gsub("\\s+", " ", format(Sys.time(), "%B %e, %Y"))`'
+output:
+    html_document: default
+    html_notebook: default
+subtitle: '`r glue::glue_data(params, "For histone mark {histone_mark} using {transcriptome} annotation on {genome} genome")`'
+params:
+    genome:
+        value: hg38.analysisSet
+    transcriptome:
+        value: ensembl.85
+    histone_mark:
+        value: H3K4me3
+    promoter_radius:
+        value: 1kbp
+    rna_dataset:
+        value: "shoal_hg38.analysisSet"
+---
+
+# Preliminary Setup
+
+```{r setup, include=FALSE, cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
+                      cache.extra = list(params=params),
+                      # https://github.com/yihui/knitr/issues/572
+                      cache.lazy=FALSE,
+                      fig.height=8, fig.width=8,
+                      cache.path = paste0(here::here("cache", "promoter-cpg", params$histone_mark), .Platform$file.sep))
+```
+
+First we load the necessary libraries, along with a set of utility functions.
+
+```{r load_packages, message=FALSE, cache=FALSE}
+library(stringr)
+library(glue)
+library(magrittr)
+library(openxlsx)
+library(SummarizedExperiment)
+library(dplyr)
+library(edgeR)
+library(limma)
+library(csaw)
+library(sva)
+library(ggplot2)
+library(scales)
+library(GGally)
+library(ggalt)
+library(ggthemes)
+library(splines)
+library(reshape2)
+library(assertthat)
+library(ggfortify)
+library(broom)
+library(ks)
+library(RColorBrewer)
+library(here)
+
+library(BSgenome.Hsapiens.UCSC.hg38)
+
+library(doParallel)
+ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
+options(mc.cores=ncores)
+registerDoParallel(cores=ncores)
+library(BiocParallel)
+register(DoparParam())
+
+options(future.globals.maxSize=4 * 1024^3)
+library(future)
+plan(multicore)
+
+source(here("scripts/utilities.R"))
+
+# Required in order to use DGEList objects with future
+length.DGEList <- function(x) {
+    length(unclass(x))
+}
+```
+
+We also set the random seed for reproducibility:
+
+```{r set_random_seed}
+set.seed(1986)
+```
+
+# Data Loading and Preprocessing
+
+First we load the data files that were saved at the end of the promoter differential modification analysis and the RNA-seq differential expression analysis, which contain all the results and intermediate values from those analyses.
+
+```{r load_diffmod_data}
+chipseq_results <- load.in.new.env(
+    here("saved_data", "ChIP-seq",
+         glue_data(params, '{genome}_{transcriptome}_{histone_mark}-{promoter_radius}-promoter-diffmod.rda')))
+rnasesq_results <- load.in.new.env(
+    here("saved_data", "RNA-seq",
+         glue_data(params, '{rna_dataset}_{transcriptome}-diffexp.rda')))
+```
+
+Next, we load the list of CpG islands.
+
+```{r load_cpgi}
+cpgi <- readRDS(here("saved_data/UCSC_hg38_cpgIslandExtUnmasked.RDS"))
+```
+
+# Fraction of changing promoters with CpGi overlaps
+
+```{r cpgi_overlap_fraction}
+results.tables <- chipseq_results$results.tables
+
+single.coef.tests <- chipseq_results$alltests %>% .[lengths(.) == 1] %>% names
+# One big table
+single.coef.results <- results.tables[single.coef.tests] %>% 
+    data_frame(Test=fct_inorder(names(.)), x=.) %>% unnest %>% 
+    mutate(
+        Direction = ifelse(logFC > 0, "Up", "Down") %>% factor(levels=c("Up", "Down")),
+        CpGi = overlapsAny(as(., "GRanges"), cpgi))
+
+single.timepoint.tests <- chipseq_results$alltests %>% names %>% .[str_detect(., "^(Naive|Memory)\\.D\\d+vD\\d+$")]
+single.nvm.tests <- chipseq_results$alltests %>% names %>% .[str_detect(., "^NvM\\.D\\d+$")]
+
+# Take only the most significant promoter for each gene
+single.coef.gene.results <- single.coef.results %>%
+    group_by(Test) %>% 
+    do({
+        {.} %>% 
+            arrange(PValue) %>% 
+            filter(!duplicated(GeneID))
+    }) %>% 
+    ungroup
+
+get.sig.cpg.stats <- . %>% 
+    filter(FDR <= 0.1) %>%
+    mutate(CpGi = factor(CpGi, levels=c("FALSE", "TRUE"))) %>% 
+    group_by(Test) %>% 
+    do({
+        {.} %$% table(Direction, CpGi) %>% 
+            addmargins(margin=2) %>% 
+            as.data.frame
+    }) %>%
+    ungroup %>%
+    spread(CpGi, Freq, sep=".") %>%
+    select(Test, Direction, CpGiCount=CpGi.TRUE, Total=CpGi.Sum) %>%
+    # Fill in tests with 0 significant genes
+    complete(Test, Direction, fill=list(CpGiCount=0, Total=0)) %>%
+    mutate(CpGiFraction = CpGiCount / Total)
+    
+
+promoter.cpg.stats <- get.sig.cpg.stats(single.coef.results)
+gene.cpg.stats <- get.sig.cpg.stats(single.coef.gene.results)
+
+doplot <- function(x) {
+    x %<>% droplevels %>%
+        group_by(Test) %>%
+        do({
+            num.down <- .$Total[.$Direction == "Down"]
+            num.up <- .$Total[.$Direction == "Up"]
+            test <- .$Test[1]
+            desc <- as.character(glue("{test} ({num.up} Up, {num.down} Down)"))
+            mutate(., Desc = desc)
+        }) %>% ungroup %>%
+        mutate(Desc = fct_inorder(Desc))
+    ggplot(droplevels(x)) +
+        aes(x=Direction, y=CpGiFraction) + 
+        facet_wrap(~ Desc) +
+        geom_col() + ylim(0, 1) +
+        xlab("Direction of significant histone change in promoter") + ylab("Fraction of promoters containing CpG islands") + 
+        ggtitle(glue("{params$histone_mark} changes vs CpGi overlap in promoters"))
+}
+
+p <- list(
+    Timepoint = doplot(promoter.cpg.stats %>% filter(Test %in% single.timepoint.tests)) + 
+        labs(subtitle="For changes over time in naive and memory cells"),
+    NvM = doplot(promoter.cpg.stats %>% filter(Test %in% single.nvm.tests)) + 
+        labs(subtitle="For differeces between naive and memory at each time point"))
+suppressWarnings(ggprint(p))
+```
+
+## Comparing promoter histone logFC quantiles with and without CpGi
+
+```{r cpg_logFC_qqplots}
+qqtable <- single.coef.results %>% 
+    group_by(Test) %>% 
+    do({
+        x <- split(.$logFC, .$CpGi)
+        qqplot(x[["FALSE"]], x[["TRUE"]], plot.it=FALSE) %>% 
+            do.call(what=data.frame) %>%
+            rename(CpGi="y", NoCpGi="x")
+    })
+
+doplot <- function(x) {
+    ggplot(droplevels(x)) +
+        aes(x=NoCpGi, y=CpGi) +
+        facet_wrap(~ Test) +
+        geom_abline(slope=1, intercept=0, color="gray60", linetype="dashed") + 
+        geom_line(size=0.1, alpha=0.2) +
+        geom_smooth(method="lm", fullrange=TRUE, alpha=0) +
+        geom_point(size=0.1) +
+        coord_fixed() + 
+        xlab("logFC quantiles for non-CpGi promoters") +
+        ylab("logFC quantiles for CpGi-overlapping promoters") + 
+        ggtitle(glue("Promoter {params$histone_mark} logFC QQ plots, CpGi vs non-CpGi"))
+}
+
+p <- list(
+    Timepoint = doplot(qqtable %>% filter(Test %in% single.timepoint.tests)) + 
+        labs(subtitle="For changes over time in naive and memory cells"),
+    NvM = doplot(qqtable %>% filter(Test %in% single.nvm.tests)) + 
+        labs(subtitle="For differeces between naive and memory at each time point"))
+ggprint(p)
+```
+
+Hello.
