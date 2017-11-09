@@ -12,7 +12,7 @@ params:
     transcriptome:
         value: ensembl.85
     rna_dataset:
-        value: "hisat2_grch38_snp_tran"
+        value: "shoal_hg38.analysisSet"
 ---
 
 # Preliminary Setup
