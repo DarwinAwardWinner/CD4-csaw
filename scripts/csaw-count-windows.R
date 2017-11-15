@@ -1,23 +1,25 @@
 #!/usr/bin/env Rscript
 
-library(getopt)
-library(optparse)
-library(stringr)
-library(glue)
-library(rex)
-library(sitools)
-library(magrittr)
-library(GenomicRanges)
-library(rtracklayer)
-library(SummarizedExperiment)
-library(dplyr)
-library(csaw)
-library(Matrix)
-library(assertthat)
-library(future)
+suppressMessages({
+    library(getopt)
+    library(optparse)
+    library(stringr)
+    library(glue)
+    library(rex)
+    library(sitools)
+    library(magrittr)
+    library(GenomicRanges)
+    library(rtracklayer)
+    library(SummarizedExperiment)
+    library(dplyr)
+    library(csaw)
+    library(Matrix)
+    library(assertthat)
+    library(future)
 
-library(doParallel)
-library(BiocParallel)
+    library(doParallel)
+    library(BiocParallel)
+})
 
 tsmsg <- function(...) {
     message(date(), ": ", ...)
@@ -108,12 +110,12 @@ get.options <- function(opts) {
                     help="Comma-separated list of bam file names expected to be used as input. This argument is optional, but if it is provided, it will be checked against the list of files determined from '--samplemeta-file' and '--bam-file-pattern', and an error will be raised if they don't match exactly."),
         make_option(c("-w", "--window-width"), type="character", default="150bp",
                     help="Width of windows in which to count."),
-        make_option(c("-s", "--window-spacing"), metavar="BP", type="character",
+        make_option(c("--window-spacing"), metavar="BP", type="character",
                     help="Spacing between the start points of consecutive windows. By default, this is identical to the window width, so that the windows exactly tile the genome. Changing this results in either gapped windows (spacing > width) or overlapping windows (spacing < width)."),
         make_option(c("-e", "--read-extension"), type="character", default="100bp",
                     help="Assumed fragment length of reads. Each read will be assumed to represent a DNA fragment extending this far from its 5 prime end, regardless of the actual read length."),
         make_option(c("-x", "--blacklist"), metavar="FILENAME.bed", type="character",
-                    help="File describing blacklist regions to be excluded from the analysis. Reads that overlap these regions will be discarded without counting them toward any window. This can be a BED file, GFF file, R data file containing a GRanges object, or csv file that can be converted to a GRanges object.")
+                    help="File describing blacklist regions to be excluded from the analysis. Reads that overlap these regions will be discarded without counting them toward any window. This can be a BED file, GFF file, R data file containing a GRanges object, or csv file that can be converted to a GRanges object."),
         make_option(c("--bin"), action="store_true", default=FALSE,
                     help="Run in bin mode, where each read is counted into exactly one bin."),
         make_option(c("-j", "--threads"), metavar="N", type="integer", default=1,
@@ -159,6 +161,9 @@ get.options <- function(opts) {
     ## be accessed by "$"
     cmdopts %>% setNames(chartr("-", "_", names(.)))
 }
+
+## Terminate early on argument-processing errors
+invisible(get.options(commandArgs(TRUE)))
 
 windowCountsParallel <- function(bam.files, ..., filter=10, BPPARAM=bpparam()) {
     reslist <- bplapply(X=bam.files, FUN=windowCounts, ..., filter=0, BPPARAM=BPPARAM)
