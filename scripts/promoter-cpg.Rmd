@@ -228,8 +228,9 @@ doplot <- function(x) {
         aes(x = logFC.Histone,
             y = logFC.RNA) +
         facet_grid(Test ~ CpGi) +
-        geom_smooth(method="lm", fullrange=TRUE) +
         geom_point(size=0.1) +
+        geom_density2d(color=muted("red"), alpha=0.5) +
+        geom_smooth(method="lm", fullrange=TRUE) +
         xlab(glue("Promoter {params$histone_mark} logFC")) +
         ylab("RNA-seq gene logFC") +
         ggtitle(glue("RNA-seq logFC vs promoter {params$histone_mark} logFC, CpGi vs non-CpGi"))
