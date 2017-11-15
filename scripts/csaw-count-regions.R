@@ -90,7 +90,7 @@ get.options <- function(opts) {
         make_option(c("-p", "--bam-file-pattern"), metavar="PATTERN", type="character",
                     help="(REQUIRED) Format string to convert sample IDs into BAM file paths. This should contain the string '{SAMPLE}' wherever the sample ID should be substituted (this can occur multiple times),. Example: 'bam_files/Sample_{SAMPLE}/Aligned.bam"),
         make_option(c("-r", "--regions"), metavar="FILENAME.RDS", type="character",
-                    help="(REQUIRED) File specifying regions in which reads should be counted. This can be a BED file, GFF file, R data file containing a GRanges object, or csv file that can be converted to a GRanges object. If the regions have associated annotations, then a GRanges in an R data file is the recommended format."),
+                    help="(REQUIRED) File specifying regions in which reads should be counted. This can be a BED file, GFF file, narrowPeak file, R data file containing a GRanges object, or csv file that can be converted to a GRanges object. If the regions have associated annotations, then a GRanges in an R data file is the recommended format."),
         make_option(c("-o", "--output-file"), metavar="FILENAME.RDS", type="character",
                     help="(REQUIRED) Output file name. The SummarizedExperiment object containing the counts will be saved here using saveRDS, so it should end in '.RDS'."),
         make_option(c("-b", "--expected-bam-files"), metavar="BAMFILE1,BAMFILE2,...", type="character",
@@ -215,10 +215,27 @@ read.saf <- function(filename, ...) {
     return(grl)
 }
 
+# Functions for reading and writing narrowPeak files
+read.narrowPeak <- function(file, ...) {
+    peaks.df <- read.table(file, sep="\t", row.names=NULL, ...)
+    names(peaks.df) <- c("chr", "start", "end", "name", "score", "strand", "signalValue", "pValue", "qValue", "summit")
+    peaks.df$name <- as.character(peaks.df$name)
+    peaks.df
+}
+
+write.narrowPeak <- function(x, file, ...) {
+    x <- as(x, "data.frame")
+    if("seqnames" %in% names(x))
+        names(x)[names(x) == "seqnames"] <- "chr"
+    x <- x[c("chr", "start", "end", "name", "score", "strand", "signalValue", "pValue", "qValue", "summit")]
+    write.table(x, file, sep="\t", row.names=FALSE, col.names=FALSE, ...)
+}
+
 read.regions <- function(filename) {
     suppressWarnings({
         lazy.results <- list(
             rdata=future(read.RDS.or.RDA(filename), lazy=TRUE),
+            narrowPeak=future(read.narrowPeak(filename), lazy=TRUE),
             bed=future(import(filename, format="bed"), lazy=TRUE),
             gff=future(import(filename, format="gff"), lazy=TRUE),
             saf=future(read.saf(filename), lazy=TRUE),
@@ -236,7 +253,7 @@ read.regions <- function(filename) {
                 return(result)
             }
         }
-        stop(glue("Could not read genomic regions from {deparse(filename)} as R data, bed, gff, SAF, or csv"))
+        stop(glue("Could not read genomic regions from {deparse(filename)} as R data, narrowPeak, bed, gff, SAF, or csv"))
     })
 }
 
