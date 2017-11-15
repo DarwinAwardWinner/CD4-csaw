@@ -47,6 +47,8 @@ get.options <- function(opts) {
                     help="(REQUIRED) RDS/RData/xlsx/csv file containing a table of sample metadata. Any existing rownames will be replaced with the values in the sample ID  column (see below)."),
         make_option(c("-c", "--sample-id-column"), type="character", default="Sample",
                     help="Sample metadata column name that holds the sample IDs. These will be substituted into '--bam-file-pattern' to determine the BAM file names."),
+        make_option(c("-f", "--filter-sample-ids"), type="character",
+                    help="Comma-separated list of sample IDs. If this options is provided, only the specified sample IDs will be used."),
         make_option(c("-p", "--bam-file-pattern"), metavar="PATTERN", type="character",
                     help="(REQUIRED) Format string to convert sample IDs into BAM file paths. This should contain the string '{SAMPLE}' wherever the sample ID should be substituted (this can occur multiple times),. Example: 'bam_files/Sample_{SAMPLE}/Aligned.bam"),
         make_option(c("-o", "--output-file"), metavar="FILENAME.RDS", type="character",
@@ -90,6 +92,13 @@ epilogue = "")
         stop(str_c("Missing required arguments: ", deparse(missing.opts)))
     }
 
+    ## Split list arguments
+    for (i in c("filter-sample-ids", "expected-bam-files")) {
+        if (i %in% names(cmdopts)) {
+            cmdopts[[i]] %<>% str_split(",") %>% unlist
+        }
+    }
+
     ## Ensure that exactly one annotation was provided
     annot.opts <- c("annotation-txdb", "annotation-gff", "annotation-rds", "annotation-saf")
     provided.annot.opts <- intersect(annot.opts, names(cmdopts))
@@ -106,7 +115,7 @@ epilogue = "")
 
 ## Do this early to handle "--help" before wasting time loading
 ## pacakges & stuff
-get.options(commandArgs(TRUE))
+invisible(get.options(commandArgs(TRUE)))
 
 library(assertthat)
 library(dplyr)
@@ -433,11 +442,6 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
     tsmsg("Running with ", cmdopts$threads, " threads")
     registerDoParallel(cores=cmdopts$threads)
 
-    ## Expand expected_bam_files into vector
-    if ("expected_bam_files" %in% names(cmdopts)) {
-        cmdopts$expected_bam_files %<>% str_split(",") %>% unlist
-    }
-
     tsmsg("Args:")
     print.var.vector(cmdopts)
 
@@ -456,6 +460,12 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
     rownames(samplemeta) <- samplemeta[[cmdopts$sample_id_column]]
 
     samplemeta$bam_file <- glue(cmdopts$bam_file_pattern, SAMPLE=samplemeta[[cmdopts$sample_id_column]], .envir=emptyenv())
+
+    if (!is.null(cmdopts$filter_sample_ids)) {
+        tsmsg("Selecting only ", length(cmdopts$filter_sample_ids), " specified samples.")
+        assert_that(all(cmdopts$filter_sample_ids %in% samplemeta[[cmdopts$sample_id_column]]))
+        samplemeta %<>% .[.[[cmdopts$sample_id_column]] %in% cmdopts$filter_sample_ids,]
+    }
 
     if ("expected_bam_files" %in% names(cmdopts)) {
         tryCatch({
