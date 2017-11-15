@@ -121,7 +121,7 @@ get.options <- function(opts) {
     }
 
     ## Split list arguments
-    for (i in c("filter-sample-ids")) {
+    for (i in c("filter-sample-ids", "expected-bam-files")) {
         if (i %in% names(cmdopts)) {
             cmdopts[[i]] %<>% str_split(",") %>% unlist
         }
@@ -322,6 +322,23 @@ print.var.vector <- function(v) {
     }
 
     assert_that(all(file.exists(sample.table$bam_file)))
+
+    if ("expected_bam_files" %in% names(cmdopts)) {
+        tryCatch({
+            assert_that(setequal(samplemeta$bam_file, cmdopts$expected_bam_files))
+            tsmsg("Sample metadata contains all expected bam files")
+        }, error=function(...) {
+            unexpected_existing <- setdiff(samplemeta$bam_file, cmdopts$expected_bam_files)
+            expected_but_missing <- setdiff(cmdopts$expected_bam_files, samplemeta$bam_file)
+            if (length(unexpected_existing) > 0) {
+                tsmsg(glue("Got unexpected bam files: {deparse(unexpected_existing)}"))
+            }
+            if (length(expected_but_missing) > 0) {
+                tsmsg(glue("Didn't find expected bam files: {deparse(expected_but_missing)}"))
+            }
+            stop("Bam file list was not as expected")
+        })
+    }
 
     tsmsg("Loading regions")
     target.regions <- read.regions(cmdopts$regions)

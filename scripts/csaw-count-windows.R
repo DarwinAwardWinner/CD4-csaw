@@ -98,6 +98,8 @@ get.options <- function(opts) {
                     help="(REQUIRED) RDS/RData/xlsx/csv file containing a table of sample metadata. Any existing rownames will be replaced with the values in the sample ID  column (see below)."),
         make_option(c("-c", "--sample-id-column"), type="character", default="Sample",
                     help="Sample metadata column name that holds the sample IDs. These will be substituted into '--bam-file-pattern' to determine the BAM file names."),
+        make_option(c("-f", "--filter-sample-ids"), type="character",
+                    help="Comma-separated list of sample IDs. If this options is provided, only the specified sample IDs will be used."),
         make_option(c("-p", "--bam-file-pattern"), metavar="PATTERN", type="character",
                     help="(REQUIRED) Format string to convert sample IDs into BAM file paths. This should contain the string '{SAMPLE}' wherever the sample ID should be substituted (this can occur multiple times),. Example: 'bam_files/Sample_{SAMPLE}/Aligned.bam"),
         make_option(c("-o", "--output-file"), metavar="FILENAME.RDS", type="character",
@@ -131,6 +133,13 @@ get.options <- function(opts) {
     missing.opts <- setdiff(required.opts, names(cmdopts))
     if (length(missing.opts) > 0) {
         stop(str_c("Missing required arguments: ", deparse(missing.opts)))
+    }
+
+    ## Split list arguments
+    for (i in c("filter-sample-ids", "expected-bam-files")) {
+        if (i %in% names(cmdopts)) {
+            cmdopts[[i]] %<>% str_split(",") %>% unlist
+        }
     }
 
     if (! "window-spacing" %in% names(cmdopts)) {
@@ -288,7 +297,30 @@ print.var.vector <- function(v) {
                    factor %>% `levels<-`(str_c("Day", levels(.)))) %>%
         rename(time_point=days_after_activation)
 
+    if (!is.null(cmdopts$filter_sample_ids)) {
+        tsmsg("Selecting only ", length(cmdopts$filter_sample_ids), " specified samples.")
+        assert_that(all(cmdopts$filter_sample_ids %in% sample.table[[cmdopts$sample_id_column]]))
+        sample.table %<>% .[.[[cmdopts$sample_id_column]] %in% cmdopts$filter_sample_ids,]
+    }
+
     assert_that(all(file.exists(sample.table$bam_file)))
+
+    if ("expected_bam_files" %in% names(cmdopts)) {
+        tryCatch({
+            assert_that(setequal(samplemeta$bam_file, cmdopts$expected_bam_files))
+            tsmsg("Sample metadata contains all expected bam files")
+        }, error=function(...) {
+            unexpected_existing <- setdiff(samplemeta$bam_file, cmdopts$expected_bam_files)
+            expected_but_missing <- setdiff(cmdopts$expected_bam_files, samplemeta$bam_file)
+            if (length(unexpected_existing) > 0) {
+                tsmsg(glue("Got unexpected bam files: {deparse(unexpected_existing)}"))
+            }
+            if (length(expected_but_missing) > 0) {
+                tsmsg(glue("Didn't find expected bam files: {deparse(expected_but_missing)}"))
+            }
+            stop("Bam file list was not as expected")
+        })
+    }
 
     blacklist.regions <- GRanges()
     if (!is.null(cmdopts$blacklist)) {
