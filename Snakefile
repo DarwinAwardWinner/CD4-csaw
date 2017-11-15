@@ -2257,7 +2257,7 @@ rule rnaseq_explore:
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
-                   output_format='html_document',
+                   output_format='html_notebook',
                    params={ 'dataset': wildcards.dataset, })
 
 rule rnaseq_compare:
@@ -2278,7 +2278,7 @@ rule rnaseq_compare:
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
-                   output_format='html_document')
+                   output_format='html_notebook')
 
 rule rnaseq_diffexp:
     '''Perform differential expression analysis on RNA-seq dataset'''
@@ -2296,7 +2296,7 @@ rule rnaseq_diffexp:
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
-                   output_format='html_document',
+                   output_format='html_notebook',
                    params={ 'dataset': wildcards.dataset, })
 
 rule chipseq_peak_size_analysis:
@@ -2311,7 +2311,7 @@ rule chipseq_peak_size_analysis:
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
-                   output_format='html_document')
+                   output_format='html_notebook')
 
 rule chipseq_explore:
     '''Perform exploratory data analysis on ChIP-seq dataset'''
@@ -2328,7 +2328,7 @@ rule chipseq_explore:
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
-                   output_format='html_document',
+                   output_format='html_notebook',
                    params={
                        'histone_mark': wildcards.chip_antibody,
                        'window_size': '500bp',
@@ -2354,7 +2354,7 @@ rule chipseq_diffmod:
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
-                   output_format='html_document',
+                   output_format='html_notebook',
                    params={
                        'histone_mark': wildcards.chip_antibody,
                        'window_size': '500bp',
@@ -2388,7 +2388,7 @@ rule chipseq_promoter_explore:
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
-                   output_format='html_document',
+                   output_format='html_notebook',
                    params={
                        'genome': wildcards.genome,
                        'transcriptome': wildcards.transcriptome,
@@ -2415,7 +2415,7 @@ rule chipseq_promoter_diffmod:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd,
                    output_file=os.path.join(os.getcwd(), output.html),
-                   output_format='html_document',
+                   output_format='html_notebook',
                    params={
                        'genome': wildcards.genome,
                        'transcriptome': wildcards.transcriptome,
@@ -2438,4 +2438,4 @@ rule lamere_2016_fig7:
     run:
         rmd_render(input=input.rmd,
                    output_file=os.path.join(os.getcwd(), output.html),
-                   output_format='html_document')
+                   output_format='html_notebook')
