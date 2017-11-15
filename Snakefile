@@ -2050,6 +2050,8 @@ rule csaw_count_peaks:
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
     output:
         'saved_data/peak-counts_{genome,[^_]+}_{peak_caller}_{chip}_{read_ext,[0-9.]+.*?bp}-reads.RDS'
+    params:
+        sample_id_list = lambda wildcards: ",".join(dfselect(chipseq_samplemeta, 'SRA_run', chip_antibody=['input', wildcards.chip]))
     version: R_package_version('csaw')
     threads: 16
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['csaw_count_regions']
@@ -2057,6 +2059,7 @@ rule csaw_count_peaks:
     scripts/csaw-count-regions.R \
       --samplemeta-file {input.samplemeta:q} \
       --sample-id-column SRA_run \
+      --filter-sample-ids={params.sample_id_list:q} \
       --bam-file-pattern 'aligned/chipseq_bowtie2_hg38.analysisSet/{{SAMPLE}}/Aligned.bam' \
       --regions {input.peaks:q} \
       --read-extension {wildcards.read_ext:q} \
