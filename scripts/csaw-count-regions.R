@@ -103,7 +103,7 @@ get.options <- function(opts) {
                     help="Number of threads to use"))
     progname <- na.omit(c(get_Rscript_filename(), "csaw-count-windows.R"))[1]
     parser <- OptionParser(
-        usage="Usage: %prog [options] -s SAMPLEMETA.RDS -p PATTERN -w WSIZE -e READEXT [ -s WSPACE ] -o SUMEXP.RDS",
+        usage="Usage: %prog [options] -s SAMPLEMETA.RDS -p PATTERN -r REGIONS.RDS -o SUMEXP.RDS",
         description="Count ChIP-seq reads a set of specified regions",
         option_list = optlist,
         add_help_option = TRUE,
