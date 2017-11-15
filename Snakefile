@@ -2004,7 +2004,7 @@ rule csaw_count_bins:
     '''
 
 rule csaw_count_promoters:
-    '''Count ChIP-Seq reads in specified regions in each sample.
+    '''Count ChIP-Seq reads in promoters in each sample.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
 
@@ -2020,13 +2020,45 @@ rule csaw_count_promoters:
         'saved_data/promoter-counts_{genome,[^_]+}_{transcriptome,[^_]+}_{radius,[0-9.]+.*?bp}-radius_{read_ext,[0-9.]+.*?bp}-reads.RDS'
     version: R_package_version('csaw')
     threads: 16
-    resources: mem_gb=MEMORY_REQUIREMENTS_GB['csaw_count_promoters']
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['csaw_count_regions']
     shell: '''
     scripts/csaw-count-regions.R \
       --samplemeta-file {input.samplemeta:q} \
       --sample-id-column SRA_run \
       --bam-file-pattern 'aligned/chipseq_bowtie2_hg38.analysisSet/{{SAMPLE}}/Aligned.bam' \
       --regions {input.promoters:q} \
+      --read-extension {wildcards.read_ext:q} \
+      --blacklist {input.blacklist:q} \
+      --threads {threads:q} \
+      --output-file {output:q}
+    '''
+
+rule csaw_count_peaks:
+    '''Count ChIP-Seq reads in peak regions in each sample.
+
+    https://bioconductor.org/packages/release/bioc/html/csaw.html
+
+    '''
+    input:
+        samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
+        bam_files=lambda wildcards:
+        expand('aligned/chipseq_bowtie2_{genome}/{sra_run}/Aligned.{ext}',
+               genome = wildcards.genome,
+               sra_run = dfselect(chipseq_samplemeta, 'SRA_run', chip_antibody=['input', wildcards.chip]),
+               ext = [ 'bam', 'bam.bai' ]),
+        peaks='peak_calls/{peak_caller}_{genome}/{chip}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
+        blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
+    output:
+        'saved_data/peak-counts_{genome,[^_]+}_{peak_caller}_{chip}_{read_ext,[0-9.]+.*?bp}-reads.RDS'
+    version: R_package_version('csaw')
+    threads: 16
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['csaw_count_regions']
+    shell: '''
+    scripts/csaw-count-regions.R \
+      --samplemeta-file {input.samplemeta:q} \
+      --sample-id-column SRA_run \
+      --bam-file-pattern 'aligned/chipseq_bowtie2_hg38.analysisSet/{{SAMPLE}}/Aligned.bam' \
+      --regions {input.peaks:q} \
       --read-extension {wildcards.read_ext:q} \
       --blacklist {input.blacklist:q} \
       --threads {threads:q} \
