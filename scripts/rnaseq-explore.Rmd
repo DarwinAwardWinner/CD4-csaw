@@ -32,7 +32,6 @@ library(SummarizedExperiment)
 library(dplyr)
 library(edgeR)
 library(limma)
-library(sva)
 library(ggplot2)
 library(scales)
 library(GGally)
@@ -484,7 +483,7 @@ for (i in names(varParts)) {
     } else {
         assert_that(is(varParts[[i]], "varPartResults"))
         x <- as(varParts[[i]], "data.frame")
-        x.sv <- x %>% select(matches("^SV\\d+$"))
+        x.sv <- x %>% select(dplyr::matches("^SV\\d+$"))
         if (ncol(x.sv) > 0) {
             x.nosv <- x[setdiff(colnames(x), colnames(x.sv))]
             x <- data.frame(x.nosv, SV=rowSums(x.sv))
