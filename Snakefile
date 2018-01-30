@@ -2499,3 +2499,40 @@ rule generate_tfbs_overlap:
         rmd_render(input=input.rmd,
                    output_file=os.path.join(os.getcwd(), output.html),
                    output_format='html_notebook')
+
+rule run_mofa_promoter:
+    '''Run MOFA using RNA-seqs and ChIP-Seq promoter data.'''
+    input:
+        rmd='scripts/promoter-mofa-run.Rmd',
+        promoter_sexps=set(
+            expand('saved_data/promoter-counts_hg38.analysisSet_ensembl.85_{promoter_radius}-radius_147bp-reads_{chip_antibody}.RDS',
+                   zip, **dict(chipseq_samplemeta_noinput))),
+        rna_sexp='saved_data/SummarizedExperiment_rnaseq_shoal_hg38.analysisSet_ensembl.85.RDS',
+    output:
+        html='reports/promoter-mofa-run.html',
+        final_model=expand('saved_data/mofa/mofa-model_hg38.analysisSet_ensembl.85_rna+promoter.{ext}',
+                           ext={'hdf5', 'RDS'}),
+        test_models=expand('saved_data/mofa/mofa-model_hg38.analysisSet_ensembl.85_rna+promoter_explore{i}.{ext}',
+                           i=range(1,5),
+                           ext={'hdf5', 'RDS'}),
+    threads: 8
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_render(input=input.rmd,
+                   output_file=os.path.join(os.getcwd(), output.html),
+                   output_format='html_notebook')
+
+rule analyze_mofa_promoter:
+    '''Analyze MOFA results.'''
+    input:
+        rmd = 'scripts/promoter-mofa-analyze.Rmd',
+        mofa_model = 'saved_data/mofa/mofa-model_hg38.analysisSet_ensembl.85_rna+promoter.RDS',
+        tfbs_overlap_sets = 'saved_data/promoter-tfbs-overlap_hg38.analysisSet_ensembl.85.RDS',
+    output:
+        html='reports/promoter-mofa-analyze.html'
+    threads: 1
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_render(input=input.rmd,
+                   output_file=os.path.join(os.getcwd(), output.html),
+                   output_format='html_notebook')

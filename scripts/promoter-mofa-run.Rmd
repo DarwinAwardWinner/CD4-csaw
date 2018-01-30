@@ -1,0 +1,359 @@
+---
+title: "MOFA Model Fitting for RNA-seq and Promoter Histone ChIP-seq data"
+author: "Ryan C. Thompson"
+date: '`r gsub("\\s+", " ", format(Sys.time(), "%B %e, %Y"))`'
+output:
+    html_document: default
+    html_notebook: default
+params:
+    mofa_runs: 4
+    genome:
+        value: hg38.analysisSet
+    transcriptome:
+        value: ensembl.85
+    rna_dataset:
+        value: "shoal_hg38.analysisSet"
+    promoter_datasets:
+        value: !r c(H3K4me2 = "1kbp-radius_147bp-reads_H3K4me2", 
+                    H3K4me3 = "1kbp-radius_147bp-reads_H3K4me3", 
+                    H3K27me3 = "2.5kbp-radius_147bp-reads_H3K27me3")
+    peak_datasets:
+        value: !r c(H3K4me2 = "H3K4me2_147bp-reads", 
+                    H3K4me3 = "H3K4me3_147bp-reads", 
+                    H3K27me3 = "H3K27me3_147bp-reads")
+    window_datasets:
+        value: !r c(H3K4me2 = "500bp-windows_147bp-reads_H3K4me2", 
+                    H3K4me3 = "500bp-windows_147bp-reads_H3K4me3", 
+                    H3K27me3 = "500bp-windows_147bp-reads_H3K27me3")
+---
+
+# Preliminary setup
+
+```{r setup, include=FALSE, cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
+                      cache.extra = list(params=params),
+                      # https://github.com/yihui/knitr/issues/572
+                      cache.lazy=FALSE,
+                      fig.height=8, fig.width=8,
+                      cache.path = paste0(
+                          here::here("cache", "promoter-cpg-figure7"),
+                          .Platform$file.sep))
+```
+
+First we load the necessary libraries, along with a set of utility functions.
+
+```{r load_packages, message=FALSE, cache=FALSE}
+library(stringr)
+library(glue)
+library(magrittr)
+library(openxlsx)
+library(SummarizedExperiment)
+library(MultiAssayExperiment)
+library(dplyr)
+library(edgeR)
+library(limma)
+library(DESeq2)
+library(csaw)
+library(sva)
+library(MOFAtools)
+library(ggplot2)
+library(scales)
+library(GGally)
+library(ggalt)
+library(ggthemes)
+library(splines)
+library(reshape2)
+library(assertthat)
+library(ggfortify)
+library(broom)
+library(ks)
+library(RColorBrewer)
+library(here)
+
+library(BSgenome.Hsapiens.UCSC.hg38)
+
+library(doParallel)
+ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
+options(mc.cores=ncores)
+registerDoParallel(cores=ncores)
+library(BiocParallel)
+register(SerialParam())
+register(DoparParam())
+
+options(future.globals.maxSize=4 * 1024^3)
+library(future)
+plan(multicore)
+
+# Export environment variables to make NumPy respect the desired level of 
+# parallelism. (Different variables are required for different libraries.)
+Sys.setenv(MKL_NUM_THREADS = ncores,
+           NUMEXPR_NUM_THREADS = ncores,
+           OMP_NUM_THREADS = ncores)
+
+source(here("scripts/utilities.R"))
+
+# Required in order to use DGEList objects with future
+length.DGEList <- function(x) {
+    length(unclass(x))
+}
+```
+
+# Data loading
+
+First we load all the count data sets that we will be using.
+
+```{r load_counts}
+promoter.sexps %<-% {
+    bplapply(here("saved_data",
+                  glue_data(params, "promoter-counts_{genome}_{transcriptome}_{promoter_datasets}.RDS")),
+             readRDS) %>% 
+        setNames(names(params$promoter_datasets))
+}
+rnaseq.sexp %<-% {
+    readRDS(here("saved_data", glue_data(params, "SummarizedExperiment_rnaseq_{rna_dataset}_{transcriptome}.RDS")))  %>%
+    set_colnames(colData(.)$SRA_run)
+}
+for (i in names(promoter.sexps)) {
+    promoter.sexps[[i]] %<>%
+        set_colnames(colData(.)$SRA_run)
+    colData(promoter.sexps[[i]]) %<>%
+        transform(time_point = str_replace(time_point, "Day", "D")) %>%
+        transform(donor_id = str_replace(donor_id, "^Dn*", "Dn")) %>%
+        transform(PrimarySample = glue("{cell_type}-{time_point}-{donor_id}"))
+}
+colData(rnaseq.sexp) %<>% 
+    transform(time_point = glue("D{days_after_activation}")) %>%
+    transform(donor_id = str_replace(donor_id, "^Dn*", "Dn")) %>%
+    transform(PrimarySample = glue("{cell_type}-{time_point}-{donor_id}"))
+
+# Fix up stranded RNA-seq counts, if needed
+libtype.assayNames <- c(SF="sense.counts", SR="antisense.counts")
+if (all(libtype.assayNames %in% assayNames(rnaseq.sexp))) {
+    message("Selecting stranded counts for each sample")
+    sample.table %<>% mutate(count_type=libtype.assayNames[libType])
+    assay(rnaseq.sexp, "unstranded.counts") <- assay(rnaseq.sexp, "counts")
+    assay(rnaseq.sexp, "counts") <- lapply(seq_len(nrow(sample.table)), function(i) {
+        message("Using ", sample.table[i,]$count_type, " for ", colnames(rnaseq.sexp)[i])
+        assay(rnaseq.sexp, sample.table[i,]$count_type %>% as.character)[,i]
+    }) %>% do.call(what=cbind)
+    total.counts <- sexp %>% assays %>% sapply(colSums) %>% data.frame %>%
+        mutate(SampleName=row.names(.)) %>%
+        inner_join(sample.table, by="SampleName")
+    total.counts %$% invisible(assert_that(all(counts == pmax(sense.counts, antisense.counts))))
+}
+
+sexps <- c(list(RNA=rnaseq.sexp), promoter.sexps)
+```
+
+# Normalization and filtering
+
+## Abundance filtering
+
+The first filter is an abundance filter, which just re-uses the filtering criteria previously defined in other reports.
+
+```{r filter_abundance}
+presence.thresholds <- list(RNA=-1, H3K4me2=0.407, H3K4me3=1.29, H3K27me3=0.993)
+#presence.thresholds <- list(RNA=-1, H3K4me2=1+0.407, H3K4me3=1+1.29, H3K27me3=0.5+0.993)
+# Filter RNA-seq at average logCPM >= -1
+for (i in names(presence.thresholds)) {
+    suppressWarnings(present <- aveLogCPMWithOffset(asDGEList(sexps[[i]])) >= presence.thresholds[[i]])
+    num.features <- nrow(sexps[[i]])
+    num.kept <- sum(present)
+    percent.kept <- num.kept / num.features * 100
+    message(glue("For data type {i}, keeping {num.kept} features out of {num.features} ({format(percent.kept, digits=3)}%) with aveLogCPM >= {presence.thresholds[[i]]}"))
+    sexps[[i]] %<>% .[present,]
+    rm(present)
+}
+```
+
+## Calculating normalization factors
+
+We need to normalize and filter all data sets before feeding them to MOFA. We begin by computing normalization factors. (potentially with offsets derived from effective gene lengths for RNA-seq.)
+
+```{r normalize_data}
+for (i in names(sexps)) {
+    if (! "totals" %in% colnames(colData(sexps[[i]]))) {
+        colData(sexps[[i]])$totals <- colSums(assay(sexps[[i]], "counts"))
+    }
+    colData(sexps[[i]])$norm.factors <- calcNormFactors(asDGEList(sexps[[i]]))$samples$norm.factors
+    
+    if ("length" %in% assayNames(sexps[[i]])) {
+        normMat <- assay(sexps[[i]], "length") %>% divide_by(exp(rowMeans(log(.))))
+        normCounts <- assay(sexps[[i]], "counts")/normMat
+        lib.offsets <- log(calcNormFactors(normCounts)) + log(colSums(normCounts))
+        assay(sexps[[i]], "offset") <- t(t(log(normMat)) + lib.offsets)
+    }
+}
+```
+
+## Outlier sample filtering
+
+Next, we identify possible outlier samples in the data. For our purposes, these are defined as samples for which the percentage of zero counts is 3 standard deviations below the mean for all samples. This criterion was determined through exploratory data analysis. We drop these samples before running MOFA.
+
+```{r filter_outlier_samples}
+outlier.samples <- sexps %>% 
+    lapply(. %>% 
+               set_colnames(colData(.)$PrimarySample) %>%
+               assay("counts") %>%
+               is_greater_than(0) %>% 
+               colMeans %>%
+               .[. < mean(.) - sd(.) * 3] %>% 
+               names)
+for (i in names(sexps))  {
+    outliers <- sexps[[i]]$PrimarySample %in% outlier.samples[[i]]
+    if (any(outliers)) {
+        message(glue("Removing out {sum(outliers)} outlier sample{ifelse(sum(outliers) == 1, '', 's')} from {i} data."))
+    }
+    sexps[[i]] %<>% .[,!outliers]
+}
+```
+
+## Variance filtering
+
+The next filter is a variance filter, selecting N genes from each data set with the largest dispersions. The value of N for each data set is determined based on the number of significantly differentially abundant features identified. 
+
+```{r filter_variance}
+num.keep <- list(RNA=10000, H3K4me2=20000, H3K4me3=10000, H3K27me3=20000)
+#num.keep <- list(RNA=10000, H3K4me2=10000, H3K4me3=10000, H3K27me3=10000)
+for (i in names(num.keep)) {
+    if (num.keep[[i]] >= nrow(sexps[[i]])) {
+        message(glue("For data type {i}, no variance filter is needed; keeping all {nrow(sexps[[i]])} features"))
+    } else {
+        assert_that(num.keep[[i]] <= nrow(sexps[[i]]))
+        d <- asDGEList(sexps[[i]])
+        design <- matrix(1, nrow=ncol(d), ncol=1)
+        d <- estimateDisp(d, design, prior.df = 0)
+        plotBCV(d, main = glue("BCV plot for {i}"))
+        ostat <- nrow(d) - num.keep[[i]] + 1
+        disp.threshold <- d$tagwise.dispersion %>% sort(partial=ostat) %>% .[ostat]
+        message(glue("For data type {i}, keeping the top {num.keep[[i]]} features with the highest dispersions out of {nrow(d)}"))
+        keep <- d$tagwise.dispersion >= disp.threshold
+        assert_that(sum(keep) == num.keep[[i]])
+        sexps[[i]] %<>% .[keep,]
+    }
+}
+```
+
+## Data Transformation
+
+Now we transform all the filtered datasets to log2 CPM, using a prior count of 2, since that is what plotMDS uses, and MOFA is another factor analysis method similar to MDS or PCA.
+
+```{r logcpm_transform}
+logcpmlist <- lapply(sexps, . %>% asDGEList %>% cpmWithOffset(log=TRUE, prior.count=2))
+```
+
+## Preparing the data for MOFA
+
+Finally, we are ready to combine all filtered, transformed datasets into a MultiAssayExperiment.
+
+```{r build_MAE}
+make.samplemap <- function(explist, primary_colname="primary") {
+    maps <- lapply(explist, . %>% {data.frame(primary=colData(.)[[primary_colname]], colname=colnames(.),
+                                              stringsAsFactors = FALSE)})
+    x <- listToMap(maps)
+}
+biosample.meta <- colData(rnaseq.sexp)[c("cell_type", "activated", "time_point", "days_after_activation", "donor_id")] %>%
+    transform(PrimarySample = glue("{cell_type}-{time_point}-{donor_id}")) %>%
+    set_rownames(.$PrimarySample)
+smap <- make.samplemap(sexps, "PrimarySample")
+# Since MOFA is related to MDS, we use the same prior count as plotMDS
+mae <- MultiAssayExperiment(experiments = logcpmlist, sampleMap = smap, colData = biosample.meta)
+```
+
+We run MOFA several times with different random seeds so that we can verify that it consistently converges to the same result. Then we run it once with a tighter tolerance bound to obtain the final model.
+
+```{r prepare_mofa_options}
+mofa <- createMOFAobject(mae)
+ModelOptions <- getDefaultModelOpts(mofa)
+TrainOptions.final <- getDefaultTrainOpts() %>% transform(maxiter=30000)
+# Looser tolerance bound for exploration
+TrainOptions.explore <- getDefaultTrainOpts() %>% transform(tolerance=0.1)
+
+tmpd <- tempfile(tmpdir = tempdir(), pattern = "mofatemp")
+DirOptions.final <- list(
+    dataDir = tempfile(tmpdir = tmpd, pattern = "mofarun_"),
+    outFile = here("saved_data", "mofa", glue_data(params, "mofa-model_{genome}_{transcriptome}_rna+promoter.hdf5")),
+    rdsFile = here("saved_data", "mofa", glue_data(params, "mofa-model_{genome}_{transcriptome}_rna+promoter.RDS"))
+)
+DirOptions.exploreList <- lapply(seq_len(params$mofa_runs), function(i) {
+    list(
+        dataDir = tempfile(tmpdir = tmpd, pattern = str_c("mofarun", i, "_")),
+        outFile = here("saved_data", "mofa", glue_data(params, "mofa-model_{genome}_{transcriptome}_rna+promoter_explore{i}.hdf5")),
+        rdsFile = here("saved_data", "mofa", glue_data(params, "mofa-model_{genome}_{transcriptome}_rna+promoter_explore{i}.RDS"))
+    )
+})
+final.random.seed <- 1986
+explore.random.seeds <- final.random.seed + seq_len(params$mofa_runs)
+```
+
+# Model fitting
+
+```{r fit_explore_models}
+# MOFA is already parallelized, so we run sequentially
+mofa.explore <- list()
+for (i in seq_len(params$mofa_runs)) {
+    DirOpt <- DirOptions.exploreList[[i]]
+    seed <- explore.random.seeds[i]
+    dir.create(DirOpt$dataDir, recursive=TRUE)
+    mofa.explore[[i]] <- mofa %>% 
+        prepareMOFA(DirOptions = DirOpt, ModelOptions = ModelOptions, TrainOptions = TrainOptions.explore) %>%
+        runMOFA(DirOptions = DirOpt, seed=seed)
+    saveRDS(mofa.explore[[i]], DirOpt$rdsFile)
+    ## TODO: saveRDS
+}
+unlink(tmpd, recursive=TRUE)
+```
+
+```{r fit_final_model}
+dir.create(DirOptions.final$dataDir, recursive=TRUE)
+mofa.final <- mofa %>%
+    prepareMOFA(DirOptions = DirOptions.final, ModelOptions = ModelOptions, TrainOptions = TrainOptions.final) %>%
+    runMOFA(DirOptions = DirOptions.final, seed=final.random.seed)
+saveRDS(mofa.final, DirOptions.final$rdsFile)
+unlink(tmpd, recursive=TRUE)
+#mofa.final <- mofa.explore[[1]]
+## TODO: saveRDS
+```
+
+# Basic model QC
+
+After the run finishes. We produce a few basic QC plots. First, we plot the variance explained by each factor in each model.
+
+```{r plot_r2, warning = FALSE}
+r2list <- lapply(mofa.explore, calculateVarianceExplained)
+r2.final <- calculateVarianceExplained(mofa.final)
+```
+
+We also make a plot comparing the factors between multiple models, to verify that each model is discovering roughly the same set of factors.
+
+```{r compare_models}
+#invisible(compareModels(mofa.explore))
+```
+
+Since all the models seem to be discovering the same factors, we can use any model we choose. For the first model, we make a "bee swarm plot" of each factor:
+
+```{r bee_swarm_plots}
+p <- list(
+    TimePoint=FactorBeeswarmPlot(
+        mofa.final, 
+        factors = seq_len(ncol(getFactors(mofa.final, include_intercept = FALSE))), 
+        color_by = "time_point") + 
+        aes(x=0) + xlab("") + ylab("Factor Value") + 
+        facet_wrap(~factor, scales="free") + 
+        scale_x_continuous(breaks=NULL),
+    CellType=FactorBeeswarmPlot(
+        mofa.final, 
+        factors = seq_len(ncol(getFactors(mofa.final, include_intercept = FALSE))), 
+        color_by = "cell_type") + 
+        aes(x=0) + xlab("") + ylab("Factor Value") + 
+        facet_wrap(~factor, scales="free") + 
+        scale_x_continuous(breaks=NULL),
+    Donor=FactorBeeswarmPlot(
+        mofa.final, 
+        factors = seq_len(ncol(getFactors(mofa.final, include_intercept = FALSE))), 
+        color_by = "donor_id") + 
+        aes(x=0) + xlab("") + ylab("Factor Value") + 
+        facet_wrap(~factor, scales="free") + 
+        scale_x_continuous(breaks=NULL))
+ggprint(p)
+```

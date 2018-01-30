@@ -1,0 +1,237 @@
+---
+title: "MOFA Analysis of RNA-seq and Promoter Histone ChIP-seq data"
+author: "Ryan C. Thompson"
+date: '`r gsub("\\s+", " ", format(Sys.time(), "%B %e, %Y"))`'
+output:
+    html_document: default
+    html_notebook: default
+params:
+    genome:
+        value: hg38.analysisSet
+    transcriptome:
+        value: ensembl.85
+    mofa_views: "rna+promoter"
+---
+
+# Preliminary Setup
+
+```{r setup, include=FALSE, cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
+                      cache.extra = list(params=params),
+                      # https://github.com/yihui/knitr/issues/572
+                      cache.lazy=FALSE,
+                      fig.height=8, fig.width=8,
+                      cache.path = paste0(
+                          here::here("cache", "promoter-cpg-figure7"),
+                          .Platform$file.sep))
+```
+
+First we load the necessary libraries, along with a set of utility functions.
+
+```{r load_packages, message=FALSE, cache=FALSE}
+library(stringr)
+library(glue)
+library(forcats)
+library(magrittr)
+library(openxlsx)
+library(SummarizedExperiment)
+library(MultiAssayExperiment)
+library(dplyr)
+library(edgeR)
+library(limma)
+library(DESeq2)
+library(csaw)
+library(sva)
+library(MOFAtools)
+library(ggplot2)
+library(scales)
+library(GGally)
+library(ggalt)
+library(ggthemes)
+library(ggbeeswarm)
+library(splines)
+library(reshape2)
+library(assertthat)
+library(ggfortify)
+library(broom)
+library(ks)
+library(RColorBrewer)
+library(here)
+
+library(BSgenome.Hsapiens.UCSC.hg38)
+
+library(doParallel)
+ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
+options(mc.cores=ncores)
+registerDoParallel(cores=ncores)
+library(BiocParallel)
+register(SerialParam())
+register(DoparParam())
+
+options(future.globals.maxSize=4 * 1024^3)
+library(future)
+plan(multicore)
+
+source(here("scripts/utilities.R"))
+
+# Required in order to use DGEList objects with future
+length.DGEList <- function(x) {
+    length(unclass(x))
+}
+```
+
+# Data loading and preprocessing
+
+## Loading the MOFA model
+
+First we load all the count data sets that we will be using.
+
+```{r load_mofa}
+## TODO: Load from RDS file
+mofa_path <- here("saved_data", "mofa", glue_data(params, "mofa-model_{genome}_{transcriptome}_{mofa_views}.RDS"))
+mofa <- readRDS(mofa_path)
+```
+
+## Loading the TFBS overlap sets
+
+We load the TFBS overlap data for all promoters. For RNA-seq genes, we say that a gene has a TFBS if any of its promoters overlap one.
+
+```{r load_tfbs_overlaps}
+overlap_sets <- readRDS(here("saved_data", glue_data(params, "promoter-tfbs-overlap_{genome}_{transcriptome}.RDS")))
+overlap_sets$RNA <- bplapply(names(overlap_sets[[1]]), function(tf) {
+    lapply(overlap_sets, . %>% .[[tf]] %>% str_replace("-P[0-9]+$", "")) %>% 
+        unlist %>% sort %>% unique
+}) %>% set_names(names(overlap_sets[[1]]))
+```
+
+## Filtering TFBS overlap sets
+
+We must discard any mention of promoters or genes that are not included in the mofa object.
+
+```{r generate_overlap_matrices}
+overlap_matrices <- lapply(names(overlap_sets), function(view) {
+    mofa_features <- rownames(experiments(mofa@InputData)[[view]])
+    lapply(overlap_sets[[view]], `%in%`, x=mofa_features) %>%
+        do.call(what=rbind) %>% add(0) %>%
+        set_colnames(mofa_features)
+}) %>% setNames(names(overlap_sets))
+```
+
+# Analysis
+
+## Basic MOFA model QC
+
+We start by plotting the fraction of variance explained by each factor in each view.
+
+```{r plot_r2, warning = FALSE}
+r2 <- calculateVarianceExplained(mofa)
+```
+
+The plot shows that factors 1, 5, and 6 are shared across all 4 views, while all the others are specific to just 1 or 2 views.
+
+Next, we plot the values of each latent factor for each sample, distinguishing time point and cell type by color and shape of the points, so we can see which factors correlate with the experimental effects of interest.
+
+```{r bee_swarm_plots, warning=FALSE}
+factor_table <- getFactors(mofa, as.data.frame = TRUE, include_intercept = FALSE)  %>%
+    mutate(sample=as.character(sample)) %>%
+    inner_join(as.data.frame(colData(mofa@InputData)), by=c(sample="PrimarySample")) %>%
+    arrange(cell_type, days_after_activation) %>% 
+    mutate(time_point = fct_inorder(time_point))
+p <- ggplot(factor_table) + 
+    facet_wrap(~factor, scales="free") + 
+    aes(x=0, y=value, color=time_point, shape=cell_type) + 
+    geom_quasirandom() + 
+    scale_x_continuous(breaks=NULL) +
+    labs(title="Latent factor distributions",
+         x = "", y = "Factor value") + 
+    theme_bw()
+ggprint(p)
+```
+
+This plot shows that factors 1 and 5 are associated with time point, while factor 6 is clearly associated with cell type. Other factors have weaker associations, but these are the main factors of interest. Factor 2 is clearly the RNA batch effect.
+
+Based on the above, we identify factors 1, 5, and 6 as the most biologically interesting factors. Happily, these are the same factors that explain a non-zero fraction of variance in every view. To further characterize these factors, we plot them against each other, resulting in a series of PCA-like plots.
+
+```{r factor_pairs_plot, warning=FALSE}
+factors_of_interest <- c(1,5,6)
+FactorsScatterPairs(mofa, factors=factors_of_interest, color_by="time_point", shape_by = "cell_type")
+```
+
+These plots closely match the sva-corrected (or ComBat-corrected) MDS plots from the individual data sets, which is a good sign, since no explicit batch correction has been performed on this data.
+
+## Feature set enrichment analysis for TFBS overlaps
+
+We are now ready to conduct feature set enrichment tests for the factors of interest. We also run the same test with the membership matrix inverted to test for feature set depletion. 
+
+```{r fsea_run}
+fsea_results <- lapply(names(overlap_sets) %>% setdiff("H3K4me3") %>% set_names, function(view) {
+    message("")
+    message(glue("Testing {view} for feature set enrichment"))
+    FeatureSetEnrichmentAnalysis(mofa, view, overlap_matrices[[view]])
+})
+```
+
+```{r fsea_plot}
+sigCounts <- lapply(names(fsea_results), function(view) {
+    fsea_results[[view]] %$%
+        tibble(Test = "Enrichment", 
+               View = view,
+               Factor = colnames(pval.adj), 
+               SigSets = colSums(pval.adj <= 0.05))
+}) %>% do.call(what=rbind) %>%
+    mutate_if(is.character, fct_inorder)
+p <- ggplot(sigCounts) + 
+    aes(x=Factor, y=SigSets) + 
+    geom_bar(stat="identity") + 
+    facet_wrap(~View)
+ggprint(p)
+```
+
+## Batch correction of RNA-seq data
+
+The RNA-seq data in this data set is known to have a severe batch effect that is confounded with the time points, making standard batch subtraction problematic. We can attempt to do better by subtracting out the predicted effect of latent factor 2, which corresponds to this batch effect.
+
+```{r mofa_batch_correct_rnaseq}
+rnaseq_data <- list(None=getTrainData(mofa)$RNA)
+sample.table <- colData(mofa@InputData)
+sample.table$rna_batch <- getFactors(mofa, "2") %>% as.vector %>% is_less_than(0) %>% ifelse(., "A", "B")
+design.NoTime <- model.matrix(~ cell_type + donor_id, sample.table)
+
+rnaseq_data$BatchSubtract <- removeBatchEffect(rnaseq_data$None, batch=sample.table$rna_batch, design=design.NoTime)
+rnaseq_data$ComBat <- ComBat(rnaseq_data$None, batch=sample.table$rna_batch, mod=design.NoTime, par.prior=TRUE)
+rnaseq_data$MOFASubtract <- rnaseq_data$None - predict(mofa, views="RNA", factors="2")$RNA
+rnaseq_data$MOFAPredict <- predict(mofa, view="RNA", factors=c("1", "5", "6"))$RNA
+
+doMDS <- function(x, k) {
+    dmat <- suppressPlot(plotMDS(x, top=5000)$distance.matrix) %>% as.dist
+    if (missing(k)) {
+        k <- attr(dmat, "Size") - 1
+    }
+    mds <- cmdscale(dmat, k=k, eig=TRUE)
+    mds$points %>% add.numbered.colnames("Dim") %>% cbind(sample.table, .)
+}
+mds <- lapply(rnaseq_data, doMDS, k=10)
+
+ggmdsbatch <- function(dat, dims=1:2) {
+    if (length(dims) == 1) {
+        dims <- dims + c(0,1)
+    }
+    assert_that(length(dims) == 2)
+    ggplot(as.data.frame(dat)) +
+        aes_string(x=str_c("Dim", dims[1]), y=str_c("Dim", dims[2])) +
+        aes(color=rna_batch, label=PrimarySample) +
+        geom_text() +
+        scale_x_continuous(expand=c(0.15, 0)) +
+        coord_equal()
+}
+
+p <- list() 
+for (i in names(mds)) {
+    p[[i]] <- ggmdsbatch(mds[[i]]) + 
+        ggtitle("MDS plot for RNA-seq data",
+                subtitle = glue("Batch correction method: {i}"))
+}
+ggprint(p)
+```
+
+It seems that batch correction using MOFA gives a very similar result to the ordinary batch subtraction method, with no obvious improvement. However, since MOFA is implicitly aware of the time point variable (via the 1st and 5th latent factors) when performing this batch correction, while the ordinary batch correction ignores the time point variable, this similarity indicates that ignoring the time point has not had a major effect on the batch correction.
