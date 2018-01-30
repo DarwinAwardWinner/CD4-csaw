@@ -138,33 +138,40 @@ get.ggplots.list <- function(plots) {
     do.call(c, plotlists)
 }
 
-# Somewhat surprisingly, this function doesn't actually rely on ggplot2 being
-# loaded.
-ggprint <- function(plots, device=dev.cur(), closedev, printfun=print) {
+## Returns TRUE if x refers to the device number of a currently active
+## graphics device.
+is_dev <- function(x) {
+    is_scalar_integer(x) && x %in% dev.list()
+}
+
+with_dev <- function(dev, code, closedev) {
     orig.device <- dev.cur()
-    new.device <- device
+    new.device <- force(dev)
     # Functions that create devices don't generally return them, they
     # just set them as the new current device, so get the actual
     # device from dev.cur() instead.
     if (is.null(new.device)) {
         new.device <- dev.cur()
     }
+    assert_that(is_dev(new.device))
+    message(glue("Orig device: {deparse(orig.device)}; new device: {deparse(new.device)}"))
     if (missing(closedev)) {
-        closedev = orig.device != new.device && new.device != 1
-    }
-    if (!is.null(device) && !is.na(device)) {
-        dev.set(new.device)
+         closedev <- new.device != orig.device
     }
     on.exit({
         if (closedev) {
             dev.off(new.device)
         }
-        if (closedev && new.device != orig.device && orig.device != 1) {
+        if (is_dev(orig.device)) {
             dev.set(orig.device)
         }
     })
+    force(code)
+}
+
+ggprint <- function(plots, device=dev.cur(), closedev, printfun=print) {
     p <- get.ggplots(plots)
-    lapply(p, printfun)
+    with_dev(device, lapply(p, printfun), closedev)
     invisible(p)
 }
 
