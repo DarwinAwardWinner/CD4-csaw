@@ -1,0 +1,134 @@
+---
+title: "TFBS Overlap Determination for Promoters and Peaks"
+author: "Ryan C. Thompson"
+date: '`r gsub("\\s+", " ", format(Sys.time(), "%B %e, %Y"))`'
+output:
+    html_document: default
+    html_notebook: default
+params:
+    genome:
+        value: hg38.analysisSet
+    transcriptome:
+        value: ensembl.85
+    promoter_datasets:
+        value: !r c(H3K4me2 = "1kbp-radius_147bp-reads_H3K4me2", 
+                    H3K4me3 = "1kbp-radius_147bp-reads_H3K4me3", 
+                    H3K27me3 = "2.5kbp-radius_147bp-reads_H3K27me3")
+    peak_datasets:
+        value: !r c(H3K4me2 = "epic_H3K4me2_147bp-reads", 
+                    H3K4me3 = "epic_H3K4me3_147bp-reads", 
+                    H3K27me3 = "epic_H3K27me3_147bp-reads")
+---
+
+# Preliminary setup
+
+```{r setup, include=FALSE, cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
+                      cache.extra = list(params=params),
+                      # https://github.com/yihui/knitr/issues/572
+                      cache.lazy=FALSE,
+                      fig.height=8, fig.width=8,
+                      cache.path = paste0(
+                          here::here("cache", "promoter-cpg-figure7"),
+                          .Platform$file.sep))
+```
+
+First we load the necessary libraries, along with a set of utility functions.
+
+```{r load_packages, message=FALSE, cache=FALSE}
+library(stringr)
+library(glue)
+library(magrittr)
+library(openxlsx)
+library(SummarizedExperiment)
+library(MultiAssayExperiment)
+library(dplyr)
+library(edgeR)
+library(limma)
+library(DESeq2)
+library(csaw)
+library(sva)
+library(MOFAtools)
+library(ggplot2)
+library(scales)
+library(GGally)
+library(ggalt)
+library(ggthemes)
+library(splines)
+library(reshape2)
+library(assertthat)
+library(ggfortify)
+library(broom)
+library(ks)
+library(RColorBrewer)
+library(here)
+
+library(BSgenome.Hsapiens.UCSC.hg38)
+
+library(doParallel)
+ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
+options(mc.cores=ncores)
+registerDoParallel(cores=ncores)
+library(BiocParallel)
+register(SerialParam())
+register(DoparParam())
+
+options(future.globals.maxSize=4 * 1024^3)
+library(future)
+plan(multicore)
+
+source(here("scripts/utilities.R"))
+
+# Required in order to use DGEList objects with future
+length.DGEList <- function(x) {
+    length(unclass(x))
+}
+```
+
+# Data loading
+
+## Loading promoters
+
+First we load all the data sets that we will be using.
+
+```{r load_counts}
+promoter_sexps <-
+    bplapply(here("saved_data",
+                  glue_data(params, "promoter-counts_{genome}_{transcriptome}_{promoter_datasets}.RDS")),
+             readRDS) %>% 
+        setNames(names(params$promoter_datasets))
+peak_sexps <-
+    bplapply(here("saved_data",
+                  glue_data(params, "peak-counts_{genome}_{peak_datasets}.RDS")),
+             readRDS) %>% 
+        setNames(names(params$promoter_datasets))
+```
+
+
+## Loading transcription factor binding sites
+
+```{r load_tfbs_cons}
+all_tfbs <- readRDS(here("saved_data", "UCSC_tfbsCons.RDS"))
+tfbs <- all_tfbs %>% split(.$name)
+```
+
+# Computing overlaps
+
+We define a "feature set" for each transcription factor as the set of promoters that overlap or contain at least one binding site for that transcription factor.
+
+```{r compute_overlap_sets}
+promoter_overlap_sets <- lapply(promoter_sexps, function(sexp) {
+    bplapply(tfbs, . %>% overlapsAny(query=sexp) %>% {rownames(sexp)[.]})
+})
+peak_overlap_sets <- lapply(peak_sexps, function(sexp) {
+    bplapply(tfbs, . %>% overlapsAny(query=sexp) %>% {rowData(sexp)$name[.]})
+})
+```
+
+# Save data
+
+```{r save_overlap_sets}
+saveRDS(promoter_overlap_sets, here("saved_data", glue_data(params, "promoter-tfbs-overlap_{genome}_{transcriptome}.RDS")))
+saveRDS(peak_overlap_sets, here("saved_data", glue_data(params, "peak-tfbs-overlap_{genome}.RDS")))
+```
+

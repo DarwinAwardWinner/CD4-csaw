@@ -2439,3 +2439,63 @@ rule lamere_2016_fig7:
         rmd_render(input=input.rmd,
                    output_file=os.path.join(os.getcwd(), output.html),
                    output_format='html_notebook')
+
+# Potential TFBS sources:
+# JASPAR:
+# ORegAnno
+# http://genome.ucsc.edu/cgi-bin/hgTrackUi?hgsid=647218275_SuDu8UNSQBfBbQQBa7YlbaviM9r4&c=chr11&g=oreganno
+# UCSC TFBS Conserved track (generated from TRANSFAC):
+# http://genome.ucsc.edu/cgi-bin/hgTrackUi?hgsid=647218275_SuDu8UNSQBfBbQQBa7YlbaviM9r4&c=chr11&g=tfbsConsSites
+rule get_jaspar_all:
+    '''Download JASPAR predicted TFBS.
+
+    http://jaspar.genereg.net/genome-tracks/
+    http://genome.ucsc.edu/cgi-bin/hgTrackUi?hgsid=647218737_MhrHME1Kg3Iy3wRbHaaIa9F3L7GJ&c=chr1&g=hub_186875_JasparTFBS
+    http://expdata.cmmt.ubc.ca/JASPAR/downloads/UCSC_tracks/2018/
+
+    '''
+    input:
+        HTTP.remote('expdata.cmmt.ubc.ca/JASPAR/downloads/UCSC_tracks/2018/hg38/JASPAR2018_hg38_all_chr.bed.gz',
+                    insecure=True, static=True)
+    output: 'saved_data/JASPAR2018_hg38_all_chr.bed.gz'
+    shell: '''cp {input:q} {output:q}'''
+
+rule filter_jaspar:
+    input: 'saved_data/JASPAR2018_hg38_all_chr.bed.gz'
+    output: 'saved_data/JASPAR2018_hg38_all_chr_score{score_threshold}.bed'
+    shell: '''zcat {input:q} | perl -lane 'print if $A[4] >= {wildcards.score_threshold};' > {output:q}'''
+
+rule get_tfbs_conserved:
+    '''Download UCSC TFBS Conserved track (from hg19).
+
+    http://genome.ucsc.edu/cgi-bin/hgTrackUi?hgsid=647218275_SuDu8UNSQBfBbQQBa7YlbaviM9r4&g=tfbsConsSites&hgTracksConfigPage=configure
+
+    '''
+    # Note: The other inputs are UCSC tables (via rtracklayer), not files
+    input: chain='saved_data/hg19ToHg38.over.chain'
+    output: 'saved_data/UCSC_tfbsCons.RDS'
+    script: 'scripts/get-tfbs-conserved.R'
+
+# rule get_oreganno_tfbs:
+#     pass
+
+rule generate_tfbs_overlap:
+    input:
+        rmd='scripts/tfbs-overlap.Rmd',
+        tfbs_data='saved_data/UCSC_tfbsCons.RDS',
+        promoter_sexps=set(
+            expand('saved_data/promoter-counts_hg38.analysisSet_ensembl.85_{promoter_radius}-radius_147bp-reads_{chip_antibody}.RDS',
+                   zip, **dict(chipseq_samplemeta_noinput))),
+        peak_sexps=set(
+            expand('saved_data/peak-counts_hg38.analysisSet_epic_{chip_antibody}_147bp-reads.RDS',
+                   zip, **dict(chipseq_samplemeta_noinput))),
+    output:
+        html='reports/tfbs-overlap.html',
+        promoter_tfbs_overlap='saved_data/promoter-tfbs-overlap_hg38.analysisSet_ensembl.85.RDS',
+        peak_tfbs_overlap='saved_data/peak-tfbs-overlap_hg38.analysisSet.RDS'
+    threads: 3
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_render(input=input.rmd,
+                   output_file=os.path.join(os.getcwd(), output.html),
+                   output_format='html_notebook')
