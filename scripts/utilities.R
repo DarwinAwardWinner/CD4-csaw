@@ -267,22 +267,20 @@ aveLogCPMWithOffset <- function(y, ...) {
     UseMethod("aveLogCPMWithOffset")
 }
 
-aveLogCPMWithOffset.default <-
-    function (y, offset = NULL, prior.count = 2,
-              dispersion = NULL, weights = NULL, ...)
-{
-    aveLogCPM(y, lib.size = NULL, offset = offset, prior.count = prior.count, dispersion = dispersion, weights = weights, ...)
+aveLogCPMWithOffset.default <- function (y, offset = NULL, prior.count = 2,
+                                         dispersion = NULL, weights = NULL, ...) {
+    aveLogCPM(y, lib.size = NULL, offset = offset, prior.count = prior.count,
+              dispersion = dispersion, weights = weights, ...)
 }
 
-aveLogCPMWithOffset.DGEList <-
-    function (y, offset = expandAsMatrix(getOffset(y), dim(y)),
-              prior.count = 2, dispersion = NULL, ...)
-{
+aveLogCPMWithOffset.DGEList <- function (y, offset = expandAsMatrix(getOffset(y), dim(y)),
+                                         prior.count = 2, dispersion = NULL, ...) {
     if (is.null(dispersion)) {
         dispersion <- y$common.dispersion
     }
+    offsetMat <- offset
     aveLogCPMWithOffset(
-        y$counts, offset = y$offset, prior.count = prior.count,
+        y$counts, offset = offsetMat, prior.count = prior.count,
         dispersion = dispersion, weights = y$weights)
 }
 
