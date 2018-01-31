@@ -621,6 +621,7 @@ rule all:
         targets['ccf_plots'],
         targets['site_profile_plot'],
         'reports/lamere_2016_fig7.html',
+        'reports/promoter-mofa-analyze.html',
 
 rule all_rnaseq:
     '''This rule aggregates all the final outputs of the pipeline.'''
@@ -681,6 +682,10 @@ rule all_idr_filtered_peaks:
     input:
         targets['all_idr_filtered_peaks_epic'],
         targets['all_idr_filtered_peaks_macs'],
+
+rule all_mofa:
+    input:
+        'reports/promoter-mofa-analyze.html',
 
 rule fetch_sra_run:
     '''Script to fetch the .sra file for an SRA run.
