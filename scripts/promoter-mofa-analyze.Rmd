@@ -1,5 +1,5 @@
 ---
-title: "MOFA Analysis of RNA-seq and Promoter Histone ChIP-seq data"
+title: "MOFA analysis of RNA-seq and promoter histone ChIP-seq data"
 author: "Ryan C. Thompson"
 date: '`r gsub("\\s+", " ", format(Sys.time(), "%B %e, %Y"))`'
 output:
@@ -99,7 +99,7 @@ We load the TFBS overlap data for all promoters. For RNA-seq genes, we say that 
 ```{r load_tfbs_overlaps}
 overlap_sets <- readRDS(here("saved_data", glue_data(params, "promoter-tfbs-overlap_{genome}_{transcriptome}.RDS")))
 overlap_sets$RNA <- bplapply(names(overlap_sets[[1]]), function(tf) {
-    lapply(overlap_sets, . %>% .[[tf]] %>% str_replace("-P[0-9]+$", "")) %>% 
+    lapply(overlap_sets, . %>% .[[tf]] %>% str_replace("-P[0-9]+$", "")) %>%
         unlist %>% sort %>% unique
 }) %>% set_names(names(overlap_sets[[1]]))
 ```
@@ -135,15 +135,15 @@ Next, we plot the values of each latent factor for each sample, distinguishing t
 factor_table <- getFactors(mofa, as.data.frame = TRUE, include_intercept = FALSE)  %>%
     mutate(sample=as.character(sample)) %>%
     inner_join(as.data.frame(colData(mofa@InputData)), by=c(sample="PrimarySample")) %>%
-    arrange(cell_type, days_after_activation) %>% 
+    arrange(cell_type, days_after_activation) %>%
     mutate(time_point = fct_inorder(time_point))
-p <- ggplot(factor_table) + 
-    facet_wrap(~factor, scales="free") + 
-    aes(x=0, y=value, color=time_point, shape=cell_type) + 
-    geom_quasirandom() + 
+p <- ggplot(factor_table) +
+    facet_wrap(~factor, scales="free") +
+    aes(x=0, y=value, color=time_point, shape=cell_type) +
+    geom_quasirandom() +
     scale_x_continuous(breaks=NULL) +
     labs(title="Latent factor distributions",
-         x = "", y = "Factor value") + 
+         x = "", y = "Factor value") +
     theme_bw()
 ggprint(p)
 ```
@@ -161,30 +161,30 @@ These plots closely match the sva-corrected (or ComBat-corrected) MDS plots from
 
 ## Feature set enrichment analysis for TFBS overlaps
 
-We are now ready to conduct feature set enrichment tests for the factors of interest. We also run the same test with the membership matrix inverted to test for feature set depletion. 
+We are now ready to conduct feature set enrichment tests for the factors of interest.
 
 ```{r fsea_run}
-fsea_results <- lapply(names(overlap_sets) %>% setdiff("H3K4me3") %>% set_names, function(view) {
-    message("")
-    message(glue("Testing {view} for feature set enrichment"))
-    FeatureSetEnrichmentAnalysis(mofa, view, overlap_matrices[[view]])
-})
+# fsea_results <- lapply(names(overlap_sets) %>% setdiff("H3K4me3") %>% set_names, function(view) {
+#     message("")
+#     message(glue("Testing {view} for feature set enrichment"))
+#     FeatureSetEnrichmentAnalysis(mofa, view, overlap_matrices[[view]])
+# })
 ```
 
 ```{r fsea_plot}
-sigCounts <- lapply(names(fsea_results), function(view) {
-    fsea_results[[view]] %$%
-        tibble(Test = "Enrichment", 
-               View = view,
-               Factor = colnames(pval.adj), 
-               SigSets = colSums(pval.adj <= 0.05))
-}) %>% do.call(what=rbind) %>%
-    mutate_if(is.character, fct_inorder)
-p <- ggplot(sigCounts) + 
-    aes(x=Factor, y=SigSets) + 
-    geom_bar(stat="identity") + 
-    facet_wrap(~View)
-ggprint(p)
+# sigCounts <- lapply(names(fsea_results), function(view) {
+#     fsea_results[[view]] %$%
+#         tibble(Test = "Enrichment",
+#                View = view,
+#                Factor = colnames(pval.adj),
+#                SigSets = colSums(pval.adj <= 0.05))
+# }) %>% do.call(what=rbind) %>%
+#     mutate_if(is.character, fct_inorder)
+# p <- ggplot(sigCounts) +
+#     aes(x=Factor, y=SigSets) +
+#     geom_bar(stat="identity") +
+#     facet_wrap(~View)
+# ggprint(p)
 ```
 
 ## Batch correction of RNA-seq data
@@ -200,7 +200,7 @@ design.NoTime <- model.matrix(~ cell_type + donor_id, sample.table)
 rnaseq_data$BatchSubtract <- removeBatchEffect(rnaseq_data$None, batch=sample.table$rna_batch, design=design.NoTime)
 rnaseq_data$ComBat <- ComBat(rnaseq_data$None, batch=sample.table$rna_batch, mod=design.NoTime, par.prior=TRUE)
 rnaseq_data$MOFASubtract <- rnaseq_data$None - predict(mofa, views="RNA", factors="2")$RNA
-rnaseq_data$MOFAPredict <- predict(mofa, view="RNA", factors=c("1", "5", "6"))$RNA
+rnaseq_data$MOFAPredict <- predict(mofa, view="RNA", factors=factors_of_interest)$RNA
 
 doMDS <- function(x, k) {
     dmat <- suppressPlot(plotMDS(x, top=5000)$distance.matrix) %>% as.dist
@@ -225,9 +225,9 @@ ggmdsbatch <- function(dat, dims=1:2) {
         coord_equal()
 }
 
-p <- list() 
+p <- list()
 for (i in names(mds)) {
-    p[[i]] <- ggmdsbatch(mds[[i]]) + 
+    p[[i]] <- ggmdsbatch(mds[[i]]) +
         ggtitle("MDS plot for RNA-seq data",
                 subtitle = glue("Batch correction method: {i}"))
 }

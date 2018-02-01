@@ -1,5 +1,5 @@
 ---
-title: "MOFA Model Fitting for RNA-seq and peak Histone ChIP-seq data"
+title: "MOFA model fitting for RNA-seq and peak histone ChIP-seq data"
 author: "Ryan C. Thompson"
 date: '`r gsub("\\s+", " ", format(Sys.time(), "%B %e, %Y"))`'
 output:
@@ -116,7 +116,8 @@ rnaseq.sexp %<-% {
 for (i in names(peak.sexps)) {
     peak.sexps[[i]] %<>%
         .[,colData(.)$chip_antibody != "input"] %>%
-        set_colnames(colData(.)$SRA_run)
+        set_colnames(colData(.)$SRA_run) %>%
+        set_rownames(rowData(.)$name)
     colData(peak.sexps[[i]]) %<>%
         transform(time_point = str_replace(time_point, "Day", "D")) %>%
         transform(donor_id = str_replace(donor_id, "^Dn*", "Dn")) %>%
@@ -351,7 +352,7 @@ r2.final <- calculateVarianceExplained(mofa.final)
 We also make a plot comparing the factors between multiple models, to verify that each model is discovering roughly the same set of factors.
 
 ```{r compare_models}
-#invisible(compareModels(mofa.explore))
+invisible(compareModels(mofa.explore))
 ```
 
 Since all the models seem to be discovering the same factors, we can use any model we choose. For the first model, we make a "bee swarm plot" of each factor:
