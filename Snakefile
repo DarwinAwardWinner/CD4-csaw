@@ -622,6 +622,7 @@ rule all:
         targets['site_profile_plot'],
         'reports/lamere_2016_fig7.html',
         'reports/promoter-mofa-analyze.html',
+        'reports/peak-mofa-analyze.html',
 
 rule all_rnaseq:
     '''This rule aggregates all the final outputs of the pipeline.'''
@@ -686,6 +687,7 @@ rule all_idr_filtered_peaks:
 rule all_mofa:
     input:
         'reports/promoter-mofa-analyze.html',
+        'reports/peak-mofa-analyze.html',
 
 rule fetch_sra_run:
     '''Script to fetch the .sra file for an SRA run.
@@ -2527,6 +2529,28 @@ rule run_mofa_promoter:
                    output_file=os.path.join(os.getcwd(), output.html),
                    output_format='html_notebook')
 
+rule run_mofa_peak:
+    '''Run MOFA using RNA-seqs and ChIP-Seq peak data.'''
+    input:
+        rmd='scripts/peak-mofa-run.Rmd',
+        peak_sexps=set(
+            expand('saved_data/peak-counts_hg38.analysisSet_epic_{chip_antibody}_147bp-reads.RDS',
+                   zip, **dict(chipseq_samplemeta_noinput))),
+        rna_sexp='saved_data/SummarizedExperiment_rnaseq_shoal_hg38.analysisSet_ensembl.85.RDS',
+    output:
+        html='reports/peak-mofa-run.html',
+        final_model=expand('saved_data/mofa/mofa-model_hg38.analysisSet_ensembl.85_rna+peak.{ext}',
+                           ext={'hdf5', 'RDS'}),
+        test_models=expand('saved_data/mofa/mofa-model_hg38.analysisSet_ensembl.85_rna+peak_explore{i}.{ext}',
+                           i=range(1,5),
+                           ext={'hdf5', 'RDS'}),
+    threads: 8
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_render(input=input.rmd,
+                   output_file=os.path.join(os.getcwd(), output.html),
+                   output_format='html_notebook')
+
 rule analyze_mofa_promoter:
     '''Analyze MOFA results.'''
     input:
@@ -2535,6 +2559,21 @@ rule analyze_mofa_promoter:
         tfbs_overlap_sets = 'saved_data/promoter-tfbs-overlap_hg38.analysisSet_ensembl.85.RDS',
     output:
         html='reports/promoter-mofa-analyze.html'
+    threads: 1
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_render(input=input.rmd,
+                   output_file=os.path.join(os.getcwd(), output.html),
+                   output_format='html_notebook')
+
+rule analyze_mofa_peak:
+    '''Analyze MOFA results.'''
+    input:
+        rmd = 'scripts/peak-mofa-analyze.Rmd',
+        mofa_model = 'saved_data/mofa/mofa-model_hg38.analysisSet_ensembl.85_rna+peak.RDS',
+        tfbs_overlap_sets = 'saved_data/peak-tfbs-overlap_hg38.analysisSet.RDS',
+    output:
+        html='reports/peak-mofa-analyze.html'
     threads: 1
     run:
         os.environ['MC_CORES'] = str(threads)
