@@ -22,7 +22,7 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
                       cache.lazy=FALSE,
                       fig.height=8, fig.width=8,
                       cache.path = paste0(
-                          here::here("cache", "promoter-cpg-figure7"),
+                          here::here("cache", "promoter-mofa-analyze"),
                           .Platform$file.sep))
 ```
 
