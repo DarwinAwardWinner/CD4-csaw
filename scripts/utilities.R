@@ -153,8 +153,7 @@ with_dev <- function(dev, code, closedev) {
     if (is.null(new.device)) {
         new.device <- dev.cur()
     }
-    assert_that(is_dev(new.device))
-    message(glue("Orig device: {deparse(orig.device)}; new device: {deparse(new.device)}"))
+    assert_that(is_dev(new.device) || new.device == 1)
     if (missing(closedev)) {
          closedev <- new.device != orig.device
     }
