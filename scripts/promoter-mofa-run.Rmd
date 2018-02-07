@@ -210,7 +210,7 @@ for (i in names(sexps))  {
 
 ## Variance filtering
 
-The next filter is a variance filter, selecting N genes from each data set with the largest dispersions. The value of N for each data set is determined based on the number of significantly differentially abundant features identified. 
+The next filter is a variance filter, selecting N genes/peaks from each data set with the largest dispersions. The value of N for each data set is determined based on the number of significantly differentially abundant features identified in previous analyses.
 
 ```{r filter_variance}
 num.keep <- list(RNA=10000, H3K4me2=20000, H3K4me3=10000, H3K27me3=20000)
@@ -253,7 +253,10 @@ make.samplemap <- function(explist, primary_colname="primary") {
     x <- listToMap(maps)
 }
 biosample.meta <- colData(rnaseq.sexp)[c("cell_type", "activated", "time_point", "days_after_activation", "donor_id")] %>%
-    transform(PrimarySample = glue("{cell_type}-{time_point}-{donor_id}")) %>%
+    transform(
+        time_point = factor(time_point, levels=unique(time_point[order(days_after_activation)])),
+        donor_id = factor(donor_id),
+        PrimarySample = glue("{cell_type}-{time_point}-{donor_id}")) %>%
     set_rownames(.$PrimarySample)
 smap <- make.samplemap(sexps, "PrimarySample")
 # Since MOFA is related to MDS, we use the same prior count as plotMDS
