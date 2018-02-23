@@ -1,0 +1,155 @@
+---
+title: "Differential expression analysis of CD4 RNA-Seq Dataset"
+author: "Ryan C. Thompson"
+date: '`r gsub("[[:space:]]+", " ", format(Sys.time(), "%B %e, %Y"))`'
+output: html_notebook
+subtitle: '`r paste0("Using Dataset ", params$dataset)`'
+params:
+    genome:
+        value: hg38.analysisSet
+    transcriptome:
+        value: ensembl.85
+    histone_mark:
+        value: H3K27me3
+    promoter_radius:
+        value: 2.5kbp
+    fragment_length:
+        value: 147bp
+---
+
+# Preliminary Setup
+
+```{r setup, include=FALSE, cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
+                      cache.extra = list(params=params),
+                      fig.height=8, fig.width=8,
+                      cache.path = here::here("cache", "promoter-gst", params$histone_mark))
+```
+
+First we load the necessary libraries, along with a set of utility functions.
+
+```{r load_packages, message=FALSE, cache=FALSE}
+library(here)
+library(stringr)
+library(magrittr)
+library(openxlsx)
+library(Biobase)
+library(SummarizedExperiment)
+library(dplyr)
+library(tibble)
+library(edgeR)
+library(limma)
+library(sva)
+library(ggplot2)
+library(scales)
+library(GGally)
+library(ggalt)
+library(reshape2)
+library(assertthat)
+library(ggfortify)
+library(broom)
+library(toOrdinal)
+library(qvalue)
+library(codingMatrices)
+library(rex)
+library(graphite)
+library(GSEABase)
+
+library(doParallel)
+ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
+registerDoParallel(cores=ncores)
+library(BiocParallel)
+BiocParallel:::.registry_init() # Workaround for https://github.com/Bioconductor/BiocParallel/issues/65
+register(DoparParam())
+# Tell graphite not to use its own parallel logic
+options(Ncpus=1)
+
+source(here("scripts/utilities.R"))
+```
+
+We also set the random seed for reproducibility:
+
+```{r set_random_seed}
+set.seed(1986)
+```
+
+# Data Loading and Preprocessing
+
+## Loading the RNA-seq differential expression results
+
+We begin by loading the saved data from the ChIP-seq promoter differential modification tests. We must use the internal `.zscoreDGE` function We will use the computed t statistics for all the single-contrast tests. (ANOVA-like tests are skipped.)
+
+```{r load_diffmod_results}
+diffmod <- load.in.new.env(here('saved_data', 'ChIP-seq',
+    glue_data(params, '{genome}_{transcriptome}_{histone_mark}-{promoter_radius}-promoter-diffmod.rda')))
+
+results.tables <- diffmod$results.tables %>%
+    Filter(f=. %>% {"logFC" %in% colnames(.)})
+```
+
+We also need to load the gene sets representing TFBS overlap with gene promoters.
+
+## Loading the TFBS overlap sets
+
+We load the TFBS overlap data for all peaks. For RNA-seq genes, we say that a gene has a TFBS if any of its peaks overlap one.
+
+```{r load_tfbs_overlap}
+overlap_sets <- readRDS(here("saved_data", glue_data(params, "promoter-tfbs-overlap_{genome}_{transcriptome}.RDS")))
+overlap_sets$RNA <- bplapply(names(overlap_sets[[1]]), function(tf) {
+    lapply(overlap_sets, . %>% .[[tf]] %>% str_replace("-P[0-9]+$", "")) %>% 
+        unlist %>% sort %>% unique
+}) %>% set_names(names(overlap_sets[[1]]))
+```
+
+## Loading MSigDB gene sets
+
+```{r load_msigdb}
+msigdb <- readRDS(here("saved_data", "msigdb-ensembl.RDS")) %>%
+    # MSigDB collections of interest
+    .[c("h", "c2.CP", "c2.CGP", "c3.MIR", "c3.TFT", "c5", "c7")]
+msigdb_gene_sets <- lapply(msigdb, geneIds)
+```
+
+## Loading graphite pathway gene sets
+
+```{r load_graphite}
+graphite_pathways <- readRDS(here("saved_data", "graphite-ensembl.RDS"))
+graphite_gene_sets <- do.call(c, bplapply(graphite_pathways, lapply, . %>% nodes %>% str_replace("^[A-Z]+:", "")))
+# Merge gene sets with the same name
+graphite_gene_sets %<>% split(names(.)) %>% lapply(. %>% unname %>% unlist)
+```
+
+## Collect all gene sets
+
+```{r collect_all_gene_sets}
+all_collections <- c(MSigDB=msigdb_gene_sets,
+                     list(graphite=graphite_gene_sets),
+                     list(TFBS_overlap=overlap_sets$RNA))
+```
+
+# Run the CAMERA gene set test
+
+We now run the CAMERA gene set test on all the TFBS overlap sets. We run CAMERA on each single-contrast differential expression test that was run.
+
+```{r run_camera}
+camera.results <- lapply(all_collections, function(coll) {
+    bplapply(results.tables, function(rt) {
+        cameraPR(statistic=rt %$% {F * sign(logFC)}, index=ids2indices(coll, rt$GeneID)) %>%
+            rownames_to_column("GeneSet")
+    })
+})
+```
+
+# Save the result tables
+
+We save one xlsx file for each Gene set collection, with a sheet for each contrast in each file. In each sheet, we keep all gene sets with FDR <= 0.1, or the top 100 gene sets, whichever is more.
+
+```{r save_results}
+dir.create(here("results/ChIP-seq"), recursive = TRUE, showWarnings = FALSE)
+for (i in names(camera.results)) {
+    sig.results <- camera.results[[i]] %>%
+        lapply(. %>% filter(FDR <= 0.1 | seq_along(FDR) <= 100))
+    write.xlsx(sig.results, here("results", "ChIP-seq", glue("CAMERA-results-{params$histone_mark}-{params$promoter_radius}-promoter-{i}.xlsx")))
+}
+saveRDS(camera.results, here("saved_data", glue_data(params, "CAMERA-results-{histone_mark}-{promoter_radius}-promoter.RDS")))
+```

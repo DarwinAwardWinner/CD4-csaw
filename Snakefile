@@ -330,16 +330,21 @@ rmd_default_formats = {
 
 def rmd_render(input, output_file, output_format=None, **kwargs):
     if output_format is None:
-        ext = os.path.splitext(output_file)[1][1:]
-        try:
-            output_format = rmd_default_formats[ext]
-        # If no specific output format is specified, just append
-        # "_document" and hope that works
-        except KeyError:
-            if ext == '':
-                raise ValueError("Cannot determine output format from file name.")
-            else:
-                output_format = ext + '_document'
+        if output_file is not None:
+            ext = os.path.splitext(output_file)[1][1:]
+            try:
+                output_format = rmd_default_formats[ext]
+            # If no specific output format is specified, just append
+            # "_document" and hope that works
+            except KeyError:
+                if ext == '':
+                    raise ValueError("Cannot determine output format from file name.")
+                else:
+                    output_format = ext + '_document'
+        # Output file will not be saved, so just pick something
+        # arbitrarily.
+        else:
+            output_format = 'html_document'
     arg_converters = {
         'params': dict_to_R_named_list,
         'output_options': dict_to_R_named_list,
@@ -348,12 +353,16 @@ def rmd_render(input, output_file, output_format=None, **kwargs):
         if k in kwargs:
             kwargs[k] = convfun(kwargs[k])
     with TemporaryDirectory() as tmpdir:
-        out_basename = os.path.basename(output_file)
         # The output name must not have a file extension because of
         # https://github.com/rstudio/rmarkdown/issues/1180
         tmp_output_file = os.path.join(tmpdir, "output_file")
         call_R_external('rmarkdown::render', input=input, output_file=tmp_output_file, output_format=output_format, **kwargs)
-        shutil.move(tmp_output_file, output_file)
+        if output_file is not None:
+            shutil.move(tmp_output_file, output_file)
+
+def rmd_run_without_rendering(input, **kwargs):
+    '''Run the code in an Rmd file but don't produce a report.'''
+    rmd_render(input, output_file=None, output_format=None, **kwargs)
 
 # Run a separate Snakemake workflow (if needed) to fetch the sample
 # metadata, which must be avilable before evaluating the rules below.
@@ -483,6 +492,7 @@ targets = {
             'shoal_hg38.analysisSet',
         ],
         transcriptome=['ensembl.85', 'knownGene']),
+    'rnaseq_gst' : 'saved_data/CAMERA-results-RNA.RDS',
     'chipseq_eda' : expand(
         'reports/ChIP-seq/{chip_antibody}-exploration.html',
         chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
@@ -507,6 +517,10 @@ targets = {
         zip_longest_recycled, genome=["hg38.analysisSet"],
         **df_cartesian_product(pd.DataFrame({'transcriptome': ["knownGene", "ensembl.85"]}),
                                promoter_radius_table),
+    ),
+    'promoter_gst': expand(
+        'saved_data/CAMERA-results-{chip_antibody}-{promoter_radius}-promoter.RDS',
+        zip_longest_recycled, **promoter_radius_table
     ),
     'macs_predictd' : 'results/macs_predictd/output.log',
     'idr_peaks_epic' :expand(
@@ -599,6 +613,10 @@ targets = {
         genome_build='hg38.analysisSet',
         chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
         condition = list(chipseq_samplemeta_noinput.apply(lambda x: '%s.%s' % (x['cell_type'], x['time_point']), axis=1).unique()) + ['ALL']),
+    'mofa': [
+        'reports/promoter-mofa-analyze.html',
+        'reports/peak-mofa-analyze.html',
+    ],
 }
 
 
@@ -608,11 +626,13 @@ rule all:
         targets['rnaseq_eda'],
         targets['rnaseq_compare'],
         targets['rnaseq_diffexp'],
+        targets['rnaseq_gst'],
         targets['chipseq_eda'],
         targets['chipseq_diffmod'],
         targets['chipseq_nvm_diminish'],
         targets['promoter_eda'],
         targets['promoter_diffmod'],
+        targets['promoter_gst'],
         targets['macs_predictd'],
         targets['idr_peaks_epic'],
         targets['idr_peaks_macs'],
@@ -620,9 +640,8 @@ rule all:
         targets['idr_plots_all_cond'],
         targets['ccf_plots'],
         targets['site_profile_plot'],
+        targets['mofa'],
         'reports/lamere_2016_fig7.html',
-        'reports/promoter-mofa-analyze.html',
-        'reports/peak-mofa-analyze.html',
 
 rule all_rnaseq:
     '''This rule aggregates all the final outputs of the pipeline.'''
@@ -630,6 +649,7 @@ rule all_rnaseq:
         targets['rnaseq_eda'],
         targets['rnaseq_compare'],
         targets['rnaseq_diffexp'],
+        targets['rnaseq_gst'],
 
 rule all_chipseq:
     '''This rule aggregates all the final outputs of the pipeline.'''
@@ -639,6 +659,7 @@ rule all_chipseq:
         targets['chipseq_nvm_diminish'],
         targets['promoter_eda'],
         targets['promoter_diffmod'],
+        targets['promoter_gst'],
         targets['macs_predictd'],
         targets['idr_peaks_epic'],
         targets['idr_peaks_macs'],
@@ -2291,12 +2312,12 @@ rule rnaseq_diffexp:
     '''Perform differential expression analysis on RNA-seq dataset'''
     input:
         rmd='scripts/rnaseq-diffexp.Rmd',
-        sexp='saved_data/SummarizedExperiment_rnaseq_{dataset}.RDS',
+        sexp='saved_data/SummarizedExperiment_rnaseq_{quant_method}_{genome}_{transcriptome}.RDS',
     output:
-        html='reports/RNA-seq/{dataset}-diffexp.html',
-        table='results/RNA-seq/{dataset}-diffexp.xlsx',
-        rds='saved_data/RNA-seq/{dataset}-diffexp-tables.RDS',
-        rda='saved_data/RNA-seq/{dataset}-diffexp.rda',
+        html='reports/RNA-seq/{quant_method,[^_]+}_{genome}_{transcriptome}-diffexp.html',
+        table='results/RNA-seq/{quant_method,[^_]+}_{genome}_{transcriptome}-diffexp.xlsx',
+        rds='saved_data/RNA-seq/{quant_method,[^_]+}_{genome}_{transcriptome}-diffexp-tables.RDS',
+        rda='saved_data/RNA-seq/{quant_method,[^_]+}_{genome}_{transcriptome}-diffexp.rda',
     version: (R_package_version('rmarkdown'), R_package_version('limma'))
     threads: 2
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_analyze']
@@ -2304,7 +2325,11 @@ rule rnaseq_diffexp:
         os.environ['MC_CORES'] = str(threads)
         rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
                    output_format='html_notebook',
-                   params={ 'dataset': wildcards.dataset, })
+                   params={
+                       'quant_method': wildcards.quant_method,
+                       'genome': wildcards.genome,
+                       'transcriptome': wildcards.transcriptome,
+                   })
 
 rule chipseq_peak_size_analysis:
     input:
@@ -2580,3 +2605,75 @@ rule analyze_mofa_peak:
         rmd_render(input=input.rmd,
                    output_file=os.path.join(os.getcwd(), output.html),
                    output_format='html_notebook')
+
+rule prepare_msigdb:
+    '''Prepare R data files from the MSigDB XML file.
+
+    Note that this XML file must be manually downloaded, since it
+    requires a login.'''
+    input:
+        xml='saved_data/msigdb_v6.1.xml'
+    output:
+        xml_cache='saved_data/msigdb_v6.1.RDS',
+        sets=expand("saved_data/msigdb-{identifier}.RDS",
+                    identifier=['symbol', 'entrez', 'ensembl']),
+        meta='saved_data/msigdb-meta.RDS',
+    shell: '''Rscript scripts/prepare-msigdb.R'''
+
+rule prepare_graphite:
+    '''Prepare graphite-provided pathways for analysis.'''
+    # No input, since the graphite package already includes the data
+    output:
+        DB=expand('saved_data/graphite-{idtype}.RDS', idtype=['symbol', 'entrez', 'ensembl']),
+        SPIA=expand('saved_data/SPIA/graphite-{idtype}-{dbname}ExSPIA.RData',
+                    idtype=['symbol', 'entrez', 'ensembl'],
+                    dbname = list(r('graphite:::.dbs$hsapiens')))
+    shell: '''Rscript scripts/prepare-graphite.R'''
+
+rule rnaseq_gst:
+    '''Run gene set tests on RNA-seq results.'''
+    input:
+        rmd='scripts/rnaseq-gene-set-tests.Rmd',
+        diffexp='saved_data/RNA-seq/shoal_hg38.analysisSet_ensembl.85-diffexp.rda',
+        msigdb='saved_data/msigdb-ensembl.RDS',
+        graphite='saved_data/graphite-ensembl.RDS',
+        tfbs_overlap='saved_data/promoter-tfbs-overlap_hg38.analysisSet_ensembl.85.RDS'
+    output:
+        rds='saved_data/CAMERA-results-RNA.RDS',
+        xlsx=expand('results/RNA-seq/CAMERA-results-{collection}.xlsx',
+                    collection=[
+                        "MSigDB.h", "MSigDB.c2.CP", "MSigDB.c2.CGP", "MSigDB.c3.MIR",
+                        "MSigDB.c3.TFT", "MSigDB.c5", "MSigDB.c7", 'TFBS_overlap', 'graphite',
+                    ]),
+    threads: 9
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_run_without_rendering(input.rmd)
+
+rule promoter_gst:
+    '''Run gene set tests on RNA-seq results.'''
+    input:
+        rmd='scripts/promoter-gene-set-tests.Rmd',
+        diffmod='saved_data/ChIP-seq/hg38.analysisSet_ensembl.85_{histone_mark}-{promoter_radius}-promoter-diffmod.rda',
+        msigdb='saved_data/msigdb-ensembl.RDS',
+        graphite='saved_data/graphite-ensembl.RDS',
+        tfbs_overlap='saved_data/promoter-tfbs-overlap_hg38.analysisSet_ensembl.85.RDS'
+    output:
+        rds='saved_data/CAMERA-results-{histone_mark}-{promoter_radius}-promoter.RDS',
+        xlsx=expand('results/ChIP-seq/CAMERA-results-{{histone_mark}}-{{promoter_radius}}-promoter-{collection}.xlsx',
+                    collection=[
+                        "MSigDB.h", "MSigDB.c2.CP", "MSigDB.c2.CGP", "MSigDB.c3.MIR",
+                        "MSigDB.c3.TFT", "MSigDB.c5", "MSigDB.c7", 'TFBS_overlap', 'graphite',
+                    ]),
+    threads: 9
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_run_without_rendering(
+            input.rmd,
+            params={
+                'genome': 'hg38.analysisSet',
+                'transcriptome': 'ensembl.85',
+                'histone_mark': wildcards.histone_mark,
+                'promoter_radius': wildcards.promoter_radius,
+                'fragment_length': '147bp',
+            })

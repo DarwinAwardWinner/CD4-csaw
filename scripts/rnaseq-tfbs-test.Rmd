@@ -1,0 +1,105 @@
+---
+title: "Differential expression analysis of CD4 RNA-Seq Dataset"
+author: "Ryan C. Thompson"
+date: '`r gsub("[[:space:]]+", " ", format(Sys.time(), "%B %e, %Y"))`'
+output: html_notebook
+subtitle: '`r paste0("Using Dataset ", params$dataset)`'
+params:
+    genome:
+        value: hg38.analysisSet
+    transcriptome:
+        value: ensembl.85
+    quant_method:
+        value: shoal
+---
+
+# Preliminary Setup
+
+```{r setup, include=FALSE, cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
+                      cache.extra = list(params=params),
+                      fig.height=8, fig.width=8,
+                      cache.path = paste0(
+                          here::here("cache", "rnaseq-diffexp", params$dataset),
+                          .Platform$file.sep))
+```
+
+First we load the necessary libraries, along with a set of utility functions.
+
+```{r load_packages, message=FALSE, cache=FALSE}
+library(here)
+library(stringr)
+library(magrittr)
+library(openxlsx)
+library(Biobase)
+library(SummarizedExperiment)
+library(dplyr)
+library(edgeR)
+library(limma)
+library(sva)
+library(ggplot2)
+library(scales)
+library(GGally)
+library(ggalt)
+library(reshape2)
+library(assertthat)
+library(ggfortify)
+library(broom)
+library(toOrdinal)
+library(qvalue)
+library(codingMatrices)
+library(rex)
+
+library(doParallel)
+ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
+registerDoParallel(cores=ncores)
+library(BiocParallel)
+BiocParallel:::.registry_init() # Workaround for https://github.com/Bioconductor/BiocParallel/issues/65
+register(DoparParam())
+
+source(here("scripts/utilities.R"))
+```
+
+We also set the random seed for reproducibility:
+
+```{r set_random_seed}
+set.seed(1986)
+```
+
+# Data Loading and Preprocessing
+
+We begin by loading the saved data from the RNA-seq differential expression tests. We will need these fitted models to run the gene set tests.
+
+```{r load_diffexp_results}
+diffexp <- load.in.new.env(here('saved_data', 'RNA-seq', glue_data(params, '{quant_method}_{genome}_{transcriptome}-diffexp.rda')))
+design <- diffexp$design
+alltests <- diffexp$alltests
+elist.cb <- diffexp$elist.cb
+```
+
+We also need to load the gene sets representing TFBS overlap with gene promoters.
+
+## Loading the TFBS overlap sets
+
+We load the TFBS overlap data for all peaks. For RNA-seq genes, we say that a gene has a TFBS if any of its peaks overlap one.
+
+```{r load_tfbs_overlap}
+overlap_sets <- readRDS(here("saved_data", glue_data(params, "peak-tfbs-overlap_{genome}.RDS")))
+promoter_overlap_sets <- readRDS(here("saved_data", glue_data(params, "promoter-tfbs-overlap_{genome}_{transcriptome}.RDS")))
+overlap_sets$RNA <- bplapply(names(promoter_overlap_sets[[1]]), function(tf) {
+    lapply(overlap_sets, . %>% .[[tf]] %>% str_replace("-P[0-9]+$", "")) %>% 
+        unlist %>% sort %>% unique
+}) %>% set_names(names(overlap_sets[[1]]))
+```
+
+# CAMERA
+
+We now run the CAMERA gene set test on all the TFBS overlap sets. We run CAMERA on each single-contrast differential expression test that was run.
+
+```{r run_camera}
+single.contrast.tests <- alltests %>% .[lengths(.) == 1]
+camera.results <- bplapply(single.contrast.tests, function(ct) {
+    cmat <- makeContrasts(contrasts=ct, levels=design)
+    camera(fit)
+})
+```

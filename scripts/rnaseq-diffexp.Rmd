@@ -3,10 +3,14 @@ title: "Differential expression analysis of CD4 RNA-Seq Dataset"
 author: "Ryan C. Thompson"
 date: '`r gsub("[[:space:]]+", " ", format(Sys.time(), "%B %e, %Y"))`'
 output: html_notebook
-subtitle: '`r paste0("Using Dataset ", params$dataset)`'
+subtitle: '`r glue::glue_data(params, "Using {quant_method} quantifications on {genome} genome with {transcriptome} transcript annotations")`'
 params:
-  dataset:
-    value: "shoal_hg38.analysisSet_ensembl.85"
+    genome:
+        value: hg38.analysisSet
+    transcriptome:
+        value: ensembl.85
+    quant_method:
+        value: shoal
 ---
 
 # Preliminary Setup
@@ -16,7 +20,7 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
                       cache.extra = list(params=params),
                       fig.height=8, fig.width=8,
                       cache.path = paste0(
-                          here::here("cache", "rnaseq-diffexp", params$dataset),
+                          here::here("cache", "rnaseq-diffexp", glue::glue_data(params, "{quant_method}_{genome}_{transcriptome}")),
                           .Platform$file.sep))
 ```
 
@@ -67,7 +71,7 @@ set.seed(1986)
 Now we'll load the RNA-seq data set from an RDS file containing a SummarizedExperiment object, and modify it to use the sample names as column names.
 
 ```{r load_data}
-sexpfile <- here("saved_data", sprintf("SummarizedExperiment_rnaseq_%s.RDS", params$dataset))
+sexpfile <- here("saved_data", glue_data(params, "SummarizedExperiment_rnaseq_{quant_method}_{genome}_{transcriptome}.RDS"))
 sexp <- readRDS(sexpfile)
 colnames(sexp) <- colData(sexp)$SampleName
 ```
@@ -330,6 +334,8 @@ results.tables <- bplapply(alltests, function(ct) {
 })
 ```
 
+# Results
+
 We save the full result tables to an R data file and the tables of significant results only (FDR 10% or less) to an Excel file. (For tests with fewer than 100 significant genes, we just save the top 100 genes.) We also save the entire workspace for later follow-up analysis.
 
 ```{r save_results}
@@ -337,9 +343,9 @@ We save the full result tables to an R data file and the tables of significant r
 filtered.results.tables <- lapply(results.tables, . %>% filter(FDR <= 0.1 | seq_len(nrow(.)) <= 100))
 dir.create(here("saved_data", "RNA-seq"), recursive = TRUE, showWarnings = FALSE)
 dir.create(here("results", "RNA-seq"), recursive = TRUE, showWarnings = FALSE)
-saveRDS(results.tables, here('saved_data', 'RNA-seq', sprintf('%s-diffexp-tables.RDS', params$dataset)))
-save.image(here('saved_data', 'RNA-seq', sprintf('%s-diffexp.rda', params$dataset)))
-write.xlsx(filtered.results.tables, here("results", "RNA-seq",sprintf('%s-diffexp.xlsx', params$dataset)))
+saveRDS(results.tables, here('saved_data', 'RNA-seq', glue_data(params, '{quant_method}_{genome}_{transcriptome}-diffexp-tables.RDS')))
+save.image(here('saved_data', 'RNA-seq', glue_data(params, '{quant_method}_{genome}_{transcriptome}-diffexp.rda')))
+write.xlsx(filtered.results.tables, here("results", "RNA-seq", glue_data(params, '{quant_method}_{genome}_{transcriptome}-diffexp.xlsx')))
 ```
 
 To have confidence in the significance measures returned, we should verify that the p-value distributions for each test look reasonable. Ideally, each p-value histogram should either be uniform or biased toward zero. Any other shape is indicative of a failure of some modelling step. 
