@@ -336,27 +336,27 @@ We also make a plot comparing the factors between multiple models, to verify tha
 Since all the models seem to be discovering the same factors, we can use any model we choose. For the first model, we make a "bee swarm plot" of each factor:
 
 ```{r bee_swarm_plots}
-p <- list(
-    TimePoint=FactorBeeswarmPlot(
-        mofa.final, 
-        factors = seq_len(ncol(getFactors(mofa.final, include_intercept = FALSE))), 
-        color_by = "time_point") + 
-        aes(x=0) + xlab("") + ylab("Factor Value") + 
-        facet_wrap(~factor, scales="free") + 
-        scale_x_continuous(breaks=NULL),
-    CellType=FactorBeeswarmPlot(
-        mofa.final, 
-        factors = seq_len(ncol(getFactors(mofa.final, include_intercept = FALSE))), 
-        color_by = "cell_type") + 
-        aes(x=0) + xlab("") + ylab("Factor Value") + 
-        facet_wrap(~factor, scales="free") + 
-        scale_x_continuous(breaks=NULL),
-    Donor=FactorBeeswarmPlot(
-        mofa.final, 
-        factors = seq_len(ncol(getFactors(mofa.final, include_intercept = FALSE))), 
-        color_by = "donor_id") + 
-        aes(x=0) + xlab("") + ylab("Factor Value") + 
-        facet_wrap(~factor, scales="free") + 
-        scale_x_continuous(breaks=NULL))
-ggprint(p)
+# p <- list(
+#     TimePoint=plotFactorBeeswarm(
+#         mofa.final, 
+#         factors = seq_len(ncol(getFactors(mofa.final, include_intercept = FALSE))), 
+#         color_by = "time_point") + 
+#         aes(x=0) + xlab("") + ylab("Factor Value") + 
+#         facet_wrap(~factor, scales="free") + 
+#         scale_x_continuous(breaks=NULL),
+#     CellType=plotFactorBeeswarm(
+#         mofa.final, 
+#         factors = seq_len(ncol(getFactors(mofa.final, include_intercept = FALSE))), 
+#         color_by = "cell_type") + 
+#         aes(x=0) + xlab("") + ylab("Factor Value") + 
+#         facet_wrap(~factor, scales="free") + 
+#         scale_x_continuous(breaks=NULL),
+#     Donor=plotFactorBeeswarm(
+#         mofa.final, 
+#         factors = seq_len(ncol(getFactors(mofa.final, include_intercept = FALSE))), 
+#         color_by = "donor_id") + 
+#         aes(x=0) + xlab("") + ylab("Factor Value") + 
+#         facet_wrap(~factor, scales="free") + 
+#         scale_x_continuous(breaks=NULL))
+# ggprint(p)
 ```

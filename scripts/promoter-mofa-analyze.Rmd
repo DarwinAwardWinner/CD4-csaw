@@ -124,7 +124,7 @@ overlap_matrices <- lapply(names(overlap_sets), function(view) {
 We start by plotting the fraction of variance explained by each factor in each view.
 
 ```{r plot_r2, warning = FALSE}
-r2 <- calculateVarianceExplained(mofa)
+plotVarianceExplained(mofa)
 ```
 
 The plot shows that factors 1, 5, and 6 are shared across all 4 views, while all the others are specific to just 1 or 2 views.
@@ -154,7 +154,7 @@ Based on the above, we identify factors 1, 5, and 6 as the most biologically int
 
 ```{r factor_pairs_plot, warning=FALSE}
 factors_of_interest <- c(1,5,6)
-FactorsScatterPairs(mofa, factors=factors_of_interest, color_by="time_point", shape_by = "cell_type")
+plotFactorScatters(mofa, factors=factors_of_interest, color_by="time_point", shape_by = "cell_type")
 ```
 
 These plots closely match the sva-corrected (or ComBat-corrected) MDS plots from the individual data sets, which is a good sign, since no explicit batch correction has been performed on this data.
@@ -164,27 +164,27 @@ These plots closely match the sva-corrected (or ComBat-corrected) MDS plots from
 We are now ready to conduct feature set enrichment tests for the factors of interest.
 
 ```{r fsea_run}
-# fsea_results <- lapply(names(overlap_sets) %>% setdiff("H3K4me3") %>% set_names, function(view) {
-#     message("")
-#     message(glue("Testing {view} for feature set enrichment"))
-#     FeatureSetEnrichmentAnalysis(mofa, view, overlap_matrices[[view]])
-# })
+fsea_results <- names(overlap_sets) %>% set_names %>% lapply(function(view) {
+    message("")
+    message(glue("Testing {view} for feature set enrichment"))
+    FeatureSetEnrichmentAnalysis(mofa, view, overlap_matrices[[view]])
+})
 ```
 
 ```{r fsea_plot}
-# sigCounts <- lapply(names(fsea_results), function(view) {
-#     fsea_results[[view]] %$%
-#         tibble(Test = "Enrichment",
-#                View = view,
-#                Factor = colnames(pval.adj),
-#                SigSets = colSums(pval.adj <= 0.05))
-# }) %>% do.call(what=rbind) %>%
-#     mutate_if(is.character, fct_inorder)
-# p <- ggplot(sigCounts) +
-#     aes(x=Factor, y=SigSets) +
-#     geom_bar(stat="identity") +
-#     facet_wrap(~View)
-# ggprint(p)
+sigCounts <- lapply(names(fsea_results), function(view) {
+    fsea_results[[view]] %$%
+        tibble(Test = "Enrichment",
+               View = view,
+           Factor = colnames(pval.adj),
+               SigSets = colSums(pval.adj <= 0.05))
+}) %>% do.call(what=rbind) %>%
+    mutate_if(is.character, fct_inorder)
+p <- ggplot(sigCounts) +
+    aes(x=Factor, y=SigSets) +
+    geom_bar(stat="identity") +
+    facet_wrap(~View)
+ggprint(p)
 ```
 
 ## Batch correction of RNA-seq data

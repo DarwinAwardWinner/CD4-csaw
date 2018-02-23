@@ -125,7 +125,7 @@ overlap_matrices <- lapply(names(overlap_sets), function(view) {
 We start by plotting the fraction of variance explained by each factor in each view.
 
 ```{r plot_r2, warning = FALSE}
-r2 <- calculateVarianceExplained(mofa)
+plotVarianceExplained(mofa)
 ```
 
 The plot shows that factors 1, 4, and 5 are shared across all 4 views, while all the others are specific to just 1 or 2 views. H3K4me2 and H3K4me3 in particular seem to share a lot of the same variation, which is expected since there is substantial overlap between their binding sites, and they are highly correlated in general.
@@ -155,7 +155,7 @@ Based on the above, we identify factors 1, 4, and 5 as the most biologically int
 
 ```{r factor_pairs_plot, warning=FALSE}
 factors_of_interest <- c(1,4,5)
-FactorsScatterPairs(mofa, factors=factors_of_interest, color_by="time_point", shape_by = "cell_type")
+plotFactorScatters(mofa, factors=factors_of_interest, color_by="time_point", shape_by = "cell_type")
 ```
 
 These plots closely match the sva-corrected (or ComBat-corrected) MDS plots from the individual data sets, which is a good sign, since no explicit batch correction has been performed on this data.
