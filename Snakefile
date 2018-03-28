@@ -2765,3 +2765,34 @@ rule promoter_gst:
                 'promoter_radius': wildcards.promoter_radius,
                 'fragment_length': '147bp',
             })
+
+rule select_abundant_tss_ensembl:
+    '''Select the most abundant TSS for each gene.'''
+    input:
+        txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v{release}.sqlite3'),
+        sexp='saved_data/SummarizedExperiment_rnaseq_transcript_{quant_method}_{genome}_ensembl.{release,\\d+}.RDS',
+        genemeta=hg38_ref('genemeta.ensembl.{release}.RDS'),
+    output:
+        tss='saved_data/tss_{quant_method,[^_]+}_{genome,[^_]+}_ensembl.{release,\\d+}.RDS'
+    shell: '''
+    Rscript scripts/select-abundant-tss.R \
+      --transcript-quant {input.sexp:q} \
+      --annotation-txdb {input.txdb:q} \
+      --additional-gene-info {input.genemeta:q} \
+      --output-file {output.tss:q}
+    '''
+
+rule select_abundant_tss_knownGene:
+    '''Select the most abundant TSS for each gene.'''
+    input:
+        sexp='saved_data/SummarizedExperiment_rnaseq_transcript_{quant_method}_{genome}_knownGene.RDS',
+        genemeta=hg38_ref('genemeta.org.Hs.eg.db.RDS'),
+    output:
+        tss='saved_data/tss_{quant_method,[^_]+}_{genome,[^_]+}_knownGene.RDS'
+    shell: '''
+    Rscript scripts/select-abundant-tss.R \
+      --transcript-quant {input.sexp:q} \
+      --annotation-txdb 'TxDb.Hsapiens.UCSC.hg38.knownGene' \
+      --additional-gene-info {input.genemeta:q} \
+      --output-file {output.tss:q}
+    '''
