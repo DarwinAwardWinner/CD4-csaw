@@ -83,8 +83,9 @@ We begin by loading the saved data from the ChIP-seq promoter differential modif
 diffmod <- load.in.new.env(here('saved_data', 'ChIP-seq',
     glue_data(params, '{genome}_{transcriptome}_{histone_mark}-{promoter_radius}-promoter-diffmod.rda')))
 
-results.tables <- diffmod$results.tables %>%
-    Filter(f=. %>% {"logFC" %in% colnames(.)})
+dge <- diffmod$dge
+design.sv <- diffmod$design.sv
+single.contrast.tests <- diffmod$alltests %>% .[lengths(.) == 1]
 ```
 
 We also need to load the gene sets representing TFBS overlap with gene promoters.
@@ -133,8 +134,9 @@ We now run the CAMERA gene set test on all the TFBS overlap sets. We run CAMERA 
 
 ```{r run_camera}
 camera.results <- lapply(all_collections, function(coll) {
-    bplapply(results.tables, function(rt) {
-        cameraPR(statistic=rt %$% {F * sign(logFC)}, index=ids2indices(coll, rt$GeneID)) %>%
+    bplapply(single.contrast.tests, function(ct) {
+        camera(dge, index=ids2indices(coll, dge$genes$GeneID),
+               design=design.sv, contrast=makeContrasts(contrasts = ct, levels=design.sv)) %>%
             rownames_to_column("GeneSet")
     })
 })

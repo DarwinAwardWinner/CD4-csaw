@@ -77,8 +77,10 @@ We begin by loading the saved data from the RNA-seq differential expression test
 
 ```{r load_diffexp_results}
 diffexp <- load.in.new.env(here('saved_data', 'RNA-seq', glue_data(params, '{quant_method}_{genome}_{transcriptome}-diffexp.rda')))
-results.tables <- diffexp$results.tables %>%
-    Filter(f=. %>% {"t" %in% colnames(.)})
+
+elist.cb <- diffexp$elist.cb
+design <- diffexp$design
+single.contrast.tests <- diffexp$alltests %>% .[lengths(.) == 1]
 ```
 
 We also need to load the gene sets representing TFBS overlap with gene promoters.
@@ -126,8 +128,9 @@ We now run the CAMERA gene set test on all the TFBS overlap sets. We run CAMERA 
 
 ```{r run_camera}
 camera.results <- lapply(all_collections, function(coll) {
-    bplapply(results.tables, function(rt) {
-        cameraPR(statistic=rt %$% set_names(t, ENSEMBL), index=coll) %>%
+    bplapply(single.contrast.tests, function(ct) {
+        camera(elist.cb, index=ids2indices(coll, elist.cb$genes$ENSEMBL),
+               design=design, contrast=makeContrasts(contrasts = ct, levels=design)) %>%
             rownames_to_column("GeneSet")
     })
 })
