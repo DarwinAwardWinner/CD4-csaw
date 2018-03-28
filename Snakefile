@@ -1288,16 +1288,14 @@ rule merge_blacklists:
     shell: '''cat {input:q} > {output:q}'''
 
 rule generate_promoter_regions_ensembl:
-    '''Generate a file describing promoter regions for UCSC knownGene.'''
+    '''Generate a file describing promoter regions for Ensembl genes.'''
     input:
         txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v{release}.sqlite3'),
-        genemeta=hg38_ref('genemeta.ensembl.85.RDS')
+        genemeta=hg38_ref('genemeta.ensembl.{release}.RDS'),
     output:
         rds="saved_data/promoter-regions_hg38.analysisSet_ensembl.{release}_{radius,[0-9.]+.*?bp}.RDS",
-    threads: 32
     shell: '''
     scripts/generate-promoters.R \
-      -j {threads:q} \
       --txdb {input.txdb:q} \
       --promoter-radius {wildcards.radius:q} \
       --additional-gene-info {input.genemeta:q} \
@@ -1312,10 +1310,8 @@ rule generate_promoter_regions_knownGene:
         txdb='TxDb.Hsapiens.UCSC.hg38.knownGene'
     output:
         rds="saved_data/promoter-regions_hg38.analysisSet_knownGene_{radius,[0-9.]+.*?bp}.RDS",
-    threads: 32
     shell: '''
     scripts/generate-promoters.R \
-      -j {threads:q} \
       --txdb {params.txdb:q} \
       --promoter-radius {wildcards.radius:q} \
       --additional-gene-info {input.genemeta:q} \
