@@ -2146,7 +2146,7 @@ rule split_csaw_promoter_counts:
       -o 'saved_data/promoter-counts_{wildcards.base:q}_{wildcards.read_ext:q}-reads_{{chip_antibody}}.RDS'
     '''
 
-rule collect_abundance_ensembl:
+rule collect_gene_abundance_ensembl:
     '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
 
     This uses the tximport and sleuth R packages.'''
@@ -2159,24 +2159,22 @@ rule collect_abundance_ensembl:
     output:
         sexp='saved_data/SummarizedExperiment_rnaseq_{quantifier}_hg38.analysisSet_ensembl.{release,\\d+}.RDS'
     version: (R_package_version('tximport'), R_package_version('sleuth'))
-    threads: 8
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
     run:
         cmd = [
             'scripts/convert-quant-to-sexp.R',
             '--samplemeta-file', input.samplemeta,
             '--sample-id-column', 'SRA_run',
-            '--abundance-file-pattern', *expand('{quantifier}_quant/hg38.analysisSet_ensembl.{release}/%s/abundance.h5', **wildcards),
+            '--abundance-file-pattern', *expand('{quantifier}_quant/hg38.analysisSet_ensembl.{release}/{{SAMPLE}}/abundance.h5', **wildcards),
             '--output-file', output.sexp,
             '--expected-abundance-files', ','.join(input.samples),
-            '--threads', str(threads),
             '--aggregate-level', 'gene',
             '--annotation-txdb', input.txdb,
             '--gene-info', input.genemeta,
         ]
         check_call(cmd)
 
-rule collect_abundance_knownGene:
+rule collect_gene_abundance_knownGene:
     '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
 
     This uses the tximport and sleuth R packages.'''
@@ -2188,24 +2186,22 @@ rule collect_abundance_knownGene:
     output:
         sexp='saved_data/SummarizedExperiment_rnaseq_{quantifier}_hg38.analysisSet_knownGene.RDS',
     version: (R_package_version('tximport'), R_package_version('sleuth'))
-    threads: 8
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
     run:
         cmd = [
             'scripts/convert-quant-to-sexp.R',
             '--samplemeta-file', input.samplemeta,
             '--sample-id-column', 'SRA_run',
-            '--abundance-file-pattern', *expand('{quantifier}_quant/hg38.analysisSet_knownGene/%s/abundance.h5', **wildcards),
+            '--abundance-file-pattern', *expand('{quantifier}_quant/hg38.analysisSet_knownGene/{{SAMPLE}}/abundance.h5', **wildcards),
             '--output-file', output.sexp,
             '--expected-abundance-files', ','.join(input.samples),
-            '--threads', str(threads),
             '--aggregate-level', 'gene',
             '--annotation-txdb', 'TxDb.Hsapiens.UCSC.hg38.knownGene',
             '--gene-info', input.genemeta,
         ]
         check_call(cmd)
 
-rule collect_shoal_ensembl:
+rule collect_shoal_gene_abundance_ensembl:
     '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
 
     This uses the tximport and sleuth R packages.'''
@@ -2218,7 +2214,6 @@ rule collect_shoal_ensembl:
     output:
         sexp='saved_data/SummarizedExperiment_rnaseq_shoal_hg38.analysisSet_ensembl.{release,\\d+}.RDS'
     version: (R_package_version('tximport'), R_package_version('sleuth'))
-    threads: 8
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
     run:
         cmd = [
@@ -2227,14 +2222,13 @@ rule collect_shoal_ensembl:
             '--sample-id-column', 'SRA_run',
             '--shoal-dir', *expand('shoal_quant/hg38.analysisSet_ensembl.{release}', **wildcards),
             '--output-file', output.sexp,
-            '--threads', str(threads),
             '--aggregate-level', 'gene',
             '--annotation-txdb', input.txdb,
             '--gene-info', input.genemeta,
         ]
         check_call(cmd)
 
-rule collect_shoal_knownGene:
+rule collect_shoal_gene_abundance_knownGene:
     '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
 
     This uses the tximport and sleuth R packages.'''
@@ -2246,7 +2240,6 @@ rule collect_shoal_knownGene:
     output:
         sexp='saved_data/SummarizedExperiment_rnaseq_shoal_hg38.analysisSet_knownGene.RDS',
     version: (R_package_version('tximport'), R_package_version('sleuth'))
-    threads: 8
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
     run:
         cmd = [
@@ -2255,7 +2248,6 @@ rule collect_shoal_knownGene:
             '--sample-id-column', 'SRA_run',
             '--shoal-dir', *expand('shoal_quant/hg38.analysisSet_knownGene', **wildcards),
             '--output-file', output.sexp,
-            '--threads', str(threads),
             '--aggregate-level', 'gene',
             '--annotation-txdb', 'TxDb.Hsapiens.UCSC.hg38.knownGene',
             '--gene-info', input.genemeta,

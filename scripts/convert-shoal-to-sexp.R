@@ -6,10 +6,6 @@ library(magrittr)
 library(assertthat)
 library(glue)
 
-num.cores <- 1
-## Don't default to more than 4 cores
-try({library(parallel); num.cores <- min(4, detectCores()); }, silent=TRUE)
-
 ## Extension of match.arg with automatic detection of the argument
 ## name for use in error messages.
 match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg), ignore.case=FALSE) {
@@ -55,8 +51,6 @@ get.options <- function(opts) {
                     help="Whether to save aggregated gene counts or transcript counts in the output file. By default, aggregated gene counts are saved if a gene annotation is provided, and transcript counts are saved otherwise. You can force one or the other by specifying 'gene' or 'transcript' for this option."),
         make_option(c("-o", "--output-file"), metavar="FILENAME.RDS", type="character",
                     help="(REQUIRED) Output file name. The SummarizedExperiment object containing the counts will be saved here using saveRDS, so it should end in '.RDS'."),
-        make_option(c("-j", "--threads"), metavar="N", type="integer", default=num.cores,
-                    help="Number of threads to use"),
         make_option(c("-m", "--genemap-file"), metavar="FILENAME", type="character",
                     help="Genemap file in the Salmon simple gene map format (see 'salmon quant --help-reads')"),
         make_option(c("-d", "--annotation-txdb"), metavar="PACKAGE_OR_FILE_NAME", type="character",
@@ -121,41 +115,17 @@ library(future)
 library(magrittr)
 library(openxlsx)
 library(stringr)
+library(future)
 
 library(annotate)
 library(GenomicRanges)
 library(rtracklayer)
 library(S4Vectors)
 library(SummarizedExperiment)
-library(sleuth)
 library(tximport)
-
-library(BiocParallel)
-library(doParallel)
-register(DoparParam())
 
 tsmsg <- function(...) {
     message(date(), ": ", ...)
-}
-
-## Parallel version of tximport, because why not.
-BPtximport <- function (files, ... , BPPARAM = try(BiocParallel::bpparam(), silent=TRUE))
-{
-    if (is(BPPARAM, "BiocParallelParam")) {
-        agg.txi <- function(...) {
-            x <- list(...)
-            list(abundance = do.call(cbind, lapply(x, `[[`, "abundance")),
-                 counts = do.call(cbind, lapply(x, `[[`, "counts")),
-                 length = do.call(cbind, lapply(x, `[[`, "length")),
-                 countsFromAbundance = x[[1]]$countsFromAbundance)
-        }
-        ## Silence the individual calls since the intermixed output would
-        ## be unreadable.
-        tximport_silent <- function(...) suppressMessages(tximport(...))
-        return(bpvec(files, tximport_silent, ..., AGGREGATE=agg.txi, BPPARAM=BPPARAM))
-    } else {
-        return(tximport(files=files, ...))
-    }
 }
 
 ## Read a single R object from an RDA file. If run on an RDA
@@ -205,10 +175,10 @@ read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NU
         read.xlsx.args %<>% as.list
         read.xlsx.args$xlsxFile <- filename
         lazy.results <- list(
-            rdata=lazy(read.RDS.or.RDA(filename, dataframe.class)),
-            table=lazy(do.call(read.table, read.table.args)),
-            csv=lazy(do.call(read.csv, read.table.args)),
-            xlsx=lazy(do.call(read.xlsx, read.xlsx.args)))
+            rdata=future(read.RDS.or.RDA(filename, dataframe.class), lazy=TRUE),
+            table=futureCall(read.table, read.table.args, lazy=TRUE),
+            csv=futureCall(read.csv, read.table.args, lazy=TRUE),
+            xlsx=futureCall(read.xlsx, read.xlsx.args, lazy=TRUE))
         for (lzresult in lazy.results) {
             result <- tryCatch({
                 x <- as(value(lzresult), dataframe.class)
@@ -236,14 +206,6 @@ cleanup.mcols <- function(object, mcols_df=mcols(object)) {
 
 is.empty <- function(x) {
     x %>% unlist %>% na.omit %>% length %>% equals(0)
-}
-
-make.lazy <- function(func, ...) {
-    lazymaker <- function(expr)
-        lazy(expr, ...)
-    function(...) {
-        lazymaker(func(...))
-    }
 }
 
 ## Get column names that are always the same for all elements of a
@@ -414,16 +376,11 @@ print.var.vector <- function(v) {
     ##             '--sample-id-column', 'SRA_run',
     ##             '--shoal-dir', 'shoal_quant/hg38.analysisSet_ensembl.85',
     ##             '--output-file', 'saved_data/SummarizedExperiment_rnaseq_shoal_hg38.analysisSet_ensembl.85.RDS',
-    ##             '--threads', '8',
     ##             '--aggregate-level', 'gene',
     ##             '--annotation-txdb', '/home/ryan/references/hg38/TxDb.Hsapiens.ensembl.hg38.v85.sqlite3',
     ##             '--gene-info', '/home/ryan/references/hg38/genemeta.ensembl.85.RDS')
     ## cmdopts <- get.options(myargs)
     cmdopts$help <- NULL
-
-    cmdopts$threads %<>% round %>% max(1)
-    tsmsg("Running with ", cmdopts$threads, " threads")
-    registerDoParallel(cores=cmdopts$threads)
 
     tsmsg("Args:")
     print.var.vector(cmdopts)
@@ -442,18 +399,22 @@ print.var.vector <- function(v) {
 
     rownames(samplemeta) <- samplemeta$sample <- samplemeta[[cmdopts$sample_id_column]]
 
-    samplemeta$path <- file.path(cmdopts$shoal_dir, glue("{samplemeta[[cmdopts$sample_id_column]]}_adapt.sf", ))
+    samplemeta$path <- file.path(cmdopts$shoal_dir, glue("{samplemeta[[cmdopts$sample_id_column]]}_adapt.sf"))
 
     assert_that(all(file.exists(samplemeta$path)))
 
     annot <- NULL
-    annot <- NULL
+    annot_ranges <- NULL
     tx2gene <- NULL
     if (cmdopts$aggregate_level == "gene") {
         if ("annotation_txdb" %in% names(cmdopts)) {
+            tsmsg("Reading transcript ranges from TxDb")
             txdb <- get.txdb(cmdopts$annotation_txdb)
+            annot_ranges <- transcriptsBy(txdb, "gene")
+            tsmsg("Reading transcript gene mappings from TxDb")
             tx2gene <- get.tx2gene.from.txdb(txdb)
         } else if ("genemap_file" %in% names(cmdopts)) {
+            tsmsg("Reading transcript gene mappings from genemap file")
             tx2gene <- read.tx2gene.from.genemap(cmdopts$genemap_file)
         } else {
             stop("Need a gene annotation to aggregate at the gene level.")
@@ -467,6 +428,12 @@ print.var.vector <- function(v) {
             }
         }
     } else {
+        if ("annotation_txdb" %in% names(cmdopts)) {
+            tsmsg("Reading transcript ranges from TxDb")
+            txdb <- get.txdb(cmdopts$annotation_txdb)
+            annot_ranges <- transcripts(txdb)
+            names(annot_ranges) <- annot_ranges$tx_name
+        }
         if ("transcript_info" %in% names(cmdopts)) {
             tsmsg("Reading transcript annotations")
             annot <- read.table.general(cmdopts$transcript_info, dataframe.class="DataFrame")
@@ -478,23 +445,42 @@ print.var.vector <- function(v) {
     }
 
     tsmsg("Reading quantification files")
-    txi <- BPtximport(samplemeta$path, type="salmon", txOut=TRUE)
+    txi <- tximport(samplemeta$path, type="salmon", txOut=TRUE)
     if (cmdopts$aggregate_level == "gene") {
         txi %<>% summarizeToGene(tx2gene)
     }
 
+    tsmsg("Matching annotation to quantification tables")
     txi_assayNames <- c("counts", "abundance", "length")
     txi_featureNames <- rownames(txi[[txi_assayNames[1]]])
-    if (!is.null(annot)) {
+    if (is.null(annot)) {
+        annot <- DataFrame(row.names=txi_featureNames)
+        annot[[cmdopts$aggregate_level]] <- txi_featureNames
+    } else {
         annot %<>% .[txi_featureNames,] %>% set_rownames(txi_featureNames)
     }
 
-    sexp <- SummarizedExperiment(
-        assays=List(txi[txi_assayNames]),
-        colData=as(samplemeta, "DataFrame"),
-        rowData=as(annot, "DataFrame"),
-        ## Put non-assay elements of txi into the metadata
-        metadata=SimpleList(txi[!names(txi) %in% txi_assayNames]))
+    ## If we have ranges (from a TxDb), we make a
+    ## RangedSummarizedExperiment, otherwise we make a regular one
+    if (!is.null(annot_ranges)) {
+        tsmsg("Constructing the RangedSummarizedExperiment object")
+        annot_ranges %<>% .[txi_featureNames]
+        mcols(annot_ranges) <- as(annot, "DataFrame")
+        sexp <- SummarizedExperiment(
+            assays=List(txi[txi_assayNames]),
+            colData=as(samplemeta, "DataFrame"),
+            rowRanges=annot_ranges,
+            ## Put non-assay elements of txi into the metadata
+            metadata=SimpleList(txi[!names(txi) %in% txi_assayNames]))
+    } else {
+        tsmsg("Constructing the SummarizedExperiment object")
+        sexp <- SummarizedExperiment(
+            assays=List(txi[txi_assayNames]),
+            colData=as(samplemeta, "DataFrame"),
+            rowData=as(annot, "DataFrame"),
+            ## Put non-assay elements of txi into the metadata
+            metadata=SimpleList(txi[!names(txi) %in% txi_assayNames]))
+    }
 
     tsmsg("Saving SummarizedExperiment")
     save.RDS.or.RDA(sexp, cmdopts$output_file)
