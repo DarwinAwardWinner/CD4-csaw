@@ -2254,6 +2254,106 @@ rule collect_shoal_gene_abundance_knownGene:
         ]
         check_call(cmd)
 
+rule collect_transcript_abundance_ensembl:
+    '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
+
+    This uses the tximport and sleuth R packages.'''
+    input:
+        samplemeta='saved_data/samplemeta-RNASeq.RDS',
+        txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v{release}.sqlite3'),
+        samples=expand('{{quantifier}}_quant/hg38.analysisSet_ensembl.{{release}}/{sample}/abundance.h5',
+                       sample=rnaseq_samplemeta['SRA_run']),
+    output:
+        sexp='saved_data/SummarizedExperiment_rnaseq_transcript_{quantifier}_hg38.analysisSet_ensembl.{release,\\d+}.RDS'
+    version: (R_package_version('tximport'), R_package_version('sleuth'))
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
+    run:
+        cmd = [
+            'scripts/convert-quant-to-sexp.R',
+            '--samplemeta-file', input.samplemeta,
+            '--sample-id-column', 'SRA_run',
+            '--abundance-file-pattern', *expand('{quantifier}_quant/hg38.analysisSet_ensembl.{release}/{{SAMPLE}}/abundance.h5', **wildcards),
+            '--output-file', output.sexp,
+            '--expected-abundance-files', ','.join(input.samples),
+            '--aggregate-level', 'transcript',
+            '--annotation-txdb', input.txdb,
+        ]
+        check_call(cmd)
+
+rule collect_transcript_abundance_knownGene:
+    '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
+
+    This uses the tximport and sleuth R packages.'''
+    input:
+        samplemeta='saved_data/samplemeta-RNASeq.RDS',
+        samples=expand('{{quantifier}}_quant/hg38.analysisSet_knownGene/{sample}/abundance.h5',
+                       sample=rnaseq_samplemeta['SRA_run']),
+    output:
+        sexp='saved_data/SummarizedExperiment_rnaseq_transcript_{quantifier}_hg38.analysisSet_knownGene.RDS',
+    version: (R_package_version('tximport'), R_package_version('sleuth'))
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
+    run:
+        cmd = [
+            'scripts/convert-quant-to-sexp.R',
+            '--samplemeta-file', input.samplemeta,
+            '--sample-id-column', 'SRA_run',
+            '--abundance-file-pattern', *expand('{quantifier}_quant/hg38.analysisSet_knownGene/{{SAMPLE}}/abundance.h5', **wildcards),
+            '--output-file', output.sexp,
+            '--expected-abundance-files', ','.join(input.samples),
+            '--aggregate-level', 'transcript',
+            '--annotation-txdb', 'TxDb.Hsapiens.UCSC.hg38.knownGene',
+        ]
+        check_call(cmd)
+
+rule collect_shoal_transcript_abundance_ensembl:
+    '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
+
+    This uses the tximport and sleuth R packages.'''
+    input:
+        samplemeta='saved_data/samplemeta-RNASeq.RDS',
+        txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v{release}.sqlite3'),
+        samples=expand('shoal_quant/hg38.analysisSet_ensembl.{{release}}/{sample}_adapt.sf',
+                       sample=rnaseq_samplemeta['SRA_run']),
+    output:
+        sexp='saved_data/SummarizedExperiment_rnaseq_transcript_shoal_hg38.analysisSet_ensembl.{release,\\d+}.RDS'
+    version: (R_package_version('tximport'), R_package_version('sleuth'))
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
+    run:
+        cmd = [
+            'scripts/convert-shoal-to-sexp.R',
+            '--samplemeta-file', input.samplemeta,
+            '--sample-id-column', 'SRA_run',
+            '--shoal-dir', *expand('shoal_quant/hg38.analysisSet_ensembl.{release}', **wildcards),
+            '--output-file', output.sexp,
+            '--aggregate-level', 'transcript',
+            '--annotation-txdb', input.txdb,
+        ]
+        check_call(cmd)
+
+rule collect_shoal_transcript_abundance_knownGene:
+    '''Generate a SummarizedExperiment object from kallisto's abundance.h5 format.
+
+    This uses the tximport and sleuth R packages.'''
+    input:
+        samplemeta='saved_data/samplemeta-RNASeq.RDS',
+        samples=expand('shoal_quant/hg38.analysisSet_knownGene/{sample}_adapt.sf',
+                       sample=rnaseq_samplemeta['SRA_run']),
+    output:
+        sexp='saved_data/SummarizedExperiment_rnaseq_transcript_shoal_hg38.analysisSet_knownGene.RDS',
+    version: (R_package_version('tximport'), R_package_version('sleuth'))
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_count']
+    run:
+        cmd = [
+            'scripts/convert-shoal-to-sexp.R',
+            '--samplemeta-file', input.samplemeta,
+            '--sample-id-column', 'SRA_run',
+            '--shoal-dir', *expand('shoal_quant/hg38.analysisSet_knownGene', **wildcards),
+            '--output-file', output.sexp,
+            '--aggregate-level', 'transcript',
+            '--annotation-txdb', 'TxDb.Hsapiens.UCSC.hg38.knownGene',
+        ]
+        check_call(cmd)
+
 rule rnaseq_explore:
     '''Perform exploratory data analysis on RNA-seq dataset'''
     input:
