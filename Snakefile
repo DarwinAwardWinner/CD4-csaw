@@ -459,11 +459,10 @@ include: 'mem_requirements.py'
 
 shell.executable('bash')
 
-# TODO: Put this in a config file
-HG38_REF_PATH='~/references/hg38'
+configfile: "snakemake_config.yaml"
 
 subworkflow hg38_ref:
-    workdir: os.path.expanduser(HG38_REF_PATH)
+    workdir: os.path.expanduser(config['hg38_path'])
 
 targets = {
     'rnaseq_counts': expand(
