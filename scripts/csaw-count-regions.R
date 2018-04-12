@@ -110,7 +110,7 @@ get.options <- function(opts) {
         option_list = optlist,
         add_help_option = TRUE,
         prog = progname,
-        epilogue = "Note that all base pair sizes (window width/spacing and read extension) may have an suffix of 'bp', 'kbp', 'mbp', or 'tbp'. For example, 10kb = 10000.")
+        epilogue = "Note that all base pair sizes (window width/spacing and read extension) may have a suffix of 'bp', 'kbp', 'mbp', or 'tbp'. For example, 10kbp = 10000.")
 
     cmdopts <- parse_args(parser, opts)
     ## Ensure that all required arguments were provided

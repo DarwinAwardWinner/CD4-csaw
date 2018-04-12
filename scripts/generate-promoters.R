@@ -132,7 +132,7 @@ From each transcription start site, a region is extended to the specified radius
 option_list = optlist,
 add_help_option = TRUE,
 prog = progname,
-epilogue = "Note that all base pair sizes (for the promoter radius) may have an suffix of 'bp', 'kbp', 'mbp', or 'tbp' (and the 'p' is optional). For example, 10kb = 10000")
+epilogue = "Note that all base pair sizes (for the promoter radius) may have a suffix of 'bp', 'kbp', 'mbp', or 'tbp' (and the 'p' is optional). For example, 10kbp = 10000")
 
     cmdopts <- parse_args(parser, opts)
     ## Ensure that all required arguments were provided
