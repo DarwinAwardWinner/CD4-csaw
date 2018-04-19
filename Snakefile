@@ -2091,6 +2091,41 @@ rule csaw_count_peaks:
       --output-file {output:q}
     '''
 
+rule csaw_count_tss_neighborhoods:
+    '''Count ChIP-Seq reads in a series of windows around each TSS in each sample.
+
+    https://bioconductor.org/packages/release/bioc/html/csaw.html
+
+    '''
+    input:
+        samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
+        bam_files=expand('aligned/chipseq_bowtie2_{{genome}}/{sra_run}/Aligned.{ext}',
+                         sra_run=chipseq_samplemeta['SRA_run'],
+                         ext=['bam', 'bam.bai']),
+        tss='saved_data/tss_shoal_{genome}_{transcriptome}.RDS',
+        blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
+    output:
+        'saved_data/tss-neighborhood-counts_{genome,[^_]+}_{transcriptome,[^_]+}_{radius,[0-9.]+[A-Za-z]*bp}-radius_{wsize,[0-9.]+[A-Za-z]*bp}-windows_{read_ext,[0-9.]+[A-Za-z]*bp}-reads.RDS'
+    version: R_package_version('csaw')
+    threads: 16
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['csaw_count_windows']
+    shell: '''
+    scripts/csaw-count-neighborhoods.R \
+      --samplemeta-file {input.samplemeta:q} \
+      --sample-id-column SRA_run \
+      --bam-file-pattern 'aligned/chipseq_bowtie2_hg38.analysisSet/{{SAMPLE}}/Aligned.bam' \
+      --targets {input.tss:q} \
+      --read-extension {wildcards.read_ext:q} \
+      --blacklist {input.blacklist:q} \
+      --threads {threads:q} \
+      --upstream-neighborhood {wildcards.radius:q} \
+      --downstream-neighborhood {wildcards.radius:q} \
+      --window-width {wildcards.wsize:q} \
+      --initial-window-offset 0 \
+      --blacklist-action mark \
+      --output-file {output:q}
+    '''
+
 rule split_csaw_window_counts:
     '''Split csaw window count data by histone mark.
 
@@ -2137,6 +2172,24 @@ rule split_csaw_promoter_counts:
         'saved_data/promoter-counts_{base}_{read_ext}-reads.RDS',
     output:
         expand('saved_data/promoter-counts_{{base}}_{{read_ext,[0-9.]+[A-Za-z]*bp}}-reads_{chip}.RDS',
+               chip=set(chipseq_samplemeta['chip_antibody'])),
+    version: SOFTWARE_VERSIONS['BIOC']
+    shell: '''
+    scripts/split-sexp.R \
+      -i {input:q} \
+      -o 'saved_data/promoter-counts_{wildcards.base:q}_{wildcards.read_ext:q}-reads_{{chip_antibody}}.RDS'
+    '''
+
+rule split_csaw_tss_neighborhood_counts:
+    '''Split csaw bin count data by histone mark.
+
+    https://bioconductor.org/packages/release/bioc/html/csaw.html
+
+    '''
+    input:
+        'saved_data/tss-neighborhood-counts_{base}_{read_ext}-reads.RDS',
+    output:
+        expand('saved_data/tss-neighborhood_{{base}}_{{read_ext,[0-9.]+[A-Za-z]*bp}}-reads_{chip}.RDS',
                chip=set(chipseq_samplemeta['chip_antibody'])),
     version: SOFTWARE_VERSIONS['BIOC']
     shell: '''
