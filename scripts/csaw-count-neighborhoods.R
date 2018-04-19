@@ -360,21 +360,21 @@ print.var.vector <- function(v) {
     invisible(v)
 }
 
-cmdopts <- list(
-    samplemeta_file="saved_data/samplemeta-ChIPSeq.RDS",
-    sample_id_column="SRA_run",
-    bam_file_pattern="aligned/chipseq_bowtie2_hg38.analysisSet/{SAMPLE}/Aligned.bam",
-    targets="saved_data/tss_shoal_hg38.analysisSet_ensembl.85.RDS",
-    upstream_neighborhood=5000,
-    downstream_neighborhood=5000,
-    window_width=500,
-    initial_window_offset=0,
-    output_file="saved_data/tss-neighborhood-counts_hg38.analysisSet_ensembl.85_5kbp-radius_500bp-windows_147bp-reads.RDS",
-    read_extension=147,
-    blacklist="saved_data/ChIPSeq-merged-blacklist.bed",
-    blacklist_action="mark",
-    threads=4,
-    window_spacing=500)
+## cmdopts <- list(
+##     samplemeta_file="saved_data/samplemeta-ChIPSeq.RDS",
+##     sample_id_column="SRA_run",
+##     bam_file_pattern="aligned/chipseq_bowtie2_hg38.analysisSet/{SAMPLE}/Aligned.bam",
+##     targets="saved_data/tss_shoal_hg38.analysisSet_ensembl.85.RDS",
+##     upstream_neighborhood=5000,
+##     downstream_neighborhood=5000,
+##     window_width=500,
+##     initial_window_offset=0,
+##     output_file="saved_data/tss-neighborhood-counts_hg38.analysisSet_ensembl.85_5kbp-radius_500bp-windows_147bp-reads.RDS",
+##     read_extension=147,
+##     blacklist="saved_data/ChIPSeq-merged-blacklist.bed",
+##     blacklist_action="mark",
+##     threads=4,
+##     window_spacing=500)
 
 {
     cmdopts <- get.options(commandArgs(TRUE))
@@ -518,7 +518,7 @@ cmdopts <- list(
     ## Add sample metadata to colData in front of mapping stats
     colData(sexp) %<>% cbind(sample.table, .)
     ## Save command and options in the metadata
-    metadata(sexp)$cmd.name <- "csaw-count-neighborhoods.R" #TODO: use getScriptName()?
+    metadata(sexp)$cmd.name <- na.omit(c(get_Rscript_filename(), "csaw-count-neighborhoods.R"))[1]
     metadata(sexp)$cmd.opts <- cmdopts
 
     tsmsg("Saving output file")
