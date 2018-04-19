@@ -215,7 +215,8 @@ suppressPackageStartupMessages({
     library(rtracklayer)
     library(SummarizedExperiment)
     library(GenomicAlignments)
-    library(csaw)
+    library(doParallel)
+    library(BiocParallel)
 })
 
 ## Should really be an S4 method, but writing S4 methods is a pain
@@ -387,8 +388,6 @@ print.var.vector <- function(v) {
 
     if (cmdopts$threads > 1) tryCatch({
         suppressPackageStartupMessages({
-            library(doParallel)
-            library(BiocParallel)
         })
         registerDoParallel(cores=cmdopts$threads)
         register(DoparParam())
@@ -396,6 +395,12 @@ print.var.vector <- function(v) {
         tsmsg("Could not initialize parallel backend. Falling back to single-core mode.")
         cmdopts$threads <- 1
     })
+
+    if (cmdopts$thread <= 1) {
+        registerDoSEQ()
+        register(SerialParam())
+    }
+
     tsmsg(glue("Using {cmdopts$threads} cores."))
 
     tsmsg(glue("Assuming a fragment size of {format.bp(cmdopts$read_extension)} for unpaired reads."))
