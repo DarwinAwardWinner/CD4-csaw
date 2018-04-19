@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 library(getopt)
-library(GetoptLong)
+library(glue)
 library(optparse)
 library(stringr)
 library(assertthat)
@@ -60,7 +60,8 @@ print.var.vector <- function(v) {
     sexp <- readRDS(cmdopts$input_file)
     assert_that(is(sexp, "SummarizedExperiment"))
 
-    output_filenames = qq(cmdopts$output_file_pattern, code.pattern="\\{CODE\\}", envir=as.list(colData(sexp)), collapse=FALSE)
+    ## TODO: Replace qq with glue_data
+    output_filenames = glue_data(as.list(colData(sexp)), cmdopts$output_file_pattern)
     output_groups <- split(seq_len(ncol(sexp)), output_filenames)
     output_sexps <- lapply(output_groups, . %>% sexp[,.])
     for (fname in names(output_sexps)) {
