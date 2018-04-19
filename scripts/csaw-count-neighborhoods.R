@@ -206,15 +206,17 @@ Note that all base pair sizes (window width/spacing and read extension) may have
 ## Terminate early on argument-processing errors
 invisible(get.options(commandArgs(TRUE)))
 
-library(dplyr)
-library(glue)
-library(Matrix)
-library(future)
-library(GenomicRanges)
-library(rtracklayer)
-library(SummarizedExperiment)
-library(GenomicAlignments)
-library(csaw)
+suppressPackageStartupMessages({
+    library(dplyr)
+    library(glue)
+    library(Matrix)
+    library(future)
+    library(GenomicRanges)
+    library(rtracklayer)
+    library(SummarizedExperiment)
+    library(GenomicAlignments)
+    library(csaw)
+})
 
 ## Should really be an S4 method, but writing S4 methods is a pain
 readsToFragmentMidpoints <- function(reads, fraglen) {
@@ -227,7 +229,7 @@ readsToFragmentMidpoints <- function(reads, fraglen) {
         frags <- c(mated.frags, single.frags)
     } else if (is(reads, "GAlignmentPairs")) {
         frags <- granges(reads)
-    } else if is(reads, "GAlignments") {
+    } else if (is(reads, "GAlignments")) {
         ## Extend smaller reads to fraglen, but don't shrink longer
         ## reads
         frags <- reads %>% granges %>% resize(width=pmax(fraglen, width(.)), fix="start")
@@ -358,15 +360,21 @@ print.var.vector <- function(v) {
     invisible(v)
 }
 
-## cmdopts <- list(
-##     samplemeta_file="saved_data/samplemeta-ChIPSeq.RDS",
-##     sample_id_column="SRA_run",
-##     bam_file_pattern="aligned/chipseq_bowtie2_hg38.analysisSet/{SAMPLE}/Aligned.bam",
-##     regions="saved_data/promoter-regions_hg38.analysisSet_knownGene_2.5kbp.RDS",
-##     output_file="saved_data/promoter-counts_hg38.analysisSet_knownGene_2.5kbp-radius_147bp-reads.RDS",
-##     read_extension=147,
-##     blacklist="saved_data/ChIPSeq-merged-blacklist.bed",
-##     threads=4)
+cmdopts <- list(
+    samplemeta_file="saved_data/samplemeta-ChIPSeq.RDS",
+    sample_id_column="SRA_run",
+    bam_file_pattern="aligned/chipseq_bowtie2_hg38.analysisSet/{SAMPLE}/Aligned.bam",
+    targets="saved_data/tss_shoal_hg38.analysisSet_ensembl.85.RDS",
+    upstream_neighborhood=5000,
+    downstream_neighborhood=5000,
+    window_width=500,
+    initial_window_offset=0,
+    output_file="saved_data/tss-neighborhood-counts_hg38.analysisSet_ensembl.85_5kbp-radius_500bp-windows_147bp-reads.RDS",
+    read_extension=147,
+    blacklist="saved_data/ChIPSeq-merged-blacklist.bed",
+    blacklist_action="mark",
+    threads=4,
+    window_spacing=500)
 
 {
     cmdopts <- get.options(commandArgs(TRUE))
@@ -378,17 +386,19 @@ print.var.vector <- function(v) {
     print.var.vector(cmdopts)
 
     if (cmdopts$threads > 1) tryCatch({
-        library(doParallel)
-        library(BiocParallel)
+        suppressPackageStartupMessages({
+            library(doParallel)
+            library(BiocParallel)
+        })
         registerDoParallel(cores=cmdopts$threads)
         register(DoparParam())
     }, error=function(...){
         tsmsg("Could not initialize parallel backend. Falling back to single-core mode.")
         cmdopts$threads <- 1
     })
-    tsmsg("Using ", cmdopts$threads, " cores.")
+    tsmsg(glue("Using {cmdopts$threads} cores."))
 
-    tsmsg("Assuming a fragment size of ", format.bp(cmdopts$read_extension))
+    tsmsg(glue("Assuming a fragment size of {format.bp(cmdopts$read_extension)} for unpaired reads."))
 
     tsmsg("Loading sample data")
 
@@ -427,7 +437,7 @@ print.var.vector <- function(v) {
     }
 
     tsmsg("Loading target positions")
-    targets <- read.regions(cmdopts$regions)
+    targets <- read.regions(cmdopts$targets)
     assert_that(is(targets, "GRanges"))
     if (any(strand(targets) == "*")) {
         warning("Some targets have no strand information, and will be treated as being on the plus strand.")
@@ -435,13 +445,13 @@ print.var.vector <- function(v) {
     ## Reduce targets to 5-prime end only
     targets %<>% resize(width=1, fix="start")
 
-    blacklist.regions <- GRanges()
+    blacklist_regions <- GRanges()
     if (!is.null(cmdopts$blacklist)) {
         tsmsg("Loading blacklist regions")
-        blacklist.regions <- read.regions(cmdopts$blacklist)
-        assert_that(is(blacklist.regions, "GRanges"))
+        blacklist_regions <- read.regions(cmdopts$blacklist)
+        assert_that(is(blacklist_regions, "GRanges"))
         ## Blacklist applies to both strands
-        strand(blacklist.regions) <- "*"
+        strand(blacklist_regions) <- "*"
     }
 
     nhood_offsets <- cmdopts %$% c(
@@ -458,14 +468,13 @@ print.var.vector <- function(v) {
         shift(.$offset * ifelse(strand(.) == "-", -1, 1)) %>%
         resize(width=cmdopts$window_width, fix="center")
 
-    ## TODO: Blacklist
-    if (length(blacklist) > 0) {
-        blacklisted <- overlapsAny(nhood_windows, blacklist, ignore.strand=TRUE)
+    if (length(blacklist_regions) > 0) {
+        blacklisted <- overlapsAny(nhood_windows, blacklist_regions, ignore.strand=TRUE)
         nhood_windows$blacklist <- blacklisted
         if (cmdopts$blacklist_action == "discard") {
             tsmsg("Discarding blacklisted windows")
             nhood_windows %<>% .[!.$blacklisted]
-        } else if (cmdopt$blacklist_action %in% c("mark", "setNA")) {
+        } else if (cmdopts$blacklist_action %in% c("mark", "setNA")) {
             ## Makring is handled above, and setNA will be handled
             ## later
             NULL
@@ -481,8 +490,11 @@ print.var.vector <- function(v) {
     tsmsg(glue("Counting reads in neighborhoods around {length(targets)} regions in {nrow(sample.table)} samples."))
     tsmsg(glue("Neighborhoods consist of {length(nhood_offsets)} windows of width {format.bp(cmdopts$window_width)} tiled from {format.bp(cmdopts$upstream_neighborhood)} upstream to {format.bp(cmdopts$downstream_neighborhood)} downstream."))
 
+    bfl <- BamFileList(sample.table$bam_file)
+    names(bfl) <- sample.table[[cmdopts$sample_id_column]]
+
     sexp <- summarizeOverlaps(
-        features=nhood_windows, reads=sample.table$bam_file,
+        features=nhood_windows, reads=bfl,
         ## Get mapping stats in colData
         count.mapped.reads=TRUE,
         ## Read pairs as fragments, treat all fragments as unstranded
