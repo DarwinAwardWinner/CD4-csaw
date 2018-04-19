@@ -1292,7 +1292,7 @@ rule generate_promoter_regions_ensembl:
         txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v{release}.sqlite3'),
         genemeta=hg38_ref('genemeta.ensembl.{release}.RDS'),
     output:
-        rds="saved_data/promoter-regions_hg38.analysisSet_ensembl.{release}_{radius,[0-9.]+.*?bp}.RDS",
+        rds="saved_data/promoter-regions_hg38.analysisSet_ensembl.{release}_{radius,[0-9.]+[A-Za-z]*bp}.RDS",
     shell: '''
     scripts/generate-promoters.R \
       --txdb {input.txdb:q} \
@@ -1308,7 +1308,7 @@ rule generate_promoter_regions_knownGene:
     params:
         txdb='TxDb.Hsapiens.UCSC.hg38.knownGene'
     output:
-        rds="saved_data/promoter-regions_hg38.analysisSet_knownGene_{radius,[0-9.]+.*?bp}.RDS",
+        rds="saved_data/promoter-regions_hg38.analysisSet_knownGene_{radius,[0-9.]+[A-Za-z]*bp}.RDS",
     shell: '''
     scripts/generate-promoters.R \
       --txdb {params.txdb:q} \
@@ -1981,7 +1981,7 @@ rule csaw_count_windows:
                          ext=['bam', 'bam.bai']),
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
     output:
-        'saved_data/csaw-counts_{window_size,[0-9.]+.*?bp}-windows_{read_ext,[0-9.]+.*?bp}-reads.RDS'
+        'saved_data/csaw-counts_{window_size,[0-9.]+[A-Za-z]*bp}-windows_{read_ext,[0-9.]+[A-Za-z]*bp}-reads.RDS'
     version: R_package_version('csaw')
     threads: 1
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['csaw_count_windows']
@@ -2010,7 +2010,7 @@ rule csaw_count_bins:
                          ext=['bam', 'bam.bai']),
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
     output:
-        'saved_data/csaw-counts_{window_size,[0-9.]+.*?bp}-bigbins.RDS'
+        'saved_data/csaw-counts_{window_size,[0-9.]+[A-Za-z]*bp}-bigbins.RDS'
     version: R_package_version('csaw')
     threads: 8
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['csaw_count_bins']
@@ -2040,7 +2040,7 @@ rule csaw_count_promoters:
         promoters='saved_data/promoter-regions_{genome}_{transcriptome}_{radius}.RDS',
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
     output:
-        'saved_data/promoter-counts_{genome,[^_]+}_{transcriptome,[^_]+}_{radius,[0-9.]+.*?bp}-radius_{read_ext,[0-9.]+.*?bp}-reads.RDS'
+        'saved_data/promoter-counts_{genome,[^_]+}_{transcriptome,[^_]+}_{radius,[0-9.]+[A-Za-z]*bp}-radius_{read_ext,[0-9.]+[A-Za-z]*bp}-reads.RDS'
     version: R_package_version('csaw')
     threads: 16
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['csaw_count_regions']
@@ -2072,7 +2072,7 @@ rule csaw_count_peaks:
         peaks='peak_calls/{peak_caller}_{genome}/{chip}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
     output:
-        'saved_data/peak-counts_{genome,[^_]+}_{peak_caller}_{chip}_{read_ext,[0-9.]+.*?bp}-reads.RDS'
+        'saved_data/peak-counts_{genome,[^_]+}_{peak_caller}_{chip}_{read_ext,[0-9.]+[A-Za-z]*bp}-reads.RDS'
     params:
         sample_id_list = lambda wildcards: ",".join(dfselect(chipseq_samplemeta, 'SRA_run', chip_antibody=['input', wildcards.chip]))
     version: R_package_version('csaw')
@@ -2100,7 +2100,7 @@ rule split_csaw_window_counts:
     input:
         'saved_data/csaw-counts_{window_size}-windows_{read_ext}-reads.RDS',
     output:
-        expand('saved_data/csaw-counts_{{window_size,[0-9.]+.*?bp}}-windows_{{read_ext,[0-9.]+.*?bp}}-reads_{chip}.RDS',
+        expand('saved_data/csaw-counts_{{window_size,[0-9.]+[A-Za-z]*bp}}-windows_{{read_ext,[0-9.]+[A-Za-z]*bp}}-reads_{chip}.RDS',
                chip=set(chipseq_samplemeta['chip_antibody'])),
     version: SOFTWARE_VERSIONS['BIOC']
     shell: '''
@@ -2118,7 +2118,7 @@ rule split_csaw_bigbin_counts:
     input:
         'saved_data/csaw-counts_{window_size}-bigbins.RDS',
     output:
-        expand('saved_data/csaw-counts_{{window_size,[0-9.]+.*?bp}}-bigbins_{chip}.RDS',
+        expand('saved_data/csaw-counts_{{window_size,[0-9.]+[A-Za-z]*bp}}-bigbins_{chip}.RDS',
                chip=set(chipseq_samplemeta['chip_antibody'])),
     version: SOFTWARE_VERSIONS['BIOC']
     shell: '''
@@ -2128,7 +2128,7 @@ rule split_csaw_bigbin_counts:
     '''
 
 rule split_csaw_promoter_counts:
-    '''Split csaw bin count data by histone mark.
+    '''Split csaw promoter count data by histone mark.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
 
@@ -2136,7 +2136,7 @@ rule split_csaw_promoter_counts:
     input:
         'saved_data/promoter-counts_{base}_{read_ext}-reads.RDS',
     output:
-        expand('saved_data/promoter-counts_{{base}}_{{read_ext,[0-9.]+.*?bp}}-reads_{chip}.RDS',
+        expand('saved_data/promoter-counts_{{base}}_{{read_ext,[0-9.]+[A-Za-z]*bp}}-reads_{chip}.RDS',
                chip=set(chipseq_samplemeta['chip_antibody'])),
     version: SOFTWARE_VERSIONS['BIOC']
     shell: '''
