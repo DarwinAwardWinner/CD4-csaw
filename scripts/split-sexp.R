@@ -60,7 +60,6 @@ print.var.vector <- function(v) {
     sexp <- readRDS(cmdopts$input_file)
     assert_that(is(sexp, "SummarizedExperiment"))
 
-    ## TODO: Replace qq with glue_data
     output_filenames = glue_data(as.list(colData(sexp)), cmdopts$output_file_pattern)
     output_groups <- split(seq_len(ncol(sexp)), output_filenames)
     output_sexps <- lapply(output_groups, . %>% sexp[,.])

@@ -162,7 +162,7 @@ save.RDS.or.RDA <-
     }
 }
 
-## TODO: Move to utilities.R
+## TODO: Move to utils package
 
 ## Read a table from a R data file, csv, or xlsx file. Returns a data
 ## frame or thorws an error.

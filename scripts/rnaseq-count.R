@@ -210,8 +210,6 @@ featureCountsParallel <- function(files, ...) {
         combineFCResults
 }
 
-## TODO: Move to utilities.R
-
 ## Read a table from a R data file, csv, or xlsx file. Returns a data
 ## frame or thorws an error.
 read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL,

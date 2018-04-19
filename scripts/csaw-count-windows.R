@@ -197,8 +197,6 @@ read.RDS.or.RDA <- function(filename, expected.class="ANY") {
     return(object)
 }
 
-## TODO: Move to utilities.R
-
 ## Read a table from a R data file, csv, or xlsx file. Returns a data
 ## frame or thorws an error.
 read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL,
@@ -361,5 +359,11 @@ print.var.vector <- function(v) {
         width=cmdopts$window_width, ext=cmdopts$read_extension,
         param=rparam, bin=cmdopts$bin)
     colData(wcounts) %<>% {cbind(sample.table, .[c("totals", "ext")])}
+    ## Save command and options in the metadata
+    metadata(sexp)$cmd.name <- na.omit(c(get_Rscript_filename(), "csaw-count-windows.R"))[1]
+    metadata(sexp)$cmd.opts <- cmdopts
+
+    tsmsg("Saving output file")
     saveRDS(wcounts, cmdopts$output_file)
+    tsmsg("Finished.")
 }

@@ -1,3 +1,5 @@
+## TODO: Convert to custom utils package, and make all my scripts use it
+
 suppressMessages({
     library(stringr)
     library(rex)
