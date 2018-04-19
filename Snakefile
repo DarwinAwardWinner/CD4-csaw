@@ -2189,7 +2189,7 @@ rule split_csaw_tss_neighborhood_counts:
     input:
         'saved_data/tss-neighborhood-counts_{base}_{read_ext}-reads.RDS',
     output:
-        expand('saved_data/tss-neighborhood_{{base}}_{{read_ext,[0-9.]+[A-Za-z]*bp}}-reads_{chip}.RDS',
+        expand('saved_data/tss-neighborhood-counts_{{base}}_{{read_ext,[0-9.]+[A-Za-z]*bp}}-reads_{chip}.RDS',
                chip=set(chipseq_samplemeta['chip_antibody'])),
     version: SOFTWARE_VERSIONS['BIOC']
     shell: '''
