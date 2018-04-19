@@ -2107,7 +2107,7 @@ rule csaw_count_tss_neighborhoods:
     output:
         'saved_data/tss-neighborhood-counts_{genome,[^_]+}_{transcriptome,[^_]+}_{radius,[0-9.]+[A-Za-z]*bp}-radius_{wsize,[0-9.]+[A-Za-z]*bp}-windows_{read_ext,[0-9.]+[A-Za-z]*bp}-reads.RDS'
     version: R_package_version('csaw')
-    threads: 16
+    threads: 1
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['csaw_count_windows']
     shell: '''
     scripts/csaw-count-neighborhoods.R \
