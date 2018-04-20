@@ -6,8 +6,8 @@ library(assertthat)
 library(ggplot2)
 library(ggforce)
 
-ccf <- readRDS("saved_data/csaw-ccf.RDS")
-ccf.nbl <- readRDS("saved_data/csaw-ccf-noBL.RDS")
+ccf <- readRDS("saved_data/chipseq-ccf.RDS")
+ccf.nbl <- readRDS("saved_data/chipseq-ccf-noBL.RDS")
 
 sample.table <- readRDS("saved_data/samplemeta-ChIPSeq.RDS") %>%
     ## Ensure that days_after_activation is a factor and can't be

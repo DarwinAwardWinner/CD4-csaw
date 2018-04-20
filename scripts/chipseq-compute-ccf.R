@@ -87,5 +87,5 @@ sample.ccf <-
     })
 
 names(sample.ccf.noBL) <- names(sample.ccf) <- sample.table$SampleName
-saveRDS(sample.ccf, "saved_data/csaw-ccf.RDS")
-saveRDS(sample.ccf.noBL, "saved_data/csaw-ccf-noBL.RDS")
+saveRDS(sample.ccf, "saved_data/chipseq-ccf.RDS")
+saveRDS(sample.ccf.noBL, "saved_data/chipseq-ccf-noBL.RDS")

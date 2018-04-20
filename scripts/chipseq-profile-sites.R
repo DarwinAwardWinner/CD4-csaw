@@ -72,7 +72,7 @@ sample.maxima <- bplapply(sample.table$bam_file, function(bam) {
     maxranges
 })
 names(sample.maxima) <- sample.table$SampleName
-saveRDS(sample.maxima, "saved_data/csaw-sample-maxima.RDS")
+saveRDS(sample.maxima, "saved_data/chipseq-sample-maxima.RDS")
 
 weights <- lapply(sample.maxima, . %$% {1/Count})
 
@@ -88,7 +88,7 @@ sample.mean.profiles <- bpmapply(
         range=10000,
         param=param.dedup.on))
 colnames(sample.mean.profiles) <- sample.table$SampleName
-saveRDS(sample.mean.profiles, "saved_data/csaw-siteprof.RDS")
+saveRDS(sample.mean.profiles, "saved_data/chipseq-siteprof.RDS")
 
 profile.table <- sample.mean.profiles %>%
     melt(varnames=c("Distance", "SampleName"), value.name="RelativeCoverage") %>%

@@ -1913,7 +1913,7 @@ rule idr_filter_peaks_all_conditions:
         idr_results = ','.join(input.idr_results_files)
         shell('''scripts/filter-by-idr.R -p {input.combined_peaks:q} -o {output.filtered_peaks:q} -i {idr_results:q} -r''')
 
-rule csaw_compute_ccf:
+rule chipseq_compute_ccf:
     '''Compute cross-strand correlation values for ChIP-Seq samples.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
@@ -1926,12 +1926,12 @@ rule csaw_compute_ccf:
                          ext=['bam', 'bam.bai']),
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed'
     output:
-        'saved_data/csaw-ccf.RDS', 'saved_data/csaw-ccf-noBL.RDS'
+        'saved_data/chipseq-ccf.RDS', 'saved_data/chipseq-ccf-noBL.RDS'
     version: R_package_version('csaw')
     threads: 8
-    shell: 'MC_CORES={threads:q} scripts/csaw-compute-ccf.R'
+    shell: 'MC_CORES={threads:q} scripts/chipseq-compute-ccf.R'
 
-rule csaw_plot_ccf:
+rule chipseq_plot_ccf:
     '''Plot cross-strand correlation values for all ChIP-Seq samples.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
@@ -1939,16 +1939,16 @@ rule csaw_plot_ccf:
     '''
     input:
         samplemeta='saved_data/samplemeta-ChIPSeq.RDS',
-        ccf_data='saved_data/csaw-ccf.RDS',
-        ccf_noBL_data='saved_data/csaw-ccf-noBL.RDS',
+        ccf_data='saved_data/chipseq-ccf.RDS',
+        ccf_noBL_data='saved_data/chipseq-ccf-noBL.RDS',
     output:
         expand('plots/csaw/CCF-plots{suffix}.pdf',
                suffix=('', '-relative', '-noBL', '-relative-noBL')),
         'plots/csaw/CCF-max-plot.pdf'
     version: SOFTWARE_VERSIONS['R']
-    shell: 'scripts/csaw-plot-ccf.R'
+    shell: 'scripts/chipseq-plot-ccf.R'
 
-rule csaw_profile_sites:
+rule chipseq_profile_sites:
     '''Profile read coverage around local coverage maxima in ChIP-Seq samples.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
@@ -1961,14 +1961,14 @@ rule csaw_profile_sites:
                          ext=['bam', 'bam.bai']),
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed'
     output:
-        'saved_data/csaw-sample-maxima.RDS',
-        'saved_data/csaw-siteprof.RDS',
+        'saved_data/chipseq-sample-maxima.RDS',
+        'saved_data/chipseq-siteprof.RDS',
         'plots/csaw/site-profile-plots.pdf'
     version: R_package_version('csaw')
     threads: 8
-    shell: 'MC_CORES={threads:q} scripts/csaw-profile-sites.R'
+    shell: 'MC_CORES={threads:q} scripts/chipseq-profile-sites.R'
 
-rule csaw_count_windows:
+rule chipseq_count_windows:
     '''Count ChIP-Seq reads overlapping windows in each sample.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
@@ -1981,12 +1981,12 @@ rule csaw_count_windows:
                          ext=['bam', 'bam.bai']),
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
     output:
-        'saved_data/csaw-counts_{window_size,[0-9.]+[A-Za-z]*bp}-windows_{read_ext,[0-9.]+[A-Za-z]*bp}-reads.RDS'
+        'saved_data/chipseq-counts_{window_size,[0-9.]+[A-Za-z]*bp}-windows_{read_ext,[0-9.]+[A-Za-z]*bp}-reads.RDS'
     version: R_package_version('csaw')
     threads: 1
-    resources: mem_gb=MEMORY_REQUIREMENTS_GB['csaw_count_windows']
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_count_windows']
     shell: '''
-    scripts/csaw-count-windows.R \
+    scripts/chipseq-count-windows.R \
       --samplemeta-file {input.samplemeta:q} \
       --sample-id-column SRA_run \
       --bam-file-pattern 'aligned/chipseq_bowtie2_hg38.analysisSet/%s/Aligned.bam' \
@@ -1997,7 +1997,7 @@ rule csaw_count_windows:
       --output-file {output:q}
     '''
 
-rule csaw_count_bins:
+rule chipseq_count_bins:
     '''Count ChIP-Seq reads overlapping windows in each sample.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
@@ -2010,12 +2010,12 @@ rule csaw_count_bins:
                          ext=['bam', 'bam.bai']),
         blacklist='saved_data/ChIPSeq-merged-blacklist.bed',
     output:
-        'saved_data/csaw-counts_{window_size,[0-9.]+[A-Za-z]*bp}-bigbins.RDS'
+        'saved_data/chipseq-counts_{window_size,[0-9.]+[A-Za-z]*bp}-bigbins.RDS'
     version: R_package_version('csaw')
     threads: 8
-    resources: mem_gb=MEMORY_REQUIREMENTS_GB['csaw_count_bins']
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_count_bins']
     shell: '''
-    scripts/csaw-count-windows.R \
+    scripts/chipseq-count-windows.R \
       --samplemeta-file {input.samplemeta:q} \
       --sample-id-column SRA_run \
       --bam-file-pattern 'aligned/chipseq_bowtie2_hg38.analysisSet/%s/Aligned.bam' \
@@ -2026,7 +2026,7 @@ rule csaw_count_bins:
       --output-file {output:q}
     '''
 
-rule csaw_count_promoters:
+rule chipseq_count_promoters:
     '''Count ChIP-Seq reads in promoters in each sample.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
@@ -2043,9 +2043,9 @@ rule csaw_count_promoters:
         'saved_data/promoter-counts_{genome,[^_]+}_{transcriptome,[^_]+}_{radius,[0-9.]+[A-Za-z]*bp}-radius_{read_ext,[0-9.]+[A-Za-z]*bp}-reads.RDS'
     version: R_package_version('csaw')
     threads: 16
-    resources: mem_gb=MEMORY_REQUIREMENTS_GB['csaw_count_regions']
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_count_regions']
     shell: '''
-    scripts/csaw-count-regions.R \
+    scripts/chipseq-count-regions.R \
       --samplemeta-file {input.samplemeta:q} \
       --sample-id-column SRA_run \
       --bam-file-pattern 'aligned/chipseq_bowtie2_hg38.analysisSet/{{SAMPLE}}/Aligned.bam' \
@@ -2056,7 +2056,7 @@ rule csaw_count_promoters:
       --output-file {output:q}
     '''
 
-rule csaw_count_peaks:
+rule chipseq_count_peaks:
     '''Count ChIP-Seq reads in peak regions in each sample.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
@@ -2077,9 +2077,9 @@ rule csaw_count_peaks:
         sample_id_list = lambda wildcards: ",".join(dfselect(chipseq_samplemeta, 'SRA_run', chip_antibody=['input', wildcards.chip]))
     version: R_package_version('csaw')
     threads: 16
-    resources: mem_gb=MEMORY_REQUIREMENTS_GB['csaw_count_regions']
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_count_regions']
     shell: '''
-    scripts/csaw-count-regions.R \
+    scripts/chipseq-count-regions.R \
       --samplemeta-file {input.samplemeta:q} \
       --sample-id-column SRA_run \
       --filter-sample-ids={params.sample_id_list:q} \
@@ -2091,7 +2091,7 @@ rule csaw_count_peaks:
       --output-file {output:q}
     '''
 
-rule csaw_count_tss_neighborhoods:
+rule chipseq_count_tss_neighborhoods:
     '''Count ChIP-Seq reads in a series of windows around each TSS in each sample.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
@@ -2108,9 +2108,9 @@ rule csaw_count_tss_neighborhoods:
         'saved_data/tss-neighborhood-counts_{genome,[^_]+}_{transcriptome,[^_]+}_{radius,[0-9.]+[A-Za-z]*bp}-radius_{wsize,[0-9.]+[A-Za-z]*bp}-windows_{read_ext,[0-9.]+[A-Za-z]*bp}-reads.RDS'
     version: R_package_version('csaw')
     threads: 1
-    resources: mem_gb=MEMORY_REQUIREMENTS_GB['csaw_count_windows']
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_count_windows']
     shell: '''
-    scripts/csaw-count-neighborhoods.R \
+    scripts/chipseq-count-neighborhoods.R \
       --samplemeta-file {input.samplemeta:q} \
       --sample-id-column SRA_run \
       --bam-file-pattern 'aligned/chipseq_bowtie2_hg38.analysisSet/{{SAMPLE}}/Aligned.bam' \
@@ -2126,43 +2126,43 @@ rule csaw_count_tss_neighborhoods:
       --output-file {output:q}
     '''
 
-rule split_csaw_window_counts:
+rule split_chipseq_window_counts:
     '''Split csaw window count data by histone mark.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
 
     '''
     input:
-        'saved_data/csaw-counts_{window_size}-windows_{read_ext}-reads.RDS',
+        'saved_data/chipseq-counts_{window_size}-windows_{read_ext}-reads.RDS',
     output:
-        expand('saved_data/csaw-counts_{{window_size,[0-9.]+[A-Za-z]*bp}}-windows_{{read_ext,[0-9.]+[A-Za-z]*bp}}-reads_{chip}.RDS',
+        expand('saved_data/chipseq-counts_{{window_size,[0-9.]+[A-Za-z]*bp}}-windows_{{read_ext,[0-9.]+[A-Za-z]*bp}}-reads_{chip}.RDS',
                chip=set(chipseq_samplemeta['chip_antibody'])),
     version: SOFTWARE_VERSIONS['BIOC']
     shell: '''
     scripts/split-sexp.R \
       -i {input:q} \
-      -o 'saved_data/csaw-counts_{wildcards.window_size:q}-windows_{wildcards.read_ext:q}-reads_{{chip_antibody}}.RDS'
+      -o 'saved_data/chipseq-counts_{wildcards.window_size:q}-windows_{wildcards.read_ext:q}-reads_{{chip_antibody}}.RDS'
     '''
 
-rule split_csaw_bigbin_counts:
+rule split_chipseq_bigbin_counts:
     '''Split csaw bin count data by histone mark.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
 
     '''
     input:
-        'saved_data/csaw-counts_{window_size}-bigbins.RDS',
+        'saved_data/chipseq-counts_{window_size}-bigbins.RDS',
     output:
-        expand('saved_data/csaw-counts_{{window_size,[0-9.]+[A-Za-z]*bp}}-bigbins_{chip}.RDS',
+        expand('saved_data/chipseq-counts_{{window_size,[0-9.]+[A-Za-z]*bp}}-bigbins_{chip}.RDS',
                chip=set(chipseq_samplemeta['chip_antibody'])),
     version: SOFTWARE_VERSIONS['BIOC']
     shell: '''
     scripts/split-sexp.R \
       -i {input:q} \
-      -o 'saved_data/csaw-counts_{wildcards.window_size:q}-bigbins_{{chip_antibody}}.RDS'
+      -o 'saved_data/chipseq-counts_{wildcards.window_size:q}-bigbins_{{chip_antibody}}.RDS'
     '''
 
-rule split_csaw_promoter_counts:
+rule split_chipseq_promoter_counts:
     '''Split csaw promoter count data by histone mark.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
@@ -2180,7 +2180,7 @@ rule split_csaw_promoter_counts:
       -o 'saved_data/promoter-counts_{wildcards.base:q}_{wildcards.read_ext:q}-reads_{{chip_antibody}}.RDS'
     '''
 
-rule split_csaw_tss_neighborhood_counts:
+rule split_chipseq_tss_neighborhood_counts:
     '''Split csaw bin count data by histone mark.
 
     https://bioconductor.org/packages/release/bioc/html/csaw.html
@@ -2489,8 +2489,8 @@ rule chipseq_explore:
     '''Perform exploratory data analysis on ChIP-seq dataset'''
     input:
         rmd='scripts/chipseq-explore-{chip_antibody}.Rmd',
-        sexp='saved_data/csaw-counts_500bp-windows_147bp-reads_{chip_antibody}.RDS',
-        bigbin_sexp='saved_data/csaw-counts_10kbp-bigbins_{chip_antibody}.RDS',
+        sexp='saved_data/chipseq-counts_500bp-windows_147bp-reads_{chip_antibody}.RDS',
+        bigbin_sexp='saved_data/chipseq-counts_10kbp-bigbins_{chip_antibody}.RDS',
         peaks='peak_calls/epic_hg38.analysisSet/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
     output:
         html='reports/ChIP-seq/{chip_antibody}-exploration.html',
@@ -2512,7 +2512,7 @@ rule chipseq_diffmod:
     '''Perform differential modification analysis on ChIP-seq dataset'''
     input:
         rmd='scripts/chipseq-diffmod.Rmd',
-        sexp='saved_data/csaw-counts_500bp-windows_147bp-reads_{chip_antibody}.RDS',
+        sexp='saved_data/chipseq-counts_500bp-windows_147bp-reads_{chip_antibody}.RDS',
         peaks='peak_calls/epic_hg38.analysisSet/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
     output:
         html='reports/ChIP-seq/{chip_antibody}-diffmod.html',
