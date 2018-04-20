@@ -112,8 +112,17 @@ parse.bp <- function(size) {
     result
 }
 
-format.bp <- function(x) {
-    x %>% round %>% f2si("bp") %>% str_replace_all(rex(one_or_more(space)), "")
+format.bp <- function(x, use_si=TRUE, always_signed=FALSE) {
+    result <- round(x)
+    if (use_si) {
+        result %<>% f2si("bp") %>% str_replace_all(rex(one_or_more(space)), "")
+    } else {
+        result %<>% str_c("bp")
+    }
+    if (always_signed) {
+        result %<>% str_c(ifelse(str_detect(., "^-"), "", "+"), .)
+    }
+    result
 }
 
 get.options <- function(opts) {
@@ -217,6 +226,7 @@ suppressPackageStartupMessages({
     library(GenomicAlignments)
     library(doParallel)
     library(BiocParallel)
+    library(rlang)
 })
 
 ## Should really be an S4 method, but writing S4 methods is a pain
@@ -467,11 +477,14 @@ print.var.vector <- function(v) {
             to = downstream_neighborhood,
             by = window_spacing))
 
+    assert_that(is_named(targets))
     nhood_windows <- rep(targets, each=length(nhood_offsets))
     nhood_windows$offset <- rep(nhood_offsets, length.out=length(nhood_windows))
     nhood_windows %<>%
         shift(.$offset * ifelse(strand(.) == "-", -1, 1)) %>%
         resize(width=cmdopts$window_width, fix="center")
+    ## Add offset to window names
+    names(nhood_windows) %<>% str_c(format.bp(nhood_windows$offset, use_si=FALSE, always_signed=TRUE))
 
     if (length(blacklist_regions) > 0) {
         blacklisted <- overlapsAny(nhood_windows, blacklist_regions, ignore.strand=TRUE)
