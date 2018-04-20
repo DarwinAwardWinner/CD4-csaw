@@ -2195,7 +2195,7 @@ rule split_csaw_tss_neighborhood_counts:
     shell: '''
     scripts/split-sexp.R \
       -i {input:q} \
-      -o 'saved_data/promoter-counts_{wildcards.base:q}_{wildcards.read_ext:q}-reads_{{chip_antibody}}.RDS'
+      -o 'saved_data/tss-neighborhood-counts_{wildcards.base:q}_{wildcards.read_ext:q}-reads_{{chip_antibody}}.RDS'
     '''
 
 rule collect_gene_abundance_ensembl:
