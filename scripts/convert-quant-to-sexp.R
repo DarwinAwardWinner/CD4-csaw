@@ -5,46 +5,9 @@ library(optparse)
 library(magrittr)
 library(assertthat)
 library(glue)
+library(rctutils)
 
-## Deparse and then concatenate into a single string
-deparse_onestring <- function(...) {
-    deparse(...) %>% str_c(collapse="\n")
-}
-
-## Extension of match.arg with automatic detection of the argument
-## name for use in error messages.
-match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg), ignore.case=FALSE) {
-    if (missing(choices)) {
-        formal.args <- formals(sys.function(sys.parent()))
-        choices <- eval(formal.args[[as.character(substitute(arg))]])
-    }
-    if (is.null(arg))
-        return(choices[1L])
-    else if (!is.character(arg))
-        stop(glue("{dQuote(argname)} must be NULL or a character vector"))
-    if (!several.ok) {
-        if (identical(arg, choices))
-            return(arg[1L])
-        if (length(arg) > 1L)
-            stop(glue("{dQuote(argname)} must be of length 1"))
-    }
-    else if (length(arg) == 0L)
-        stop(glue("{dQuote(argname)} must be of length >= 1"))
-    fold_case <- identity
-    if (ignore.case) {
-        fold_case <- tolower
-    }
-    i <- pmatch(fold_case(arg), fold_case(choices), nomatch = 0L, duplicates.ok = TRUE)
-    if (all(i == 0L))
-        stop(gettextf("%s should be one of %s", dQuote(argname), paste(dQuote(choices),
-            collapse = ", ")), domain = NA)
-    i <- i[i > 0L]
-    if (!several.ok && length(i) > 1)
-        stop("there is more than one match in 'match.arg'")
-    choices[i]
-}
-
-get.options <- function(opts) {
+get_options <- function(opts) {
     optlist <- list(
         make_option(c("-s", "--samplemeta-file"), metavar="FILENAME.RDS", type="character",
                     help="(REQUIRED) RDS/RData/xlsx/csv file containing a table of sample metadata. Any existing rownames will be replaced with the values in the sample ID  column (see below)."),
@@ -94,7 +57,7 @@ epilogue = "")
         stop("Multiple gene annotations were provided. Please provide only one.")
     }
     quant.level.options <- c("auto", "gene", "transcript", "tx")
-    cmdopts[['aggregate-level']] %<>% tolower %>% match.arg(choices=quant.level.options, argname="--aggregate-level", ignore.case=TRUE)
+    cmdopts[['aggregate-level']] %<>% tolower %>% match_arg(choices=quant.level.options, argname="--aggregate-level", ignore.case=TRUE)
     if (cmdopts[['aggregate-level']] == "auto") {
         cmdopts[['aggregate-level']] = ifelse(length(provided.annot.opts) == 1, "gene", "transcript")
     }
@@ -114,7 +77,7 @@ epilogue = "")
 }
 
 ## Do argument parsing early so the script exits quickly if arguments are invalid
-get.options(commandArgs(TRUE))
+get_options(commandArgs(TRUE))
 
 library(assertthat)
 library(dplyr)
@@ -130,254 +93,9 @@ library(S4Vectors)
 library(SummarizedExperiment)
 library(tximport)
 
-tsmsg <- function(...) {
-    message(date(), ": ", ...)
-}
-
-## Read a single R object from an RDA file. If run on an RDA
-## file containing more than one object, throws an error.
-read.single.object.from.rda <- function(filename) {
-    objects <- within(list(), suppressWarnings(load(filename)))
-    if (length(objects) != 1) {
-        stop("RDA file should contain exactly one object")
-    }
-    return(objects[[1]])
-}
-
-## Read a single object from RDS or RDA file
-read.RDS.or.RDA <- function(filename, expected.class="ANY") {
-    object <- suppressWarnings(tryCatch({
-        readRDS(filename)
-    }, error=function(...) {
-        read.single.object.from.rda(filename)
-    }))
-    if (!is(object, expected.class)) {
-        object <- as(object, expected.class)
-    }
-    return(object)
-}
-
-save.RDS.or.RDA <-
-    function(object, file, ascii = FALSE, version = NULL, compress = TRUE,
-             savetype=ifelse(str_detect(file, regex("\\.rda(ta)?", ignore_case = TRUE)),
-                             "rda", "rds")) {
-    if (savetype == "rda") {
-        save(list="object", file=file, ascii=ascii, version=version, compress=compress)
-    } else{
-        saveRDS(object=object, file=file, ascii=ascii, version=version, compress=compress)
-    }
-}
-
-## TODO: Move to utils pacakge
-
-## Read a table from a R data file, csv, or xlsx file. Returns a data
-## frame or thorws an error.
-read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL,
-                               dataframe.class="data.frame") {
-    suppressWarnings({
-        read.table.args %<>% as.list
-        read.table.args$file <- filename
-        read.table.args$header <- TRUE
-        read.xlsx.args %<>% as.list
-        read.xlsx.args$xlsxFile <- filename
-        lazy.results <- list(
-            rdata=future(read.RDS.or.RDA(filename, dataframe.class), lazy=TRUE),
-            table=future(do.call(read.table, read.table.args), lazy=TRUE),
-            csv=future(do.call(read.csv, read.table.args), lazy=TRUE),
-            xlsx=future(do.call(read.xlsx, read.xlsx.args), lazy=TRUE))
-        for (lzresult in lazy.results) {
-            result <- tryCatch({
-                x <- as(value(lzresult), dataframe.class)
-                assert_that(is(x, dataframe.class))
-                x
-            }, error=function(...) NULL)
-            if (!is.null(result)) {
-                return(result)
-            }
-        }
-        stop(glue("Could not read a data frame from {deparse_onestring(filename)} as R data, csv, or xlsx"))
-    })
-}
-
-cleanup.mcols <- function(object, mcols_df=mcols(object)) {
-    nonempty <- !sapply(mcols_df, is.empty)
-    mcols_df %<>% .[nonempty]
-    if (!missing(object)) {
-        mcols(object) <- mcols_df
-        return(object)
-    } else {
-        return(mcols_df)
-    }
-}
-
-is.empty <- function(x) {
-    x %>% unlist %>% na.omit %>% length %>% equals(0)
-}
-
-## Get column names that are always the same for all elements of a
-## gene. Used for extracting only the gene metadata from exon
-## metadata.
-get.gene.common.colnames <- function(df, geneids, blacklist=c("type", "Parent")) {
-    if (nrow(df) < 1) {
-        return(character(0))
-    }
-    if (any(is.na(geneids))) {
-        stop("Gene IDs cannot be undefined")
-    }
-    if (any(lengths(geneids) > 1)) {
-        stop("Gene IDs must not be a list")
-    }
-    if (!anyDuplicated(geneids)) {
-        return(names(df))
-    }
-    ## Forget blacklisted columns
-    df <- df[setdiff(names(df), blacklist)]
-    ## Forget list columns
-    df <- df[sapply(df, . %>% lengths %>% max) == 1]
-    ## Forget empty columns
-    df <- df[!sapply(df, is.empty)]
-    if (ncol(df) < 1) {
-        return(character(0))
-    }
-    ## Convert to Rle
-    df <- DataFrame(lapply(df, . %>% unlist %>% Rle))
-    geneids %<>% Rle
-    genecols <- sapply(df, . %>% split(geneids) %>% runLength %>% lengths %>% max %>% is_weakly_less_than(1))
-    names(which(genecols))
-}
-
-## Given a GRangesList whose underlying ranges have mcols, find mcols
-## of the ranges that are constant within each gene and promote them
-## to mcols of the GRangesList. For example, if exons are annotated with
-promote.common.mcols <- function(grl, delete.from.source=FALSE, ...) {
-    colnames.to.promote <- get.gene.common.colnames(mcols(unlist(grl)), rep(names(grl), lengths(grl)), ...)
-    promoted.df <- mcols(unlist(grl))[cumsum(lengths(grl)),colnames.to.promote, drop=FALSE]
-    if (delete.from.source) {
-        mcols(grl@unlistData) %<>% .[setdiff(names(.), colnames.to.promote)]
-    }
-    mcols(grl) %<>% cbind(promoted.df)
-    grl
-}
-
-## This merges exons into genes (GRanges to GRangesList)
-gff.to.grl <- function(gr, exonFeatureType="exon", geneIdAttr="gene_id", geneFeatureType="gene") {
-    exon.gr <- gr[gr$type %in% exonFeatureType]
-    exon.gr %<>% cleanup.mcols
-    grl <- split(exon.gr, as.character(mcols(exon.gr)[[geneIdAttr]])) %>%
-        promote.common.mcols
-    if (!is.null(geneFeatureType)) {
-        gene.meta <- gr[gr$type %in% geneFeatureType] %>%
-            mcols %>% cleanup.mcols(mcols_df=.) %>% .[match(names(grl), .[[geneIdAttr]]),]
-        for (i in names(gene.meta)) {
-            if (i %in% names(mcols(grl))) {
-                value <- ifelse(is.na(gene.meta[[i]]), mcols(grl)[[i]], gene.meta[[i]])
-            } else {
-                value <- gene.meta[[i]]
-            }
-            mcols(grl)[[i]] <- value
-        }
-    }
-    return(grl)
-}
-
-get.txdb <- function(txdbname) {
-    tryCatch({
-        library(txdbname, character.only=TRUE)
-        pos <- str_c("package:", txdbname)
-        get(txdbname, pos)
-    }, error=function(...) {
-        library(GenomicFeatures)
-        loadDb(txdbname)
-    })
-}
-
-get.tx2gene.from.txdb <- function(txdb) {
-    k <- keys(txdb, keytype = "GENEID")
-    suppressMessages(AnnotationDbi::select(txdb, keys = k, keytype = "GENEID", columns = "TXNAME")) %>%
-        .[c("TXNAME", "GENEID")]
-}
-
-read.tx2gene.from.genemap <- function(fname) {
-    df <- read.table.general(fname)
-    df %<>% .[1:2]
-    df[] %<>% lapply(as.character)
-    names(df) <- c("TXNAME", "GENEID")
-    df
-}
-
-read.annotation.from.gff <- function(filename, format="GFF3", ...) {
-    gff <- NULL
-    ## Allow the file to be an RDS file containing the GRanges
-    ## resulting from import()
-    gff <- tryCatch({
-        read.RDS.or.RDA(filename, "GRanges")
-    }, error=function(...) {
-        import(filename, format=format)
-    })
-    assert_that(is(gff, "GRanges"))
-    grl <- gff.to.grl(gff, ...)
-    return(grl)
-}
-
-read.annotation.from.saf <- function(filename, ...) {
-    saf <- read.table.general(filename, ...)
-    assert_that("GeneID" %in% names(saf))
-    gr <- as(saf, "GRanges")
-    grl <- split(gr, gr$GeneID) %>% promote.common.mcols
-    return(grl)
-}
-
-read.annotation.from.rdata <- function(filename) {
-    read.RDS.or.RDA(filename, "GRangesList")
-}
-
-read.additional.gene.info <- function(filename, gff_format="GFF3", geneFeatureType="gene", ...) {
-    df <- tryCatch({
-        gff <- tryCatch({
-            read.RDS.or.RDA(filename, "GRanges")
-        }, error=function(...) {
-            import(filename, format=gff_format)
-        })
-        assert_that(is(gff, "GRanges"))
-        if (!is.null(geneFeatureType)) {
-            gff %<>% .[.$type %in% geneFeatureType]
-        }
-        gff %<>% .[!is.na(.$ID) & !duplicated(.$ID)]
-        gff %>% mcols %>% cleanup.mcols(mcols_df=.)
-    }, error=function(...) {
-        tab <- read.table.general(filename, ..., dataframe.class="DataFrame")
-        ## Nonexistent or automatic row names
-        if (.row_names_info(tab) <= 0) {
-            row.names(tab) <- tab[[1]]
-        }
-        tab
-    })
-    df %<>% DataFrame
-    assert_that(is(df, "DataFrame"))
-    return(df)
-}
-
-## This converts a GRangesList into the SAF ("Simplified annotation
-## format")
-grl.to.saf <- function(grl) {
-    gr <- unlist(grl)
-    data.frame(Chr=as.vector(seqnames(gr)),
-               Start=start(gr),
-               End=end(gr),
-               Strand=as.vector(strand(gr)),
-               GeneID=rep(names(grl), lengths(grl)))
-}
-
-print.var.vector <- function(v) {
-    for (i in names(v)) {
-        cat(i, ": ", deparse_onestring(v[[i]]), "\n", sep="")
-    }
-    invisible(v)
-}
-
 {
 
-    cmdopts <- get.options(commandArgs(TRUE))
+    cmdopts <- get_options(commandArgs(TRUE))
 
     ## cmdopts <- list(
     ##     samplemeta_file="saved_data/samplemeta-RNASeq.RDS",
@@ -395,7 +113,7 @@ print.var.vector <- function(v) {
     }
 
     tsmsg("Args:")
-    print.var.vector(cmdopts)
+    print_var_vector(cmdopts)
 
     ## Delete the output file if it exists
     suppressWarnings(file.remove(cmdopts$output_file))
@@ -442,19 +160,19 @@ print.var.vector <- function(v) {
     if (cmdopts$aggregate_level == "gene") {
         if ("annotation_txdb" %in% names(cmdopts)) {
             tsmsg("Reading transcript ranges from TxDb")
-            txdb <- get.txdb(cmdopts$annotation_txdb)
+            txdb <- get_txdb(cmdopts$annotation_txdb)
             annot_ranges <- transcriptsBy(txdb, "gene")
             tsmsg("Reading transcript gene mappings from TxDb")
-            tx2gene <- get.tx2gene.from.txdb(txdb)
+            tx2gene <- get_tx2gene_from_txdb(txdb)
         } else if ("genemap_file" %in% names(cmdopts)) {
             tsmsg("Reading transcript gene mappings from genemap file")
-            tx2gene <- read.tx2gene.from.genemap(cmdopts$genemap_file)
+            tx2gene <- read_tx2gene_from_genemap(cmdopts$genemap_file)
         } else {
             stop("Need a gene annotation to aggregate at the gene level.")
         }
         if ("gene_info" %in% names(cmdopts)) {
             tsmsg("Reading gene annotations")
-            annot <- read.table.general(cmdopts$gene_info, dataframe.class="DataFrame")
+            annot <- read_table_general(cmdopts$gene_info, dataframe.class="DataFrame")
             ## Nonexistent or automatic row names
             if (.row_names_info(annot) <= 0) {
                 row.names(annot) <- annot[[1]]
@@ -463,13 +181,13 @@ print.var.vector <- function(v) {
     } else {
         if ("annotation_txdb" %in% names(cmdopts)) {
             tsmsg("Reading transcript ranges from TxDb")
-            txdb <- get.txdb(cmdopts$annotation_txdb)
+            txdb <- get_txdb(cmdopts$annotation_txdb)
             annot_ranges <- transcripts(txdb)
             names(annot_ranges) <- annot_ranges$tx_name
         }
         if ("transcript_info" %in% names(cmdopts)) {
             tsmsg("Reading transcript annotations")
-            annot <- read.table.general(cmdopts$transcript_info, dataframe.class="DataFrame")
+            annot <- read_table_general(cmdopts$transcript_info, dataframe.class="DataFrame")
             ## Nonexistent or automatic row names
             if (.row_names_info(annot) <= 0) {
                 row.names(annot) <- annot[[1]]
@@ -516,6 +234,6 @@ print.var.vector <- function(v) {
     }
 
     tsmsg("Saving SummarizedExperiment")
-    save.RDS.or.RDA(sexp, cmdopts$output_file)
+    save_RDS_or_RDA(sexp, cmdopts$output_file)
     invisible(NULL)
 }

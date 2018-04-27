@@ -23,13 +23,9 @@ library(reshape2)
 library(purrr)
 library(csaw)
 library(Matrix)
+library(rctutils)
 
-library(doParallel)
-options(mc.preschedule=FALSE)
-ncores <- getOption("mc.cores", default=1)
-registerDoParallel(cores=ncores)
-library(BiocParallel)
-register(DoparParam())
+setup_multicore()
 
 tsmsg("Loading sample data")
 

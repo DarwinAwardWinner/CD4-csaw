@@ -6,11 +6,7 @@
 library(getopt)
 library(optparse)
 
-tsmsg <- function(...) {
-    message(date(), ": ", ...)
-}
-
-get.options <- function(opts) {
+get_options <- function(opts) {
 
     ## Do argument parsing early so the script exits quickly if arguments are invalid
     optlist <- list(
@@ -47,7 +43,7 @@ get.options <- function(opts) {
 
 ## Do this early to handle "--help" before wasting time loading
 ## pacakges & stuff
-get.options(commandArgs(TRUE))
+get_options(commandArgs(TRUE))
 
 library(magrittr)
 library(dplyr)
@@ -59,20 +55,7 @@ library(stringr)
 library(stringi)
 library(rex)
 library(glue)
-
-print.var.vector <- function(v) {
-    for (i in names(v)) {
-        cat(i, ": ", deparse(v[[i]]), "\n", sep="")
-    }
-    invisible(v)
-}
-
-read.idr.table <- function(file) {
-    idrcols <- c("chr", "start", "end", "name", "score", "strand",
-                 "LocalIDR", "GlobalIDR", "startA", "endA", "scoreA", "startB", "endB", "scoreB")
-    read.table(file, header=FALSE, sep="\t", col.names=idrcols) %>%
-        mutate(LocalIDR=10^-LocalIDR, GlobalIDR=10^-GlobalIDR)
-}
+library(rctutils)
 
 cutIDR <- function(x, thresholds=c(0.01, 0.05, 0.1)) {
     fullbreaks <- c(0, thresholds, 1)
@@ -81,21 +64,17 @@ cutIDR <- function(x, thresholds=c(0.01, 0.05, 0.1)) {
         factor(levels=rev(levels(.)))
 }
 
-discrete_gradient <- function(n) {
-    seq_gradient_pal(low = "#132B43", high = "#56B1F7")(seq(0,1, length.out=n))
-}
-
 {
-    cmdopts <- get.options(commandArgs(TRUE))
+    cmdopts <- get_options(commandArgs(TRUE))
     ## myargs <- c("-i", "idr_analysis/epic_hg38.analysisSet/H3K4me3_condition.ALL_D4659vsD5053/idrValues.txt",
     ##             "-o", "idr_analysis/epic_hg38.analysisSet/H3K4me3_condition.ALL_D4659vsD5053/idrplots.pdf",
     ##             "-A", "H3K4me3_ALL_D4659", "-B", "H3K4me3_ALL_D5053",
     ##             "-P", "H3K4me3_ALL")
-    ## cmdopts <- get.options(myargs)
+    ## cmdopts <- get_options(myargs)
     cmdopts$help <- NULL
 
     tsmsg("Args:")
-    print.var.vector(cmdopts)
+    print_var_vector(cmdopts)
 
     if (!is.null(cmdopts$sample_name_common_prefix)) {
         prefix.rx <- rex(start, cmdopts$sample_name_common_prefix)
@@ -114,7 +93,7 @@ discrete_gradient <- function(n) {
         }
     }
 
-    idrtab <- read.idr.table(cmdopts$idr_file)
+    idrtab <- read_idr_table(cmdopts$idr_file)
 
     idrtab %<>%
         mutate(GlobalIDR.Cut=cutIDR(GlobalIDR),
@@ -156,13 +135,6 @@ discrete_gradient <- function(n) {
             ylab(str_interp("Peak Score in ${cmdopts$sample_B_name}")) +
             ggtitle(str_interp("Score consistency plot for ${title_samples}")))
 
-    neglog_trans <- function(base = exp(1)) {
-        trans <- function(x) -log(x, base)
-        inv <- function(x) base^(-x)
-        trans_new(paste0("negativelog-", format(base)), trans, inv,
-                  log_breaks(base = base),
-                  domain = c(1e-100, Inf))
-    }
     neglog10_trans <- neglog_trans(10)
 
     ## Sample B rank vs IDR
@@ -191,7 +163,6 @@ discrete_gradient <- function(n) {
         xlab(str_interp("Peak Rank in ${cmdopts$sample_A_name}")) +
         scale_y_continuous(name="IDR", trans=neglog10_trans) +
         ggtitle(str_interp("IDR vs Peak Rank for ${title_sampleA}"))
-
 
     ## Sample B rank vs IDR
     pointdata <- idrtab %>% transmute(x=rankB, y=-log10(GlobalIDR))

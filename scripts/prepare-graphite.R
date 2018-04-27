@@ -5,12 +5,10 @@ library(tidyverse)
 library(rlang)
 library(here)
 library(glue)
-
-library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
-registerDoParallel(cores=ncores)
 library(BiocParallel)
-register(DoparParam())
+library(rctutils)
+
+setup_multicore()
 
 target.species <- "hsapiens"
 dbnames <- pathwayDatabases() %>%

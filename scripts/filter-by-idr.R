@@ -5,12 +5,9 @@
 
 library(getopt)
 library(optparse)
+library(rctutils)
 
-tsmsg <- function(...) {
-    message(date(), ": ", ...)
-}
-
-get.options <- function(opts) {
+get_options <- function(opts) {
 
     ## Do argument parsing early so the script exits quickly if arguments are invalid
     optlist <- list(
@@ -50,7 +47,7 @@ get.options <- function(opts) {
 
 ## Do this early to handle "--help" before wasting time loading
 ## pacakges & stuff
-invisible(get.options(commandArgs(TRUE)))
+invisible(get_options(commandArgs(TRUE)))
 
 library(magrittr)
 library(dplyr)
@@ -63,45 +60,8 @@ library(stringi)
 library(rex)
 library(Biobase)
 
-print.var.vector <- function(v) {
-    for (i in names(v)) {
-        cat(i, ": ", deparse(v[[i]]), "\n", sep="")
-    }
-    invisible(v)
-}
-
-read.idr.table <- function(file) {
-    idrcols <- c("chr", "start", "end", "name", "score", "strand",
-                 "LocalIDR", "GlobalIDR", "startA", "endA", "scoreA", "startB", "endB", "scoreB")
-    read.table(file, header=FALSE, sep="\t", col.names=idrcols) %>%
-        mutate(LocalIDR=10^-LocalIDR, GlobalIDR=10^-GlobalIDR)
-}
-
-read.narrowPeak <- function(file, ...) {
-    peaks.df <- read.table(file, sep="\t", row.names=NULL, ...)
-    names(peaks.df) <- c("chr", "start", "end", "name", "score", "strand", "signalValue", "pValue", "qValue", "summit")
-    peaks.df$name <- as.character(peaks.df$name)
-    ## havenames <- !any(peaks.df$name == ".")
-    ## res <- data.frame2GRanges(peaks.df, keepColumns=TRUE, startOffset=1, endOffset=0)
-    ## ## Eliminate the dummy row names from the data
-    ## if (havenames)
-    ##     names(res) <- res$name
-    ## else
-    ##     names(res) <- NULL
-    ## res
-    peaks.df
-}
-
-write.narrowPeak <- function(x, file, ...) {
-    x <- as(x, "data.frame")
-    if("seqnames" %in% names(x))
-        names(x)[names(x) == "seqnames"] <- "chr"
-    x <- x[c("chr", "start", "end", "name", "score", "strand", "signalValue", "pValue", "qValue", "summit")]
-    write.table(x, file, sep="\t", row.names=FALSE, col.names=FALSE, ...)
-}
-
 {
-    cmdopts <- get.options(commandArgs(TRUE))
+    cmdopts <- get_options(commandArgs(TRUE))
     ## myargs <- c("-p", "peak_calls/epic_hg38.analysisSet/H3K4me3_condition.ALL_donor.ALL/peaks_noBL.narrowPeak", "-i", "idr_analysis/epic_hg38.analysisSet/H3K4me3_condition.ALL_D4659vsD5053/idrValues.txt,idr_analysis/epic_hg38.analysisSet/H3K4me3_condition.ALL_D4659vsD5131/idrValues.txt,idr_analysis/epic_hg38.analysisSet/H3K4me3_condition.ALL_D4659vsD5291/idrValues.txt,idr_analysis/epic_hg38.analysisSet/H3K4me3_condition.ALL_D5053vsD5131/idrValues.txt,idr_analysis/epic_hg38.analysisSet/H3K4me3_condition.ALL_D5053vsD5291/idrValues.txt,idr_analysis/epic_hg38.analysisSet/H3K4me3_condition.ALL_D5131vsD5291/idrValues.txt",
     ##             "-o", "peak_calls/epic_hg38.analysisSet/H3K4me3_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak",
     ##             "-t", "0.05", "-r")
@@ -109,36 +69,37 @@ write.narrowPeak <- function(x, file, ...) {
     cmdopts$help <- NULL
 
     tsmsg("Args:")
-    print.var.vector(cmdopts)
+    print_var_vector(cmdopts)
 
     tsmsg("Reading peaks")
-    peaks <- read.narrowPeak(cmdopts$peak_file)
+    peaks <- read_narrowPeak(cmdopts$peak_file)
 
     tsmsg("Sorting peaks")
+    ## TODO: Rewrite with quosures
     sort.cols <- str_split(cmdopts$sort_by, ",")[[1]]
     sort.args <- sapply(sort.cols, . %>% as.name %>% interp(quote(desc(x)), x=.))
     peaks %<>% arrange_(.dots=sort.args)
 
     tsmsg("Reading IDR files")
-    idr.files <- str_split(cmdopts$idr_files, ",")[[1]]
-    idr.tables <- lapply(idr.files, read.idr.table)
+    idr_files <- str_split(cmdopts$idr_files, ",")[[1]]
+    idr_tables <- lapply(idr_files, read_idr_table)
 
     tsmsg("computing minimum IDR thresholds")
-    idr.thresh <- rep(1, nrow(peaks))
-    idr.mat <- idr.tables %>% lapply(. %$% GlobalIDR %>% sort %>% rbind) %>%
+    idr_thresh <- rep(1, nrow(peaks))
+    idr_mat <- idr_tables %>% lapply(. %$% GlobalIDR %>% sort %>% rbind) %>%
         do.call(what=rbind.fill.matrix) %>% t
-    idr.mat[is.na(idr.mat)] <- 1
-    n <- min(length(idr.thresh), nrow(idr.mat))
-    idr.thresh[seq_len(n)] <- rowMin(idr.mat)
+    idr_mat[is.na(idr_mat)] <- 1
+    n <- min(length(idr_thresh), nrow(idr_mat))
+    idr_thresh[seq_len(n)] <- rowMin(idr_mat)
 
     if (cmdopts$replace_qValue_with_min_IDR_theshold) {
         tsmsg("Replacing qValue column with minimum IDR threshold")
-        peaks$qValue <- -log10(idr.thresh)
+        peaks$qValue <- -log10(idr_thresh)
     }
 
     if (cmdopts$idr_threshold < 1) {
         tsmsg("Filtering peaks at an IDR threshold of ", cmdopts$idr_threshold)
-        nfilter <- sum(idr.thresh <= cmdopts$idr_threshold)
+        nfilter <- sum(idr_thresh <= cmdopts$idr_threshold)
         tsmsg("Selecting the top ", nfilter, " peaks out of ", nrow(peaks), ".")
         peaks <- peaks[seq_len(nfilter),]
         tsmsg("Saving filtered peaks")

@@ -5,11 +5,12 @@ library(dplyr)
 library(assertthat)
 library(ggplot2)
 library(ggforce)
+library(here)
 
-ccf <- readRDS("saved_data/chipseq-ccf.RDS")
-ccf.nbl <- readRDS("saved_data/chipseq-ccf-noBL.RDS")
+ccf <- readRDS(here("saved_data/chipseq-ccf.RDS"))
+ccf.nbl <- readRDS(here("saved_data/chipseq-ccf-noBL.RDS"))
 
-sample.table <- readRDS("saved_data/samplemeta-ChIPSeq.RDS") %>%
+sample.table <- readRDS(here("saved_data/samplemeta-ChIPSeq.RDS")) %>%
     ## Ensure that days_after_activation is a factor and can't be
     ## interpreted as a numeric
     mutate(days_after_activation=days_after_activation %>%
@@ -116,6 +117,6 @@ p <- ggplot(ccfmaxtable) +
     ylab("Delay of Maximum Cross-Correlation (No Blacklist)") +
     ggtitle("Delay of Maximum Cross-Correlation With and Without Blacklist")
 
-pdf("plots/csaw/CCF-max-plot.pdf", width=10, height=10)
+pdf(here("plots/csaw/CCF-max-plot.pdf"), width=10, height=10)
 print(p)
 dev.off()

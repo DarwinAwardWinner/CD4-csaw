@@ -1,9 +1,5 @@
 #!/usr/bin/env Rscript
 
-tsmsg <- function(...) {
-    message(date(), ": ", ...)
-}
-
 library(here)
 library(GEOquery)
 library(SRAdb)
@@ -14,18 +10,10 @@ library(dplyr)
 library(assertthat)
 library(lubridate)
 library(rex)
-
-tsmsg <- function(...) {
-    message(base::date(), ": ", ...)
-}
-
-fac2char <- function(df) {
-    df[sapply(df, class) == "factor"] %<>% lapply(as.character)
-    df
-}
+library(rctutils)
 
 getGEO <- function(...) {
-    GEOquery::getGEO(..., destdir="saved_data")
+    GEOquery::getGEO(..., destdir=here("saved_data"))
 }
 
 sra_con <- {
@@ -34,6 +22,7 @@ sra_con <- {
     dbConnect(SQLite(),sqlfile)
 }
 
+## TODO: Put these in rctutils?
 get_channel_meta <- function (pdata) {
     num.channels <- max(as.numeric(pdata$channel_count))
     assert_that(num.channels >= 1)
@@ -78,15 +67,6 @@ get_samplemeta_from_geo_pdata <- function(eset) {
     samplemeta <- get_characteristics(get_channel_meta(pdata)[[1]])
     relations <- get_relations(pdata)
     cbind(front_data, samplemeta, relations, back_data) %>% fac2char
-}
-
-## Only performs mutations if all of given names are present in .data
-mutate_if_present <- function(.data, names, ...) {
-    if (all(names %in% base::names(.data))) {
-        mutate(.data, !!!quos(...))
-    } else {
-        .data
-    }
 }
 
 geo_ids <- c(RNASeq="GSE73213",

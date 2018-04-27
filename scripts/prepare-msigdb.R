@@ -5,16 +5,9 @@ library(rtracklayer)
 library(glue)
 library(tidyverse)
 library(assertthat)
+library(rctutils)
 
-library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
-registerDoParallel(cores=ncores)
-library(BiocParallel)
-register(DoparParam())
-
-quotemeta <- function (string) {
-  str_replace_all(string, "(\\W)", "\\\\\\1")
-}
+setup_multicore()
 
 split.by.category.and.subcategory <- function(x, cat, subcat) {
     cat <- droplevels(as.factor(cat))

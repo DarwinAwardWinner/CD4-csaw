@@ -1,9 +1,5 @@
 #!/usr/bin/env Rscript
 
-tsmsg <- function(...) {
-    message(date(), ": ", ...)
-}
-
 library(here)
 library(MASS)
 library(magrittr)
@@ -16,20 +12,9 @@ library(GenomicRanges)
 library(BSgenome.Hsapiens.UCSC.hg38)
 library(SummarizedExperiment)
 library(rtracklayer)
+library(rctutils)
 
-library(doParallel)
-options(mc.preschedule=FALSE)
-ncores <- getOption("mc.cores", default=1)
-registerDoParallel(cores=ncores)
-library(BiocParallel)
-register(DoparParam())
-
-windowCountsParallel <- function(bam.files, ..., filter=10) {
-    reslist <- bplapply(bam.files, windowCounts, ..., filter=0)
-    res <- do.call(cbind, reslist)
-    keep <- rowSums(assay(res)) >= filter
-    res[keep,]
-}
+setup_multicore()
 
 tsmsg("Loading sample data")
 

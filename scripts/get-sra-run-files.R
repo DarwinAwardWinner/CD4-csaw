@@ -9,19 +9,7 @@ suppressPackageStartupMessages(suppressMessages({
     library(magrittr)
     library(dplyr)
     library(assertthat)
-
-    tsmsg <- function(...) {
-        message(date(), ": ", ...)
-    }
-
-    first.accessible <- function(paths, mode=0) {
-        for (path in paths) {
-            if (file.access(path, mode) == 0) {
-                return(path)
-            }
-        }
-        return(NA_character_)
-    }
+    library(rctutils)
 
     sra_con <- {
         sqlfile <- here("saved_data", "SRAmetadb.sqlite")
@@ -39,7 +27,7 @@ suppressPackageStartupMessages(suppressMessages({
         SRAdb::getSRAfile(..., srcType="ftp")
     }
 
-    ascp.path <- first.accessible(
+    ascp.path <- first_accessible_path(
         c(Sys.which("ascp"),
           path.expand("~/.aspera/connect/bin/ascp")), mode=1)
     if (!is.na(ascp.path)) {

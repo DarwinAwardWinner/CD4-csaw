@@ -3,43 +3,14 @@
 library(getopt)
 library(optparse)
 num.cores <- 1
+
+library(future)
+library(rctutils)
+
 ## Don't default to more than 4 cores
-try({library(parallel); num.cores <- min(4, detectCores()); }, silent=TRUE)
+num.cores <- min(availableCores(), 4)
 
-## Extension of match.arg with automatic detection of the argument
-## name for use in error messages.
-match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg), ignore.case=FALSE) {
-    if (missing(choices)) {
-        formal.args <- formals(sys.function(sys.parent()))
-        choices <- eval(formal.args[[as.character(substitute(arg))]])
-    }
-    if (is.null(arg))
-        return(choices[1L])
-    else if (!is.character(arg))
-        stop(glue("{deparse(argname)} must be NULL or a character vector"))
-    if (!several.ok) {
-        if (identical(arg, choices))
-            return(arg[1L])
-        if (length(arg) > 1L)
-            stop(glue("{deparse(argname)} must be of length 1"))
-    }
-    else if (length(arg) == 0L)
-        stop(glue("{deparse(argname)} must be of length >= 1"))
-    fold_case <- identity
-    if (ignore.case) {
-        fold_case <- tolower
-    }
-    i <- pmatch(fold_case(arg), fold_case(choices), nomatch = 0L, duplicates.ok = TRUE)
-    if (all(i == 0L))
-        stop(gettextf("%s should be one of %s", deparse(argname), paste(dQuote(choices),
-            collapse = ", ")), domain = NA)
-    i <- i[i > 0L]
-    if (!several.ok && length(i) > 1)
-        stop("there is more than one match in 'match.arg'")
-    choices[i]
-}
-
-get.options <- function(opts) {
+get_options <- function(opts) {
 
     ## Do argument parsing early so the script exits quickly if arguments are invalid
     optlist <- list(
@@ -115,7 +86,7 @@ epilogue = "")
 
 ## Do this early to handle "--help" before wasting time loading
 ## pacakges & stuff
-invisible(get.options(commandArgs(TRUE)))
+invisible(get_options(commandArgs(TRUE)))
 
 library(assertthat)
 library(dplyr)
@@ -131,283 +102,7 @@ library(SummarizedExperiment)
 library(withr)
 library(org.Hs.eg.db)
 
-library(BiocParallel)
-library(doParallel)
-options(mc.preschedule=FALSE)
-register(DoparParam())
-
-tsmsg <- function(...) {
-    message(date(), ": ", ...)
-}
-
-## Read a single R object from an RDA file. If run on an RDA
-## file containing more than one object, throws an error.
-read.single.object.from.rda <- function(filename) {
-    objects <- within(list(), suppressWarnings(load(filename)))
-    if (length(objects) != 1) {
-        stop("RDA file should contain exactly one object")
-    }
-    return(objects[[1]])
-}
-
-## Read a single object from RDS or RDA file
-read.RDS.or.RDA <- function(filename, expected.class="ANY") {
-    object <- suppressWarnings(tryCatch({
-        readRDS(filename)
-    }, error=function(...) {
-        read.single.object.from.rda(filename)
-    }))
-    if (!any(sapply(expected.class, is, object=object))) {
-        object <- as(object, expected.class)
-    }
-    return(object)
-}
-
-save.RDS.or.RDA <-
-    function(object, file, ascii = FALSE, version = NULL, compress = TRUE,
-             savetype=ifelse(str_detect(file, regex("\\.rda(ta)?", ignore_case = TRUE)),
-                             "rda", "rds")) {
-    if (savetype == "rda") {
-        save(list="object", file=file, ascii=ascii, version=version, compress=compress)
-    } else{
-        saveRDS(object=object, file=file, ascii=ascii, version=version, compress=compress)
-    }
-}
-
-combineFCResults <- function(fcreslist) {
-    combfuncs <- list(
-        counts=cbind,
-        counts_junction=cbind,
-        annotation=function(x, ...) x,
-        targets=c,
-        stat=function(...) {
-            statlist <- list(...)
-            firstcol <- statlist[[1]][,1, drop=FALSE]
-            restcols <- statlist %>% lapply(. %>% .[,-1, drop=FALSE])
-            cbind(firstcol, do.call(cbind, restcols))
-        })
-    res <- list()
-    for (i in names(combfuncs)) {
-        if (i %in% names(fcreslist[[1]])) {
-            res[[i]] <- fcreslist %>%
-                lapply(`[[`, i) %>%
-                do.call(what=combfuncs[[i]])
-        }
-    }
-    res
-}
-
-featureCountsQuiet <- function(...) {
-    with_output_sink("/dev/null", featureCounts(...))
-}
-
-featureCountsParallel <- function(files, ...) {
-    # Let featureCounts handle the degenerate case itself
-    if (length(files) == 0) {
-        return(featureCounts(files, ...))
-    }
-    bplapply(files, featureCountsQuiet, ..., nthreads=1) %>%
-        combineFCResults
-}
-
-## Read a table from a R data file, csv, or xlsx file. Returns a data
-## frame or thorws an error.
-read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL,
-                               dataframe.class="data.frame") {
-    suppressWarnings({
-        read.table.args %<>% as.list
-        read.table.args$file <- filename
-        read.table.args$header <- TRUE
-        read.xlsx.args %<>% as.list
-        read.xlsx.args$xlsxFile <- filename
-        lazy.results <- list(
-            rdata=lazy(read.RDS.or.RDA(filename, dataframe.class)),
-            table=lazy(do.call(read.table, read.table.args)),
-            csv=lazy(do.call(read.csv, read.table.args)),
-            xlsx=lazy(do.call(read.xlsx, read.xlsx.args)))
-        for (lzresult in lazy.results) {
-            result <- tryCatch({
-                x <- as(value(lzresult), dataframe.class)
-                assert_that(is(x, dataframe.class))
-                x
-            }, error=function(...) NULL)
-            if (!is.null(result)) {
-                return(result)
-            }
-        }
-        stop(glue("Could not read a data frame from {deparse{filename}} as R data, csv, or xlsx"))
-    })
-}
-
-cleanup.mcols <- function(object, mcols_df=mcols(object)) {
-    nonempty <- !sapply(mcols_df, is.empty)
-    mcols_df %<>% .[nonempty]
-    if (!missing(object)) {
-        mcols(object) <- mcols_df
-        return(object)
-    } else {
-        return(mcols_df)
-    }
-}
-
-is.empty <- function(x) {
-    x %>% unlist %>% na.omit %>% length %>% equals(0)
-}
-
-make.lazy <- function(func, ...) {
-    lazymaker <- function(expr)
-        lazy(expr, ...)
-    function(...) {
-        lazymaker(func(...))
-    }
-}
-
-## Get column names that are always the same for all elements of a
-## gene. Used for extracting only the gene metadata from exon
-## metadata.
-get.gene.common.colnames <- function(df, geneids, blacklist=c("type", "Parent")) {
-    if (nrow(df) < 1) {
-        return(character(0))
-    }
-    if (any(is.na(geneids))) {
-        stop("Gene IDs cannot be undefined")
-    }
-    if (any(lengths(geneids) > 1)) {
-        stop("Gene IDs must not be a list")
-    }
-    if (!anyDuplicated(geneids)) {
-        return(names(df))
-    }
-    ## Forget blacklisted columns
-    df <- df[setdiff(names(df), blacklist)]
-    ## Forget list columns
-    df <- df[sapply(df, . %>% lengths %>% max) == 1]
-    ## Forget empty columns
-    df <- df[!sapply(df, is.empty)]
-    if (ncol(df) < 1) {
-        return(character(0))
-    }
-    ## Convert to Rle
-    df <- DataFrame(lapply(df, . %>% unlist %>% Rle))
-    geneids %<>% Rle
-    genecols <- sapply(df, . %>% split(geneids) %>% runLength %>% lengths %>% max %>% is_weakly_less_than(1))
-    names(which(genecols))
-}
-
-## Given a GRangesList whose underlying ranges have mcols, find mcols
-## of the ranges that are constant within each gene and promote them
-## to mcols of the GRangesList. For example, if exons are annotated with
-promote.common.mcols <- function(grl, delete.from.source=FALSE, ...) {
-    colnames.to.promote <- get.gene.common.colnames(mcols(unlist(grl)), rep(names(grl), lengths(grl)), ...)
-    promoted.df <- mcols(unlist(grl))[cumsum(lengths(grl)),colnames.to.promote, drop=FALSE]
-    if (delete.from.source) {
-        mcols(grl@unlistData) %<>% .[setdiff(names(.), colnames.to.promote)]
-    }
-    mcols(grl) %<>% cbind(promoted.df)
-    grl
-}
-
-## This merges exons into genes (GRanges to GRangesList)
-gff.to.grl <- function(gr, exonFeatureType="exon", geneIdAttr="gene_id", geneFeatureType="gene") {
-    exon.gr <- gr[gr$type %in% exonFeatureType]
-    exon.gr %<>% cleanup.mcols
-    grl <- split(exon.gr, as.character(mcols(exon.gr)[[geneIdAttr]])) %>%
-        promote.common.mcols
-    if (!is.null(geneFeatureType)) {
-        gene.meta <- gr[gr$type %in% geneFeatureType] %>%
-            mcols %>% cleanup.mcols(mcols_df=.) %>% .[match(names(grl), .[[geneIdAttr]]),]
-        for (i in names(gene.meta)) {
-            if (i %in% names(mcols(grl))) {
-                value <- ifelse(is.na(gene.meta[[i]]), mcols(grl)[[i]], gene.meta[[i]])
-            } else {
-                value <- gene.meta[[i]]
-            }
-            mcols(grl)[[i]] <- value
-        }
-    }
-    return(grl)
-}
-
-get.txdb <- function(txdbname) {
-    tryCatch({
-        library(txdbname, character.only=TRUE)
-        pos <- str_c("package:", txdbname)
-        get(txdbname, pos)
-    }, error=function(...) {
-        library(GenomicFeatures)
-        loadDb(txdbname)
-    })
-}
-
-read.annotation.from.gff <- function(filename, format="GFF3", ...) {
-    gff <- NULL
-    ## Allow the file to be an RDS file containing the GRanges
-    ## resulting from import()
-    gff <- tryCatch({
-        read.RDS.or.RDA(filename, "GRanges")
-    }, error=function(...) {
-        import(filename, format=format)
-    })
-    assert_that(is(gff, "GRanges"))
-    grl <- gff.to.grl(gff, ...)
-    return(grl)
-}
-
-read.annotation.from.saf <- function(filename, ...) {
-    saf <- read.table.general(filename, ...)
-    assert_that("GeneID" %in% names(saf))
-    gr <- as(saf, "GRanges")
-    grl <- split(gr, gr$GeneID) %>% promote.common.mcols
-    return(grl)
-}
-
-read.annotation.from.rdata <- function(filename) {
-    read.RDS.or.RDA(filename, "GRangesList")
-}
-
-read.additional.gene.info <- function(filename, gff_format="GFF3", geneFeatureType="gene", ...) {
-    df <- tryCatch({
-        gff <- tryCatch({
-            read.RDS.or.RDA(filename, "GRanges")
-        }, error=function(...) {
-            import(filename, format=gff_format)
-        })
-        assert_that(is(gff, "GRanges"))
-        gff %>% .[.$type %in% geneFeatureType] %>%
-            mcols %>% cleanup.mcols(mcols_df=.)
-    }, error=function(...) {
-        tab <- read.table.general(filename, ..., dataframe.class="DataFrame")
-        ## Nonexistent or automatic row names
-        if (.row_names_info(tab) <= 0) {
-            row.names(tab) <- tab[[1]]
-        }
-        tab
-    })
-    df %<>% DataFrame
-    assert_that(is(df, "DataFrame"))
-    return(df)
-}
-
-## This converts a GRangesList into the SAF ("Simplified annotation
-## format")
-grl.to.saf <- function(grl) {
-    gr <- unlist(grl)
-    data.frame(Chr=as.vector(seqnames(gr)),
-               Start=start(gr),
-               End=end(gr),
-               Strand=as.vector(strand(gr)),
-               GeneID=rep(names(grl), lengths(grl)))
-}
-
-print.var.vector <- function(v) {
-    for (i in names(v)) {
-        cat(i, ": ", deparse(v[[i]]), "\n", sep="")
-    }
-    invisible(v)
-}
-
-
-## Guess type of ID
+## Guess type of ID (currenly unused)
 identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL", "UNIGENE"), threshold=0.5) {
     if (is.character(db)) {
         library(db, character.only=TRUE)
@@ -431,24 +126,24 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
 }
 
 {
-    cmdopts <- get.options(commandArgs(TRUE))
+    cmdopts <- get_options(commandArgs(TRUE))
     ## myargs <- c("-s", "./saved_data/samplemeta-RNASeq.RDS", "-c", "SRA_run", "-p", "aligned/rnaseq_star_hg38.analysisSet_gencode.v25/%s/Aligned.sortedByCoord.out.bam", "-o", "sexp.rds", "-j", "2", "-g", "~/references/hg38/gencode.v25.gff3")
-    ## cmdopts <- get.options(myargs)
+    ## cmdopts <- get_options(myargs)
     cmdopts$help <- NULL
 
     cmdopts$threads %<>% round %>% max(1)
     tsmsg("Running with ", cmdopts$threads, " threads")
-    registerDoParallel(cores=cmdopts$threads)
+    setup_multicore(cmdopts$threads)
 
     tsmsg("Args:")
-    print.var.vector(cmdopts)
+    print_var_vector(cmdopts)
 
     ## Delete the output file if it exists
     suppressWarnings(file.remove(cmdopts$output_file))
     assert_that(!file.exists(cmdopts$output_file))
 
     tsmsg("Loading sample metadata")
-    samplemeta <- read.table.general(cmdopts$samplemeta_file)
+    samplemeta <- read_table_general(cmdopts$samplemeta_file)
 
     tsmsg("Got metadata for ", nrow(samplemeta), " samples")
 
@@ -487,19 +182,19 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
     tsmsg("Reading annotation data")
 
     if ("annotation_txdb" %in% names(cmdopts)) {
-        txdb <- get.txdb(cmdopts$annotation_txdb)
+        txdb <- get_txdb(cmdopts$annotation_txdb)
         annot <- exonsBy(txdb, "gene")
     } else if ("annotation_gff" %in% names(cmdopts)) {
         annot <- cmdopts %$%
-            read.annotation.from.gff(
+            read_annotation_from_gff(
                 annotation_gff,
                 exonFeatureType=gff_exon_featuretype,
                 geneIdAttr=gff_geneid_attr,
                 geneFeatureType=gff_gene_featuretype)
     } else if ("annotation_rds" %in% names(cmdopts)) {
-        annot <- read.annotation.from.rdata(cmdopts$annotation_rds)
+        annot <- read_annotation_from_rdata(cmdopts$annotation_rds)
     } else if ("annotation_saf" %in% names(cmdopts)) {
-        annot <- read.annotation.from.saf(cmdopts$annotation_saf)
+        annot <- read_annotation_from_saf(cmdopts$annotation_saf)
     }
 
     assert_that(is(annot, "GRangesList"))
@@ -507,7 +202,7 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
 
     if ("additional_gene_info" %in% names(cmdopts)) {
         tsmsg("Reading additional gene annotation metadata")
-        additional_gene_info <- read.additional.gene.info(cmdopts$additional_gene_info)
+        additional_gene_info <- read_additional_gene_info(cmdopts$additional_gene_info)
         genes_without_info <- setdiff(names(annot), rownames(additional_gene_info))
         if (length(genes_without_info) > 0) {
             empty_row <- list(character(0)) %>% rep(ncol(additional_gene_info)) %>% setNames(colnames(additional_gene_info))
@@ -529,7 +224,7 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
         metadata(annot) %<>% c(metadata(additional_gene_info))
     }
 
-    saf <- grl.to.saf(annot)
+    saf <- grl_to_saf(annot)
 
     if (all(lengths(annot) == 1)) {
         annot.mcols <- mcols(annot)
@@ -579,6 +274,6 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
     metadata(sexp)$stat <- count.stats
 
     tsmsg("Saving SummarizedExperiment")
-    save.RDS.or.RDA(sexp, cmdopts$output_file)
+    save_RDS_or_RDA(sexp, cmdopts$output_file)
     invisible(NULL)
 }

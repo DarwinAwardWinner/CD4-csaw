@@ -8,12 +8,9 @@ library(assertthat)
 library(magrittr)
 library(SummarizedExperiment)
 library(dplyr)
+library(rctutils)
 
-tsmsg <- function(...) {
-    message(date(), ": ", ...)
-}
-
-get.options <- function(opts) {
+get_options <- function(opts) {
     optlist <- list(
         make_option(c("-i", "--input-file"), metavar="FILENAME.RDS", type="character",
                     help="(REQUIRED) Input file name. This should be an RDS file containing a SummarizedExperiment object, whose containing the counts will be saved here using saveRDS, so it should end in '.RDS'."),
@@ -41,30 +38,23 @@ get.options <- function(opts) {
     cmdopts %>% setNames(chartr("-", "_", names(.)))
 }
 
-print.var.vector <- function(v) {
-    for (i in names(v)) {
-        cat(i, ": ", deparse(v[[i]]), "\n", sep="")
-    }
-    invisible(v)
-}
-
 {
-    cmdopts <- get.options(commandArgs(TRUE))
+    cmdopts <- get_options(commandArgs(TRUE))
+    ## TODO eliminate setwd
     tryCatch(setwd(file.path(dirname(na.omit(get_Rscript_filename())), "..")),
              error=function(...) tsmsg("WARNING: Could not determine script path. Ensure that you are already in the correct directory."))
 
     tsmsg("Args:")
-    print.var.vector(cmdopts)
+    print_var_vector(cmdopts)
 
     tsmsg("Reading SummarizedExperiment file")
-    sexp <- readRDS(cmdopts$input_file)
-    assert_that(is(sexp, "SummarizedExperiment"))
+    sexp <- read_RDS_or_RDA(cmdopts$input_file, "SummarizedExperiment")
 
     output_filenames = glue_data(as.list(colData(sexp)), cmdopts$output_file_pattern)
     output_groups <- split(seq_len(ncol(sexp)), output_filenames)
     output_sexps <- lapply(output_groups, . %>% sexp[,.])
     for (fname in names(output_sexps)) {
         tsmsg("Writing ", fname)
-        saveRDS(output_sexps[[fname]], fname)
+        save_RDS_or_RDA(output_sexps[[fname]], fname)
     }
 }

@@ -7,81 +7,9 @@ library(rex)
 library(sitools)
 library(magrittr)
 library(assertthat)
+library(rctutils)
 
-tsmsg <- function(...) {
-    message(date(), ": ", ...)
-}
-
-# Inverse of sitools::f2si
-si2f <- function(string, unit="") {
-    if (length(string) == 0) {
-        return(numeric(0))
-    }
-    sifactor <- c(1e-24, 1e-21, 1e-18, 1e-15, 1e-12, 1e-09, 1e-06,
-                  0.001, 1, 1000, 1e+06, 1e+09, 1e+12, 1e+15, 1e+18, 1e+21,
-                  1e+24)
-    pre <- c("y", "z", "a", "f", "p", "n", "u", "m",
-             "", "k", "M", "G", "T", "P", "E", "Z", "Y")
-
-    rx <- rex(
-        ## Leading whitespace
-        start,
-        zero_or_more(space),
-
-        ## Capture a floating point number
-        capture(
-            ## Sign
-            maybe(one_of("+", "-")),
-            ## Integer part
-            zero_or_more(digit),
-            ## Decimal point
-            maybe("."),
-            ## Fractional part (or integer part when decimal is not
-            ## present)
-            one_or_more(digit),
-            ## Exponential notation
-            maybe(
-                one_of("e", "E"),
-                maybe(one_of("+", "-")),
-                one_or_more(digit)
-            )
-        ),
-
-        ## Space between number and unit
-        zero_or_more(space),
-
-        ## Capture SI prefix
-        capture(maybe(one_of(pre))),
-
-        unit,
-
-        ## Trailing whitespace
-        zero_or_more(space),
-        end
-    )
-
-    m <- str_match(string, rx)
-    base <- as.numeric(m[,2])
-    p <- m[,3]
-    fac <- sifactor[match(p, pre)]
-    base * fac
-}
-
-parse.bp <- function(size) {
-    suppressWarnings({
-        result <- si2f(size, "bp")
-        ## Fall back to just parsing a number without the "bp" suffix
-        result[is.na(result)] <- si2f(size[is.na(result)])
-    })
-    assert_that(!any(is.na(result)))
-    result
-}
-
-format.bp <- function(x) {
-    x %>% round %>% f2si("bp") %>% str_replace_all(rex(one_or_more(space)), "")
-}
-
-get.options <- function(opts) {
+get_options <- function(opts) {
     optlist <- list(
         make_option(c("-s", "--samplemeta-file"), metavar="FILENAME.RDS", type="character",
                     help="(REQUIRED) RDS/RData/xlsx/csv file containing a table of sample metadata. Any existing rownames will be replaced with the values in the sample ID  column (see below)."),
@@ -129,7 +57,7 @@ get.options <- function(opts) {
 
     ## Convert bp args to numbers
     for (i in c("read-extension")) {
-        cmdopts[[i]] %<>% parse.bp
+        cmdopts[[i]] %<>% parse_bp
     }
 
     cmdopts$threads %<>% round
@@ -154,123 +82,6 @@ library(rtracklayer)
 library(SummarizedExperiment)
 library(csaw)
 
-regionCountsParallel <- function(bam.files, ..., BPPARAM=bpparam()) {
-    reslist <- bplapply(X=bam.files, FUN=regionCounts, ..., BPPARAM=BPPARAM)
-    assert_that(all(sapply(reslist, is, "SummarizedExperiment")))
-    res <- do.call(cbind, reslist)
-    rm(reslist)
-    res
-}
-
-## Read a single R object from an RDA file. If run on an RDA
-## file containing more than one object, throws an error.
-read.single.object.from.rda <- function(filename) {
-    objects <- within(list(), suppressWarnings(load(filename)))
-    if (length(objects) != 1) {
-        stop("RDA file should contain exactly one object")
-    }
-    return(objects[[1]])
-}
-
-## Read a single object from RDS or RDA file
-read.RDS.or.RDA <- function(filename, expected.class="ANY") {
-    object <- suppressWarnings(tryCatch({
-        readRDS(filename)
-    }, error=function(...) {
-        read.single.object.from.rda(filename)
-    }))
-    if (!any(sapply(expected.class, is, object=object))) {
-        object <- as(object, expected.class)
-    }
-    return(object)
-}
-
-## Read a table from a R data file, csv, or xlsx file. Returns a data
-## frame or throws an error.
-read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL,
-                               dataframe.class="data.frame") {
-    suppressWarnings({
-        read.table.args %<>% as.list
-        read.table.args$file <- filename
-        read.table.args$header <- TRUE
-        read.xlsx.args %<>% as.list
-        read.xlsx.args$xlsxFile <- filename
-        lazy.results <- list(
-            rdata=future(read.RDS.or.RDA(filename, dataframe.class), lazy=TRUE),
-            table=future(do.call(read.table, read.table.args), lazy=TRUE),
-            csv=future(do.call(read.csv, read.table.args), lazy=TRUE),
-            xlsx=future(do.call(read.xlsx, read.xlsx.args), lazy=TRUE))
-        for (lzresult in lazy.results) {
-            result <- tryCatch({
-                x <- as(value(lzresult), dataframe.class)
-                assert_that(is(x, dataframe.class))
-                x
-            }, error=function(...) NULL)
-            if (!is.null(result)) {
-                return(result)
-            }
-        }
-        stop(glue("Could not read a data frame from {deparse{filename}} as R data, csv, or xlsx"))
-    })
-}
-
-read.saf <- function(filename, ...) {
-    saf <- read.table.general(filename, ...)
-    assert_that("GeneID" %in% names(saf))
-    gr <- as(saf, "GRanges")
-    grl <- split(gr, gr$GeneID) %>% promote.common.mcols
-    return(grl)
-}
-
-# Functions for reading and writing narrowPeak files
-read.narrowPeak <- function(file, ...) {
-    peaks.df <- read.table(file, sep="\t", row.names=NULL, ...)
-    names(peaks.df) <- c("chr", "start", "end", "name", "score", "strand", "signalValue", "pValue", "qValue", "summit")
-    peaks.df$name <- as.character(peaks.df$name)
-    peaks.df
-}
-
-write.narrowPeak <- function(x, file, ...) {
-    x <- as(x, "data.frame")
-    if("seqnames" %in% names(x))
-        names(x)[names(x) == "seqnames"] <- "chr"
-    x <- x[c("chr", "start", "end", "name", "score", "strand", "signalValue", "pValue", "qValue", "summit")]
-    write.table(x, file, sep="\t", row.names=FALSE, col.names=FALSE, ...)
-}
-
-read.regions <- function(filename) {
-    suppressWarnings({
-        lazy.results <- list(
-            rdata=future(read.RDS.or.RDA(filename), lazy=TRUE),
-            narrowPeak=future(read.narrowPeak(filename), lazy=TRUE),
-            bed=future(import(filename, format="bed"), lazy=TRUE),
-            gff=future(import(filename, format="gff"), lazy=TRUE),
-            saf=future(read.saf(filename), lazy=TRUE),
-            table=future(read.table.general(filename), lazy=TRUE))
-        for (lzresult in lazy.results) {
-            result <- tryCatch({
-                x <- value(lzresult)
-                if (is(x, "List")) {
-                    x <- unlist(x)
-                }
-                x <- as(x, "GRanges")
-                x
-            }, error=function(...) NULL)
-            if (!is.null(result)) {
-                return(result)
-            }
-        }
-        stop(glue("Could not read genomic regions from {deparse(filename)} as R data, narrowPeak, bed, gff, SAF, or csv"))
-    })
-}
-
-print.var.vector <- function(v) {
-    for (i in names(v)) {
-        cat(i, ": ", deparse(v[[i]]), "\n", sep="")
-    }
-    invisible(v)
-}
-
 ## cmdopts <- list(
 ##     samplemeta_file="saved_data/samplemeta-ChIPSeq.RDS",
 ##     sample_id_column="SRA_run",
@@ -287,24 +98,22 @@ print.var.vector <- function(v) {
              error=function(...) tsmsg("WARNING: Could not determine script path. Ensure that you are already in the correct directory."))
 
     tsmsg("Args:")
-    print.var.vector(cmdopts)
+    print_var_vector(cmdopts)
 
-    if (cmdopts$threads > 1) tryCatch({
-        library(doParallel)
-        library(BiocParallel)
-        registerDoParallel(cores=cmdopts$threads)
-        register(DoparParam())
-    }, error=function(...){
-        tsmsg("Could not initialize parallel backend. Falling back to single-core mode.")
-        cmdopts$threads <- 1
-    })
-    tsmsg("Using ", cmdopts$threads, " cores.")
+    if (cmdopts$threads > 1) {
+        setup_multicore()
+    } else {
+        registerDoSEQ()
+        register(SerialParam())
+    }
 
-    tsmsg("Assuming a fragment size of ", format.bp(cmdopts$read_extension))
+    tsmsg(glue("Using {cmdopts$threads} cores."))
+
+    tsmsg(glue("Assuming a fragment size of {format_bp(cmdopts$read_extension)} for unpaired reads."))
 
     tsmsg("Loading sample data")
 
-    sample.table <- readRDS(cmdopts$samplemeta_file) %>%
+    sample_table <- readRDS(cmdopts$samplemeta_file) %>%
         ## Compute full path to BAM file
         mutate(bam_file=glue(cmdopts$bam_file_pattern, SAMPLE=.[[cmdopts$sample_id_column]])) %>%
         ## Ensure that days_after_activation is a factor and can't be
@@ -315,11 +124,11 @@ print.var.vector <- function(v) {
 
     if (!is.null(cmdopts$filter_sample_ids)) {
         tsmsg("Selecting only ", length(cmdopts$filter_sample_ids), " specified samples.")
-        assert_that(all(cmdopts$filter_sample_ids %in% sample.table[[cmdopts$sample_id_column]]))
-        sample.table %<>% .[.[[cmdopts$sample_id_column]] %in% cmdopts$filter_sample_ids,]
+        assert_that(all(cmdopts$filter_sample_ids %in% sample_table[[cmdopts$sample_id_column]]))
+        sample_table %<>% .[.[[cmdopts$sample_id_column]] %in% cmdopts$filter_sample_ids,]
     }
 
-    assert_that(all(file.exists(sample.table$bam_file)))
+    assert_that(all(file.exists(sample_table$bam_file)))
 
     if ("expected_bam_files" %in% names(cmdopts)) {
         tryCatch({
@@ -339,37 +148,34 @@ print.var.vector <- function(v) {
     }
 
     tsmsg("Loading regions")
-    target.regions <- read.regions(cmdopts$regions)
-    assert_that(is(target.regions, "GRanges"))
+    target_regions <- read_regions(cmdopts$regions)
+    assert_that(is(target_regions, "GRanges"))
     ## Analysis is not stranded
-    strand(target.regions) <- "*"
+    strand(target_regions) <- "*"
 
-    blacklist.regions <- GRanges()
+    blacklist_regions <- GRanges()
     if (!is.null(cmdopts$blacklist)) {
         tsmsg("Loading blacklist regions")
-        blacklist.regions <- read.regions(cmdopts$blacklist)
-        assert_that(is(blacklist.regions, "GRanges"))
+        blacklist_regions <- read_regions(cmdopts$blacklist)
+        assert_that(is(blacklist_regions, "GRanges"))
         ## Blacklist applies to both strands
-        strand(blacklist.regions) <- "*"
+        strand(blacklist_regions) <- "*"
     }
-    rparam <- readParam(discard=blacklist.regions)
+    rparam <- readParam(discard=blacklist_regions)
 
-    tsmsg(glue("Counting reads in {length(target.regions)} regions in {nrow(sample.table)} samples."))
+    tsmsg(glue("Counting reads in {length(target_regions)} regions in {nrow(sample_table)} samples."))
     if (cmdopts$threads > 1) {
         rCountsFun <- regionCountsParallel
-        options(mc.cores=cmdopts$threads, mc.preschedule=FALSE)
-        registerDoParallel(cores=cmdopts$threads)
-        register(DoparParam())
     } else {
         rCountsFun <- regionCounts
     }
     wcounts <- rCountsFun(
-        sample.table$bam_file, regions=target.regions,
+        sample_table$bam_file, regions=target_regions,
         ext=cmdopts$read_extension, param=rparam)
-    colData(wcounts) %<>% {cbind(sample.table, .[c("totals", "ext")])}
+    colData(wcounts) %<>% {cbind(sample_table, .[c("totals", "ext")])}
     ## Save command and options in the metadata
-    metadata(sexp)$cmd.name <- na.omit(c(get_Rscript_filename(), "csaw-count-regions.R"))[1]
-    metadata(sexp)$cmd.opts <- cmdopts
+    metadata(sexp)$cmd_name <- na.omit(c(get_Rscript_filename(), "csaw-count-regions.R"))[1]
+    metadata(sexp)$cmd_opts <- cmdopts
 
     tsmsg("Saving output file")
     saveRDS(wcounts, cmdopts$output_file)

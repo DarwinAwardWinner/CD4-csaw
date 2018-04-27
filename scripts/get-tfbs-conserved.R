@@ -6,7 +6,6 @@ suppressMessages({
     library(BSgenome.Hsapiens.UCSC.hg19)
     library(BSgenome.Hsapiens.UCSC.hg38)
     library(here)
-    source(here("scripts", "utilities.R"))
 })
 
 {
@@ -19,9 +18,9 @@ suppressMessages({
     mySession <- browserSession()
     genome(mySession) <- "hg19"
     sites.table <- getTable(ucscTableQuery(mySession, track="tfbsConsSites", table="tfbsConsSites")) %>%
-        mutate_if(is.factor, as.character)
+        fac2char
     names.table <- getTable(ucscTableQuery(mySession, track="tfbsConsSites", table="tfbsConsFactors")) %>%
-        mutate_if(is.factor, as.character)
+        fac2char
     ## Keep only human entries, interpret "N" as NA
     names.table$id[names.table$id == "N"] <- NA
     names.table %<>% filter(species=="human") %>% select(-species) %>% droplevels %>%
@@ -33,5 +32,5 @@ suppressMessages({
                                    starts.in.df.are.0based=TRUE, keep.extra.columns=TRUE,
                                    seqinfo=seqinfo(BSgenome.Hsapiens.UCSC.hg19))
     gr.lifted <- liftOverLax(gr, chain, allow.gap=2) %>% .[lengths(.) == 1] %>% unlist
-    saveRDS(gr.lifted, outfile)
+    save_RDS_or_RDA(gr.lifted, outfile)
 }

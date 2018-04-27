@@ -16,14 +16,9 @@ library(purrr)
 library(csaw)
 library(Matrix)
 library(assertthat)
+library(rctutils)
 
-library(doParallel)
-options(mc.preschedule=FALSE)
-ncores <- getOption("mc.cores", default=1)
-registerDoParallel(cores=ncores)
-library(BiocParallel)
-register(DoparParam())
-
+setup_multicore()
 tsmsg("Loading sample data")
 
 sample.table <- readRDS(here("saved_data", "samplemeta-ChIPSeq.RDS")) %>%
