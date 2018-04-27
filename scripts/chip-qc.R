@@ -1,9 +1,5 @@
 #!/usr/bin/env Rscript
 
-tsmsg <- function(...) {
-    message(date(), ": ", ...)
-}
-
 library(here)
 library(stringr)
 library(glue)
@@ -19,6 +15,7 @@ library(GenomicRanges)
 library(SummarizedExperiment)
 library(dplyr)
 library(ChIPQC)
+library(rctutils)
 
 ## Don't run in parallel because of memory issues
 library(doParallel)
@@ -28,6 +25,8 @@ library(BiocParallel)
 register(SerialParam())
 
 tsmsg("Loading sample data")
+
+## TODO: Rewrite into the new pipeline
 
 sample.table <- read.xlsx(here("data_files/ChIP-Seq/sample-tables.xlsx"), "Samples") %>%
     set_colnames(make.unique(colnames(.))) %>%
@@ -97,5 +96,5 @@ cqc <- ChIPQC(
 ##                               ranges = ranges(temp), strand = strand(temp),
 ##                               elementMetadata(temp)))
 
-saveRDS(sexp, here("saved_data/ChIPQC.RDS"))
+saveRDS(cqc, here("saved_data/ChIPQC.RDS"))
 save.image(here("saved_data/ChIPQC.rda"))
