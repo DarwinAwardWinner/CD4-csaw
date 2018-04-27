@@ -511,6 +511,8 @@ print.var.vector <- function(v) {
     bfl <- BamFileList(sample.table$bam_file)
     names(bfl) <- sample.table[[cmdopts$sample_id_column]]
 
+    ## TODO: Use the 2-argument ext option of csaw::regionCounts
+    ## instead of summarizeOverlaps
     sexp <- summarizeOverlaps(
         features=nhood_windows, reads=bfl,
         ## Get mapping stats in colData
