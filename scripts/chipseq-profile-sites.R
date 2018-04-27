@@ -4,15 +4,7 @@ tsmsg <- function(...) {
     message(date(), ": ", ...)
 }
 
-getScriptPath <- function() {
-    argv <-commandArgs()
-    dir <- na.omit(stringr::str_match(argv, "^--file=(.*)$")[,2])[1]
-    if (!is.na(dir) && !is.null(dir))
-        return(dir)
-}
-tryCatch(setwd(file.path(dirname(getScriptPath()), "..")),
-         error=function(...) tsmsg("WARNING: Could not determine script path. Ensure that you are already in the correct directory."))
-
+library(here)
 library(stringr)
 library(glue)
 library(magrittr)
@@ -34,9 +26,9 @@ register(DoparParam())
 
 tsmsg("Loading sample data")
 
-sample.table <- readRDS("saved_data/samplemeta-ChIPSeq.RDS") %>%
+sample.table <- readRDS(here("saved_data", "samplemeta-ChIPSeq.RDS")) %>%
     ## Compute full path to BAM file
-    mutate(bam_file=glue("aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam")) %>%
+    mutate(bam_file=here("aligned", "chipseq_bowtie2_hg38.analysisSet", SRA_run, "Aligned.bam")) %>%
     ## Ensure that days_after_activation is a factor and can't be
     ## interpreted as a numeric
     mutate(days_after_activation=days_after_activation %>%
@@ -47,7 +39,7 @@ sample.table <- readRDS("saved_data/samplemeta-ChIPSeq.RDS") %>%
 assert_that(all(file.exists(sample.table$bam_file)))
 
 tsmsg("Loading blacklist regions")
-blacklist <- import("saved_data/ChIPSeq-merged-blacklist.bed", format="bed")
+blacklist <- import(here("saved_data", "ChIPSeq-merged-blacklist.bed"), format="bed")
 
 ## Standard nuclear chromosomes only. (chrM is excluded because it is
 ## not located in the nucleus and is thus not subject to histone
@@ -72,7 +64,7 @@ sample.maxima <- bplapply(sample.table$bam_file, function(bam) {
     maxranges
 })
 names(sample.maxima) <- sample.table$SampleName
-saveRDS(sample.maxima, "saved_data/chipseq-sample-maxima.RDS")
+saveRDS(sample.maxima, here("saved_data", "chipseq-sample-maxima.RDS"))
 
 weights <- lapply(sample.maxima, . %$% {1/Count})
 
@@ -88,7 +80,7 @@ sample.mean.profiles <- bpmapply(
         range=10000,
         param=param.dedup.on))
 colnames(sample.mean.profiles) <- sample.table$SampleName
-saveRDS(sample.mean.profiles, "saved_data/chipseq-siteprof.RDS")
+saveRDS(sample.mean.profiles, here("saved_data", "chipseq-siteprof.RDS"))
 
 profile.table <- sample.mean.profiles %>%
     melt(varnames=c("Distance", "SampleName"), value.name="RelativeCoverage") %>%
@@ -114,7 +106,7 @@ profile.table <- sample.mean.profiles %>%
             geom_line(size=0.25) +
             coord_cartesian(xlim=c(-300, 300)) +
             ggtitle("Relative Coverage Around Maxima, 300bp Radius"))
-    pdf("plots/csaw/site-profile-plots.pdf", width=16, height=16)
+    pdf(here("plots", "csaw", "site-profile-plots.pdf"), width=16, height=16)
     print(p)
     dev.off()
 }

@@ -4,15 +4,7 @@ tsmsg <- function(...) {
     message(date(), ": ", ...)
 }
 
-getScriptPath <- function() {
-    argv <-commandArgs()
-    dir <- na.omit(stringr::str_match(argv, "^--file=(.*)$")[,2])[1]
-    if (!is.na(dir) && !is.null(dir))
-        return(dir)
-}
-tryCatch(setwd(file.path(dirname(getScriptPath()), "..")),
-         error=function(...) tsmsg("WARNING: Could not determine script path. Ensure that you are already in the correct directory."))
-
+library(here)
 library(GEOquery)
 library(SRAdb)
 library(stringr)
@@ -37,7 +29,7 @@ getGEO <- function(...) {
 }
 
 sra_con <- {
-    sqlfile <- file.path("saved_data", "SRAmetadb.sqlite")
+    sqlfile <- here("saved_data", "SRAmetadb.sqlite")
     assert_that(file.exists(sqlfile))
     dbConnect(SQLite(),sqlfile)
 }
@@ -135,5 +127,5 @@ assert_that(all(!is.na(unlist(samplemeta))))
 
 tsmsg("Saving sample metadata")
 for (i in names(samplemeta)) {
-    saveRDS(samplemeta[[i]], file.path("saved_data", glue("samplemeta-{i}.RDS")))
+    saveRDS(samplemeta[[i]], here("saved_data", glue("samplemeta-{i}.RDS")))
 }

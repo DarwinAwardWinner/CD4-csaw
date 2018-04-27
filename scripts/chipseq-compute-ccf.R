@@ -4,15 +4,7 @@ tsmsg <- function(...) {
     message(date(), ": ", ...)
 }
 
-getScriptPath <- function() {
-    argv <-commandArgs()
-    dir <- na.omit(stringr::str_match(argv, "^--file=(.*)$")[,2])[1]
-    if (!is.na(dir) && !is.null(dir))
-        return(dir)
-}
-tryCatch(setwd(file.path(dirname(getScriptPath()), "..")),
-         error=function(...) tsmsg("WARNING: Could not determine script path. Ensure that you are already in the correct directory."))
-
+library(here)
 library(Rsamtools)
 library(stringr)
 library(glue)
@@ -41,9 +33,9 @@ register(DoparParam())
 
 tsmsg("Loading sample data")
 
-sample.table <- readRDS("saved_data/samplemeta-ChIPSeq.RDS") %>%
+sample.table <- readRDS(here("saved_data", "samplemeta-ChIPSeq.RDS")) %>%
     ## Compute full path to BAM file
-    mutate(bam_file=glue("aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam")) %>%
+    mutate(bam_file=here("aligned", "chipseq_bowtie2_hg38.analysisSet", SRA_run, "Aligned.bam")) %>%
     ## Ensure that days_after_activation is a factor and can't be
     ## interpreted as a numeric
     mutate(days_after_activation=days_after_activation %>%
@@ -53,7 +45,7 @@ sample.table <- readRDS("saved_data/samplemeta-ChIPSeq.RDS") %>%
 stopifnot(all(file.exists(sample.table$bam_file)))
 
 tsmsg("Loading blacklist regions")
-blacklist <- import("saved_data/ChIPSeq-merged-blacklist.bed", format="bed")
+blacklist <- import(here("saved_data", "ChIPSeq-merged-blacklist.bed"), format="bed")
 
 ## Standard nuclear chromosomes only. (chrM is excluded because it is
 ## not located in the nucleus and is thus not subject to histone
@@ -87,5 +79,5 @@ sample.ccf <-
     })
 
 names(sample.ccf.noBL) <- names(sample.ccf) <- sample.table$SampleName
-saveRDS(sample.ccf, "saved_data/chipseq-ccf.RDS")
-saveRDS(sample.ccf.noBL, "saved_data/chipseq-ccf-noBL.RDS")
+saveRDS(sample.ccf, here("saved_data", "chipseq-ccf.RDS"))
+saveRDS(sample.ccf.noBL, here("saved_data", "chipseq-ccf-noBL.RDS"))

@@ -1,6 +1,7 @@
 #!/usr/bin/env Rscript
 
 suppressPackageStartupMessages(suppressMessages({
+    library(here)
     library(stringr)
     library(glue)
     library(GEOquery)
@@ -8,14 +9,6 @@ suppressPackageStartupMessages(suppressMessages({
     library(magrittr)
     library(dplyr)
     library(assertthat)
-
-    getScriptPath <- function() {
-        argv <-commandArgs()
-        dir <- na.omit(str_match(argv, "^--file=(.*)$")[,2])[1]
-        if (!is.na(dir) && !is.null(dir))
-            return(dir)
-    }
-    setwd(file.path(dirname(getScriptPath()), ".."))
 
     tsmsg <- function(...) {
         message(date(), ": ", ...)
@@ -31,7 +24,7 @@ suppressPackageStartupMessages(suppressMessages({
     }
 
     sra_con <- {
-        sqlfile <- file.path("saved_data", "SRAmetadb.sqlite")
+        sqlfile <- here("saved_data", "SRAmetadb.sqlite")
         if(!file.exists(sqlfile)) {
             getSRAdbFile(destdir=dirname(sqlfile),
                          destfile=str_c(basename(sqlfile), ".gz"))
@@ -69,14 +62,14 @@ suppressPackageStartupMessages(suppressMessages({
 }))
 
 {
-    sra_dir <- file.path(getwd(), "sra_files")
+    sra_dir <- "sra_files"
 
     sra_runs <- commandArgs(TRUE)
     assert_that(all(str_detect(sra_runs, "^SRR")))
 
     getSRAfile(sra_runs, sra_con, destDir=sra_dir, makeDirectory = TRUE)
 
-    expected_files <- file.path(sra_dir, str_c(sra_runs, ".sra"))
+    expected_files <- here(sra_dir, str_c(sra_runs, ".sra"))
     assert_that(all(file.exists(expected_files)))
     invisible(NULL)                     # Avoid output on console
 }

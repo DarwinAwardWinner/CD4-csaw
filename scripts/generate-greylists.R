@@ -4,15 +4,7 @@ tsmsg <- function(...) {
     message(date(), ": ", ...)
 }
 
-getScriptPath <- function() {
-    argv <-commandArgs()
-    dir <- na.omit(stringr::str_match(argv, "^--file=(.*)$")[,2])[1]
-    if (!is.na(dir) && !is.null(dir))
-        return(dir)
-}
-tryCatch(setwd(file.path(dirname(getScriptPath()), "..")),
-         error=function(...) tsmsg("WARNING: Could not determine script path. Ensure that you are already in the correct directory."))
-
+library(here)
 library(MASS)
 library(magrittr)
 library(dplyr)
@@ -41,9 +33,9 @@ windowCountsParallel <- function(bam.files, ..., filter=10) {
 
 tsmsg("Loading sample data")
 
-sample.table <- readRDS("saved_data/samplemeta-ChIPSeq.RDS") %>%
+sample.table <- readRDS(here("saved_data", "samplemeta-ChIPSeq.RDS")) %>%
     ## Compute full path to BAM file
-    mutate(bam_file=glue("aligned/chipseq_bowtie2_hg38.analysisSet/{SRA_run}/Aligned.bam")) %>%
+    mutate(bam_file=here("aligned", "chipseq_bowtie2_hg38.analysisSet", SRA_run, "Aligned.bam")) %>%
     ## Ensure that days_after_activation is a factor and can't be
     ## interpreted as a numeric
     mutate(days_after_activation=days_after_activation %>%
@@ -85,7 +77,7 @@ nbfits <- bplapply(colnames(binned1kb), function(i) {
 names(nbfits) <- colnames(binned1kb)
 
 tsmsg("Saving NB GLM fits")
-saveRDS(nbfits, "saved_data/ChIPSeq-input-depth-NBGLM-fits.RDS")
+saveRDS(nbfits, here("saved_data", "ChIPSeq-input-depth-NBGLM-fits.RDS"))
 
 mu <- sapply(nbfits, . %>% coef %>% exp %>% unname)
 size <- sapply(nbfits, `[[`, "theta")
@@ -103,7 +95,7 @@ assay(binned1kb, "pnbinom") <-
 assay(binned1kb, "pemp") <- assay(binned1kb, "counts") %>% apply(2, . %>% {ecdf(.)(.)})
 
 tsmsg("Saving bin counts and quantiles")
-saveRDS(binned1kb, "saved_data/window-counts-input-unfiltered-1kb.RDS")
+saveRDS(binned1kb, here("saved_data", "window-counts-input-unfiltered-1kb.RDS"))
 
 tsmsg("Generating greylist (bins with NB quantile > 0.99 in 2 or more samples)")
 
@@ -113,5 +105,5 @@ glranges <- rowRanges(binned1kb)[greylisted]
 
 tsmsg("Saving greylist")
 
-saveRDS(glranges, "saved_data/ChIPSeq-input-greylist.RDS")
-export(glranges, "saved_data/ChIPSeq-input-greylist.bed")
+saveRDS(glranges, here("saved_data", "ChIPSeq-input-greylist.RDS"))
+export(glranges, here("saved_data", "ChIPSeq-input-greylist.bed"))

@@ -4,15 +4,7 @@ tsmsg <- function(...) {
     message(date(), ": ", ...)
 }
 
-getScriptPath <- function() {
-    argv <-commandArgs()
-    dir <- na.omit(stringr::str_match(argv, "^--file=(.*)$")[,2])[1]
-    if (!is.na(dir) && !is.null(dir))
-        return(dir)
-}
-tryCatch(setwd(file.path(dirname(getScriptPath()), "..")),
-         error=function(...) tsmsg("WARNING: Could not determine script path. Ensure that you are already in the correct directory."))
-
+library(here)
 library(stringr)
 library(glue)
 library(magrittr)
@@ -35,13 +27,9 @@ registerDoSEQ()
 library(BiocParallel)
 register(SerialParam())
 
-tsmsg <- function(...) {
-    message(date(), ": ", ...)
-}
-
 tsmsg("Loading sample data")
 
-sample.table <- read.xlsx("data_files/ChIP-Seq/sample-tables.xlsx", "Samples") %>%
+sample.table <- read.xlsx(here("data_files/ChIP-Seq/sample-tables.xlsx"), "Samples") %>%
     set_colnames(make.unique(colnames(.))) %>%
     ## Select/compute/rename desired columns
     transmute(
@@ -62,8 +50,8 @@ sample.table <- read.xlsx("data_files/ChIP-Seq/sample-tables.xlsx", "Samples") %
     ) %>%
     ## Compute full path to files
     mutate(
-        bampath=file.path("data_files/ChIP-Seq", bam.file.name),
-        peakpath=file.path("data_files/ChIP-Seq", peak.file.name)
+        bampath=here("data_files/ChIP-Seq", bam.file.name),
+        peakpath=here("data_files/ChIP-Seq", peak.file.name)
     ) %>%
     ## Reorder levels on factors (not ASCIIbetical order)
     mutate(
@@ -109,5 +97,5 @@ cqc <- ChIPQC(
 ##                               ranges = ranges(temp), strand = strand(temp),
 ##                               elementMetadata(temp)))
 
-saveRDS(sexp, "saved_data/ChIPQC.RDS")
-save.image("saved_data/ChIPQC.rda")
+saveRDS(sexp, here("saved_data/ChIPQC.RDS"))
+save.image(here("saved_data/ChIPQC.rda"))

@@ -1,13 +1,6 @@
 #!/usr/bin/env Rscript
 
-getScriptPath <- function() {
-    argv <-commandArgs()
-    dir <- na.omit(stringr::str_match(argv, "^--file=(.*)$")[,2])[1]
-    if (!is.na(dir) && !is.null(dir))
-        return(dir)
-}
-setwd(file.path(dirname(getScriptPath()), ".."))
-
+library(here)
 library(GEOquery)
 library(SRAdb)
 library(stringr)
@@ -30,7 +23,7 @@ first.accessible <- function(paths, mode=0) {
 }
 
 sra_con <- {
-    sqlfile <- file.path("saved_data", "SRAmetadb.sqlite")
+    sqlfile <- here("saved_data", "SRAmetadb.sqlite")
     if(!file.exists(sqlfile)) {
         getSRAdbFile(destdir=dirname(sqlfile), destfile=str_c(basename(sqlfile), ".gz"))
     }
@@ -65,4 +58,4 @@ samplemeta <- lapply(samplemeta.files, readRDS) %>% do.call(what=rbind.fill)
 
 getSRAfile(samplemeta$SRA_run,
            sra_con, destDir=sra_dir, makeDirectory = TRUE)
-assert_that(all(file.exists(file.path(sra_dir, samplemeta$SRA_file))))
+assert_that(all(file.exists(here(sra_dir, samplemeta$SRA_file))))
