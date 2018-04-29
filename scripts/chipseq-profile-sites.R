@@ -18,7 +18,7 @@ library(Matrix)
 library(assertthat)
 library(rctutils)
 
-setup_multicore()
+use_multicore_futures()
 tsmsg("Loading sample data")
 
 sample.table <- readRDS(here("saved_data", "samplemeta-ChIPSeq.RDS")) %>%

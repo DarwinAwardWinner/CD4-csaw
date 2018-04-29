@@ -25,7 +25,7 @@ library(csaw)
 library(Matrix)
 library(rctutils)
 
-setup_multicore()
+use_multicore_futures()
 
 tsmsg("Loading sample data")
 

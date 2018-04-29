@@ -14,7 +14,7 @@ library(SummarizedExperiment)
 library(rtracklayer)
 library(rctutils)
 
-setup_multicore()
+use_multicore_futures()
 
 tsmsg("Loading sample data")
 

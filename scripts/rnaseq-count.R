@@ -2,9 +2,6 @@
 
 library(getopt)
 library(optparse)
-num.cores <- 1
-
-library(future)
 library(rctutils)
 
 ## Don't default to more than 4 cores
@@ -90,7 +87,6 @@ invisible(get_options(commandArgs(TRUE)))
 
 library(assertthat)
 library(dplyr)
-library(future)
 library(magrittr)
 library(openxlsx)
 library(stringr)
@@ -133,7 +129,7 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
 
     cmdopts$threads %<>% round %>% max(1)
     tsmsg("Running with ", cmdopts$threads, " threads")
-    setup_multicore(cmdopts$threads)
+    use_multicore_futures(cmdopts$threads)
 
     tsmsg("Args:")
     print_var_vector(cmdopts)

@@ -101,7 +101,7 @@ library(csaw)
     print_var_vector(cmdopts)
 
     if (cmdopts$threads > 1) {
-        setup_multicore()
+        use_multicore_futures()
     } else {
         registerDoSEQ()
         register(SerialParam())
