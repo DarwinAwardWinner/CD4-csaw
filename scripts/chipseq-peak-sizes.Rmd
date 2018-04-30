@@ -15,7 +15,7 @@ knitr::opts_chunk$set(
     cache.extra = list(params=params), 
     fig.height=8, fig.width=8,
     cache.path = paste0(here::here("cache", "chipseq-peak-sizes"),
-                        .Platform$file.sep)
+                        .Platform$file.sep))
 ```
 
 First we load the necessary libraries, along with a set of utility functions.
