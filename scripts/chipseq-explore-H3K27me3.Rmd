@@ -58,26 +58,14 @@ library(ks)
 library(RColorBrewer)
 library(Rtsne)
 library(variancePartition)
+library(rctutils)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
 
-library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
-options(mc.cores=ncores)
-registerDoParallel(cores=ncores)
 library(BiocParallel)
-register(DoparParam())
-
-options(future.globals.maxSize=4 * 1024^3)
 library(future)
-plan(multicore)
-
-source(here("scripts/utilities.R"))
-
-# Required in order to use DGEList objects with future
-length.DGEList <- function(x) {
-    length(unclass(x))
-}
+options(future.globals.maxSize=4 * 1024^3)
+use_futures("multicore")
 ```
 
 We also set the random seed for reproducibility:
@@ -96,7 +84,7 @@ peakfile <- here(
     str_c(params$histone_mark, "_condition.ALL_donor.ALL"),
     "peaks_noBL_IDR.narrowPeak")
 allpeaks <- {
-    read.narrowPeak(peakfile) %>% as("GRanges") %>%
+    read_narrowPeak(peakfile) %>% as("GRanges") %>%
         assign_into(seqinfo(.), seqinfo(BSgenome.Hsapiens.UCSC.hg38)[seqlevels(.)]) %>%
         setNames(.$name)
 }
@@ -128,11 +116,11 @@ We extract the sample metadata from the SummarizedExperiment. We set all factors
 
 ```{r extract_samplemeta}
 sample.table <- colData(sexp) %>%
-    as.data.frame %>% autoFactorize %>%
+    as.data.frame %>% auto_factorize_columns %>%
     mutate(days_after_activation=time_point %>% str_extract("\\d+$") %>% as.numeric(),
            time_point=factor(days_after_activation) %>% `levels<-`(glue("D{levels(.)}")),
            group=interaction(cell_type, time_point, sep="")) %>%
-    autoFactorize %>%
+    auto_factorize_columns %>%
     set_rownames(colnames(sexp))
 for (i in names(sample.table)) {
     if (is.factor(sample.table[[i]]) && nlevels(sample.table[[i]]) > 1) {
@@ -295,7 +283,7 @@ svobjs <- bplapply(logcpms, sva, design.int)
 for (i in names(svobjs)) {
     assert_that(svobjs[[i]]$n.sv > 0)
 }
-svmats <- lapply(svobjs, . %$% sv %>% cbind %>% add.numbered.colnames("SV"))
+svmats <- lapply(svobjs, . %$% sv %>% cbind %>% add_numbered_colnames("SV"))
 sv.designs <- lapply(svmats, . %>% cbind(design, .))
 sv.designs.int <- lapply(svmats, . %>% cbind(design.int, .))
 numsv.table <- sapply(svobjs, . %$% n.sv) %>% data_frame(NormType=names(.) , NumSV=.)
@@ -380,7 +368,8 @@ disptable <- lapply(names(dges), function(i) {
     mutate(BCV_SVA = sqrt(DispSVA),
            BCV_NoSVA = sqrt(DispNoSVA),
            BCV_Change = BCV_SVA - BCV_NoSVA)
-# This isn't used any more and takes up a lot of memory, so delete it
+# These aren't used any more and take up a lot of memory, so delete
+# them.
 rm(dges.nosv, dges.noebayes, dges.noebayes.nosv); invisible(gc())
 disptable %>% group_by(NormType) %>% do({
     summary(.$BCV_Change) %>% unclass %>% rbind %>% as_data_frame
@@ -557,7 +546,7 @@ ggprint(p)
 It is an encouraging sign that no matter which covariates are included, the percent of variance explained by the main experimental effects (group) stays the same. It seems that donor ID and FRiP explain only a small amount of additional variance, while the surrogate variables explain much more. This can be justified more rigorously using the Bayesian Information Criterion:
 
 ```{r selectModel}
-sm <- BPselectModel(voomWithOffset(dges$PeakHANorm, designs[[1]]), designs, criterion = "bic")
+sm <- selectModelParallel(voomWithOffset(dges$PeakHANorm, designs[[1]]), designs, criterion = "bic")
 as.data.frame(table(sm$pref)) %>% rename(Model=Var1)
 ggplot(melt(sm$IC) %>% rename(Model=Models, Probe=Probes, IC=value)) +
     aes(x=Model, fill=Model, y=IC) + geom_violin() +

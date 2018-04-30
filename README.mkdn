@@ -54,6 +54,13 @@ reproduce the full analysis.
 * Motif enrichment
 * pcaExplorer: https://bioconductor.org/packages/release/bioc/html/pcaExplorer.html
 
+## TODO Code cleanup
+
+* Standardize use of `cairo_pdf_onefile`
+* Fix up here() calls to avoid slashes
+* Remove unnecessary library() calls
+* Put spaces around equals signs
+
 ## TODO Other
 
 * Document how to run the pipeline

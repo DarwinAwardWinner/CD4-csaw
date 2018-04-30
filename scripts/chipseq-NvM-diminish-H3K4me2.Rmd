@@ -50,26 +50,9 @@ library(ggfortify)
 library(broom)
 library(ks)
 library(RColorBrewer)
+library(rctutils)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
-
-library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
-options(mc.cores=ncores)
-registerDoParallel(cores=ncores)
-library(BiocParallel)
-register(DoparParam())
-
-options(future.globals.maxSize=4 * 1024^3)
-library(future)
-plan(multicore)
-
-source(here("scripts", "utilities.R"))
-
-# Required in order to use DGEList objects with future
-length.DGEList <- function(x) {
-    length(unclass(x))
-}
 ```
 
 We also set the random seed for reproducibility:
@@ -83,7 +66,7 @@ set.seed(1986)
 We start by loading the already-completed differential modification analysis data.
 
 ```{r load_data}
-load.filtered(here('saved_data', 'ChIP-seq',
+load_filtered(here('saved_data', 'ChIP-seq',
                    glue('{params$histone_mark}-diffmod.rda')),
               exclude="params")
 ```

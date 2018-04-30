@@ -69,33 +69,21 @@ library(broom)
 library(ks)
 library(RColorBrewer)
 library(here)
+library(rctutils)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
 
-library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
-options(mc.cores=ncores)
-registerDoParallel(cores=ncores)
 library(BiocParallel)
-register(SerialParam())
-register(DoparParam())
-
-options(future.globals.maxSize=4 * 1024^3)
 library(future)
-plan(multicore)
+options(future.globals.maxSize=4 * 1024^3)
+use_futures("multicore")
 
 # Export environment variables to make NumPy respect the desired level of
 # parallelism. (Different variables are required for different libraries.)
+ncores <- availableCores()
 Sys.setenv(MKL_NUM_THREADS = ncores,
            NUMEXPR_NUM_THREADS = ncores,
            OMP_NUM_THREADS = ncores)
-
-source(here("scripts/utilities.R"))
-
-# Required in order to use DGEList objects with future
-length.DGEList <- function(x) {
-    length(unclass(x))
-}
 ```
 
 # Data loading
@@ -107,7 +95,7 @@ peak.sexps %<-% {
     bplapply(here("saved_data",
                   glue_data(params, "peak-counts_{genome}_epic_{peak_datasets}.RDS")),
              readRDS) %>%
-        setNames(names(params$peak_datasets))
+        set_names(names(params$peak_datasets))
 }
 rnaseq.sexp %<-% {
     readRDS(here("saved_data", glue_data(params, "SummarizedExperiment_rnaseq_{rna_dataset}_{transcriptome}.RDS")))  %>%

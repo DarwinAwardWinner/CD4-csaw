@@ -54,26 +54,14 @@ library(ggfortify)
 library(broom)
 library(ks)
 library(RColorBrewer)
+library(rctutils)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
 
-library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
-options(mc.cores=ncores)
-registerDoParallel(cores=ncores)
 library(BiocParallel)
-register(DoparParam())
-
-options(future.globals.maxSize=4 * 1024^3)
 library(future)
-plan(multicore)
-
-source(here("scripts", "utilities.R"))
-
-# Required in order to use DGEList objects with future
-length.DGEList <- function(x) {
-    length(unclass(x))
-}
+options(future.globals.maxSize=4 * 1024^3)
+use_futures("multicore")
 ```
 
 We also set the random seed for reproducibility:
@@ -92,7 +80,7 @@ peakfile <- here(
     glue("{params$histone_mark}_condition.ALL_donor.ALL"),
     "peaks_noBL_IDR.narrowPeak")
 allpeaks <- {
-    read.narrowPeak(peakfile) %>% as("GRanges") %>%
+    read_narrowPeak(peakfile) %>% as("GRanges") %>%
         assign_into(seqinfo(.), seqinfo(BSgenome.Hsapiens.UCSC.hg38)[seqlevels(.)]) %>%
         setNames(.$name)
 }
@@ -116,11 +104,11 @@ We extract the sample metadata from the SummarizedExperiment. We set all factors
 
 ```{r extract_samplemeta}
 sample.table <- colData(sexp) %>%
-    as.data.frame %>% autoFactorize %>%
+    as.data.frame %>% auto_factorize_columns %>%
     mutate(days_after_activation=time_point %>% str_extract("\\d+$") %>% as.numeric(),
            time_point=factor(days_after_activation) %>% `levels<-`(glue("D{levels(.)}")),
            group=interaction(cell_type, time_point, sep="")) %>%
-    autoFactorize %>%
+    auto_factorize_columns %>%
     set_rownames(colnames(sexp))
 for (i in names(sample.table)) {
     if (is.factor(sample.table[[i]]) && nlevels(sample.table[[i]]) > 1) {
@@ -190,7 +178,7 @@ Instead of incorporating all the batch effects we think might be important into 
 dge %<>% calcNormFactors()
 logcpm <- cpm(dge, log=TRUE, prior.count=1)
 svobj <- sva(logcpm, design)
-svmat <- add.numbered.colnames(svobj$sv, "SV")
+svmat <- add_numbered_colnames(svobj$sv, "SV")
 design.sv <- cbind(design, svmat)
 ```
 
@@ -208,7 +196,7 @@ sv.cor.tests <- expand.grid(SV=colnames(svmat),
            FDR=p.adjust(PValue, method="BH")) %>%
     select(-mod, -aov)
 sv.cor.tests %>% arrange(PValue)
-ggduo.dataXY(sample.table[c("cell_type", "time_point", "donor_id", "totals")], svmat,
+ggduo_dataXY(sample.table[c("cell_type", "time_point", "donor_id", "totals")], svmat,
              extraData=sample.table["group"],
              types=list(comboVertical="dot_no_facet"),
              mapping=aes(color=group, shape=donor_id))
@@ -267,7 +255,7 @@ window.results.tables <- bplapply(alltests, function(ct) {
 p <- bplapply(names(window.results.tables), function(testname) {
     pvals <- window.results.tables[[testname]]$PValue
     pi0 <- pi0est(pvals)$pi0
-    p <- plotpvals(pvals, ptn = pi0) +
+    p <- plot_pval_hist(pvals, ptn = pi0) +
         labs(title=glue("P-value histogram for {testname}"),
              subtitle=glue("Est. Non-Null Prop.: {(format((1 - pi0) * 100, digits=3))}%"))
 })
@@ -294,7 +282,7 @@ We now visualize the p-value histogram for each test. Ideally, each p-value hist
 p <- bplapply(names(peak.results.tables), function(testname) {
     pvals <- peak.results.tables[[testname]]$PValue
     pi0 <- pi0est(pvals)$pi0
-    p <- plotpvals(pvals, ptn = pi0) +
+    p <- plot_pval_hist(pvals, ptn = pi0) +
         labs(title=glue("P-value histogram for {testname}"),
              subtitle=glue("Est. Non-Null Prop.: {(format((1 - pi0) * 100, digits=3))}%"))
 })

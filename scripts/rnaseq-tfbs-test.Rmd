@@ -49,15 +49,12 @@ library(toOrdinal)
 library(qvalue)
 library(codingMatrices)
 library(rex)
+library(rctutils)
 
-library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
-registerDoParallel(cores=ncores)
 library(BiocParallel)
-BiocParallel:::.registry_init() # Workaround for https://github.com/Bioconductor/BiocParallel/issues/65
-register(DoparParam())
-
-source(here("scripts/utilities.R"))
+library(future)
+options(future.globals.maxSize=4 * 1024^3)
+use_futures("multicore")
 ```
 
 We also set the random seed for reproducibility:
@@ -71,7 +68,7 @@ set.seed(1986)
 We begin by loading the saved data from the RNA-seq differential expression tests. We will need these fitted models to run the gene set tests.
 
 ```{r load_diffexp_results}
-diffexp <- load.in.new.env(here('saved_data', 'RNA-seq', glue_data(params, '{quant_method}_{genome}_{transcriptome}-diffexp.rda')))
+diffexp <- load_in_new_env(here('saved_data', 'RNA-seq', glue_data(params, '{quant_method}_{genome}_{transcriptome}-diffexp.rda')))
 design <- diffexp$design
 alltests <- diffexp$alltests
 elist.cb <- diffexp$elist.cb

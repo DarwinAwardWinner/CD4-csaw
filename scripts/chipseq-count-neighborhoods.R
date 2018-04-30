@@ -142,12 +142,10 @@ suppressPackageStartupMessages({
     print_var_vector(cmdopts)
 
     if (cmdopts$threads > 1) {
-        use_multicore_futures()
+        use_futures("multicore", workers = cmdopts$threads, quiet = TRUE)
     } else {
-        registerDoSEQ()
-        register(SerialParam())
+        use_futures("sequential", quiet = TRUE)
     }
-
     tsmsg(glue("Using {cmdopts$threads} cores."))
 
     tsmsg(glue("Assuming a fragment size of {format_bp(cmdopts$read_extension)} for unpaired reads."))

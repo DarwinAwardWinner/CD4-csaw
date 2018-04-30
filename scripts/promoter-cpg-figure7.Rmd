@@ -54,26 +54,14 @@ library(broom)
 library(ks)
 library(RColorBrewer)
 library(here)
+library(rctutils)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
 
-library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
-options(mc.cores=ncores)
-registerDoParallel(cores=ncores)
 library(BiocParallel)
-register(DoparParam())
-
-options(future.globals.maxSize=4 * 1024^3)
 library(future)
-plan(multicore)
-
-source(here("scripts/utilities.R"))
-
-# Required in order to use DGEList objects with future
-length.DGEList <- function(x) {
-    length(unclass(x))
-}
+options(future.globals.maxSize=4 * 1024^3)
+use_futures("multicore")
 ```
 
 # Data Loading and Preprocessing
@@ -81,13 +69,13 @@ length.DGEList <- function(x) {
 First we load the data files that were saved at the end of the promoter differential modification analysis and the RNA-seq differential expression analysis, which contain all the results and intermediate values from those analyses.
 
 ```{r load_diffmod_data}
-h3k4me2_promoter_results <- load.in.new.env(
+h3k4me2_promoter_results <- load_in_new_env(
     here("saved_data", "ChIP-seq",
          glue_data(params, '{genome}_{transcriptome}_H3K4me2-1kbp-promoter-diffmod.rda')))
-h3k4me3_promoter_results <- load.in.new.env(
+h3k4me3_promoter_results <- load_in_new_env(
     here("saved_data", "ChIP-seq",
          glue_data(params, '{genome}_{transcriptome}_H3K4me3-1kbp-promoter-diffmod.rda')))
-rnaseq_results <- load.in.new.env(
+rnaseq_results <- load_in_new_env(
     here("saved_data", "RNA-seq",
          glue_data(params, '{rna_dataset}_{transcriptome}-diffexp.rda')))
 ```
@@ -176,7 +164,7 @@ f7b <- within(list(), {
         xlab("Gene group") + ylab("Fraction of gene promoters containing CpG islands")
 })
 print(f7b$cpgi.stats)
-print(f7b$p)
+ggprint(f7b$p)
 ```
 
 ## Fig. 7c&d
@@ -214,8 +202,8 @@ f7cd <- within(list(), {
                    split(logFC, ifelse(CpGi, "CpGi", "NoCpGi")) %$%
                    var.test(NoCpGi, CpGi))
 })
-print(f7cd$p)
 print(f7cd$vartests)
+ggprint(f7cd$p)
 ```
 
 ## Fig. 7e
@@ -235,7 +223,8 @@ f7e <- within(list(), {
         aes(x=Test, y=logFC) + geom_boxplot(notch = TRUE) + 
         facet_wrap(~CpGi) + 
         ggtitle("RNA-seq logFC distributions for genes with H3K4me2 and H3K4me3 down at 5 days\nafter CD4 T-cell activation")
-    print(p)
-    lm(logFC ~ 0 + Test:CpGi, rnaseq.table) %>% summary %>% print
+    mod <- lm(logFC ~ 0 + Test:CpGi, rnaseq.table)
 })
+print(f7e$p)
+print(f7e$mod)
 ```

@@ -128,8 +128,12 @@ identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL"
     cmdopts$help <- NULL
 
     cmdopts$threads %<>% round %>% max(1)
-    tsmsg("Running with ", cmdopts$threads, " threads")
-    use_multicore_futures(cmdopts$threads)
+    if (cmdopts$threads > 1) {
+        use_futures("multicore", workers = cmdopts$threads, quiet = TRUE)
+    } else {
+        use_futures("sequential", quiet = TRUE)
+    }
+    tsmsg(glue("Using {cmdopts$threads} cores."))
 
     tsmsg("Args:")
     print_var_vector(cmdopts)

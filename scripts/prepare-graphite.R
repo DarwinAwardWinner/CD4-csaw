@@ -8,7 +8,7 @@ library(glue)
 library(BiocParallel)
 library(rctutils)
 
-use_multicore_futures()
+use_futures("multicore")
 
 target.species <- "hsapiens"
 dbnames <- pathwayDatabases() %>%

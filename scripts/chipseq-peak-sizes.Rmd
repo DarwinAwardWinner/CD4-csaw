@@ -30,21 +30,14 @@ library(ggplot2)
 library(assertthat)
 library(RColorBrewer)
 library(modeest)
+library(rctutils)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
 
-library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
-options(mc.cores=ncores)
-registerDoParallel(cores=ncores)
 library(BiocParallel)
-register(DoparParam())
-
-options(future.globals.maxSize=4 * 1024^3)
 library(future)
-plan(multicore)
-
-source(here("scripts/utilities.R"))
+options(future.globals.maxSize=4 * 1024^3)
+use_futures("multicore")
 ```
 
 # Data Loading and Preprocessing
@@ -56,9 +49,9 @@ histone.marks <- c("H3K4me3", "H3K4me2", "H3K27me3") %>% setNames(., .)
 peakfiles <- here(
     "peak_calls", "epic_hg38.analysisSet",
     str_c(histone.marks, "_condition.ALL_donor.ALL"),
-    "peaks_noBL_IDR.narrowPeak") %>% setNames(histone.marks)
+    "peaks_noBL_IDR.narrowPeak") %>% set_names(histone.marks)
 assert_that(all(file.exists(peakfiles)))
-allpeaks <- bplapply(peakfiles, . %>% read.narrowPeak %>% as("GRanges") %>%
+allpeaks <- bplapply(peakfiles, . %>% read_narrowPeak %>% as("GRanges") %>%
         assign_into(seqinfo(.), seqinfo(BSgenome.Hsapiens.UCSC.hg38)[seqlevels(.)])) %>%
         setNames(.$name)
 ```

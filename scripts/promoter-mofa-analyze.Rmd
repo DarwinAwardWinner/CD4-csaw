@@ -57,27 +57,14 @@ library(broom)
 library(ks)
 library(RColorBrewer)
 library(here)
+library(rctutils)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
 
-library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
-options(mc.cores=ncores)
-registerDoParallel(cores=ncores)
 library(BiocParallel)
-register(SerialParam())
-register(DoparParam())
-
-options(future.globals.maxSize=4 * 1024^3)
 library(future)
-plan(multicore)
-
-source(here("scripts/utilities.R"))
-
-# Required in order to use DGEList objects with future
-length.DGEList <- function(x) {
-    length(unclass(x))
-}
+options(future.globals.maxSize=4 * 1024^3)
+use_futures("multicore")
 ```
 
 # Data loading and preprocessing
@@ -114,7 +101,7 @@ overlap_matrices <- lapply(names(overlap_sets), function(view) {
     lapply(overlap_sets[[view]], `%in%`, x=mofa_features) %>%
         do.call(what=rbind) %>% add(0) %>%
         set_colnames(mofa_features)
-}) %>% setNames(names(overlap_sets))
+}) %>% set_names(names(overlap_sets))
 ```
 
 # Analysis

@@ -42,15 +42,14 @@ library(ggfortify)
 library(broom)
 library(codingMatrices)
 library(variancePartition)
+library(rctutils)
 
-library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
-registerDoParallel(cores=ncores)
+library(BSgenome.Hsapiens.UCSC.hg38)
+
 library(BiocParallel)
-BiocParallel:::.registry_init() # Workaround for https://github.com/Bioconductor/BiocParallel/issues/65
-register(DoparParam())
-
-source(here("scripts/utilities.R"))
+library(future)
+options(future.globals.maxSize=4 * 1024^3)
+use_futures("multicore")
 ```
 
 We also set the output directory for all plot files.
@@ -80,7 +79,7 @@ We extract the sample metadata from the SummarizedExperiment. We also tell R to 
 
 ```{r extract_samplemeta}
 sample.table <- colData(sexp) %>%
-    as.data.frame %>% autoFactorize %>%
+    as.data.frame %>% auto_factorize_columns %>%
     rename(batch=technical_batch) %>%
     mutate(time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
            group=interaction(cell_type, time_point, sep=""))
@@ -288,7 +287,7 @@ covars <- sample.table %>% dplyr::select(group, time_point, donor_id, batch, cel
 qcmetrics <- data.frame(Weight=elist.w$sample.weights,
                         GroupBCV=sapply(dbg, `[[`, "common.dispersion")[as.character(covars$group)])
 
-p <- ggduo.dataXY(covars, qcmetrics %>% transmute(Log2Weight=log2(Weight), GroupBCV)) +
+p <- ggduo_dataXY(covars, qcmetrics %>% transmute(Log2Weight=log2(Weight), GroupBCV)) +
   ggtitle("Weights and dispersions by group") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5))
 ggprint(p)

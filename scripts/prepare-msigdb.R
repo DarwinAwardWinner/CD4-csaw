@@ -7,7 +7,7 @@ library(tidyverse)
 library(assertthat)
 library(rctutils)
 
-use_multicore_futures()
+use_futures("multicore")
 
 split.by.category.and.subcategory <- function(x, cat, subcat) {
     cat <- droplevels(as.factor(cat))

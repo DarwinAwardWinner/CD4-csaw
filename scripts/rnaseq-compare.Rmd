@@ -36,14 +36,14 @@ library(reshape2)
 library(assertthat)
 library(ggfortify)
 library(broom)
+library(rctutils)
 
-library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
-registerDoParallel(cores=ncores)
+library(BSgenome.Hsapiens.UCSC.hg38)
+
 library(BiocParallel)
-register(DoparParam())
-
-source(here("scripts/utilities.R"))
+library(future)
+options(future.globals.maxSize=4 * 1024^3)
+use_futures("multicore")
 ```
 
 # Data Loading and Preprocessing
@@ -78,7 +78,7 @@ We extract the sample metadata from the SummarizedExperiment (we only do this on
 
 ```{r extract_samplemeta}
 sample.table <- colData(sexps[[1]]) %>%
-    as.data.frame %>% autoFactorize %>%
+    as.data.frame %>% auto_factorize_columns %>%
     rename(batch=technical_batch) %>%
     mutate(time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
            group=interaction(cell_type, time_point, sep=""))

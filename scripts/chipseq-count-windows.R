@@ -103,11 +103,11 @@ invisible(get_options(commandArgs(TRUE)))
     print_var_vector(cmdopts)
 
     if (cmdopts$threads > 1) {
-        use_multicore_futures()
+        use_futures("multicore", workers = cmdopts$threads, quiet = TRUE)
     } else {
-        registerDoSEQ()
-        register(SerialParam())
+        use_futures("sequential", quiet = TRUE)
     }
+    tsmsg(glue("Using {cmdopts$threads} cores."))
 
     if (cmdopts$window_width == cmdopts$window_spacing) {
         tsmsg("Using a window size and spacing of ", format_bp(cmdopts$window_width), ".")

@@ -56,26 +56,14 @@ library(broom)
 library(ks)
 library(RColorBrewer)
 library(here)
+library(rctutils)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
 
-library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
-options(mc.cores=ncores)
-registerDoParallel(cores=ncores)
 library(BiocParallel)
-register(DoparParam())
-
-options(future.globals.maxSize=4 * 1024^3)
 library(future)
-plan(multicore)
-
-source(here("scripts/utilities.R"))
-
-# Required in order to use DGEList objects with future
-length.DGEList <- function(x) {
-    length(unclass(x))
-}
+options(future.globals.maxSize=4 * 1024^3)
+use_futures("multicore")
 ```
 
 We also set the random seed for reproducibility:
@@ -89,10 +77,10 @@ set.seed(1986)
 First we load the data files that were saved at the end of the promoter differential modification analysis and the RNA-seq differential expression analysis, which contain all the results and intermediate values from those analyses.
 
 ```{r load_diffmod_data}
-chipseq_results <- load.in.new.env(
+chipseq_results <- load_in_new_env(
     here("saved_data", "ChIP-seq",
          glue_data(params, '{genome}_{transcriptome}_{histone_mark}-{promoter_radius}-promoter-diffmod.rda')))
-rnaseq_results <- load.in.new.env(
+rnaseq_results <- load_in_new_env(
     here("saved_data", "RNA-seq",
          glue_data(params, '{rna_dataset}_{transcriptome}-diffexp.rda')))
 ```

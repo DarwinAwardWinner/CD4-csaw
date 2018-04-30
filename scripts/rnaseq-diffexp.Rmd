@@ -49,15 +49,14 @@ library(toOrdinal)
 library(qvalue)
 library(codingMatrices)
 library(rex)
+library(rctutils)
 
-library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
-registerDoParallel(cores=ncores)
+library(BSgenome.Hsapiens.UCSC.hg38)
+
 library(BiocParallel)
-BiocParallel:::.registry_init() # Workaround for https://github.com/Bioconductor/BiocParallel/issues/65
-register(DoparParam())
-
-source(here("scripts/utilities.R"))
+library(future)
+options(future.globals.maxSize=4 * 1024^3)
+use_futures("multicore")
 ```
 
 We also set the random seed for reproducibility:
@@ -80,7 +79,7 @@ We extract the sample metadata from the SummarizedExperiment. We also tell R to 
 
 ```{r extract_samplemeta}
 sample.table <- colData(sexp) %>%
-    as.data.frame %>% autoFactorize %>%
+    as.data.frame %>% auto_factorize_columns %>%
     rename(batch=technical_batch) %>%
     mutate(time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
            group=interaction(cell_type, time_point, sep=""))
@@ -210,10 +209,10 @@ To make sure that the batch correction worked, we make MDS plots before and afte
 ```{r plot_mds}
 dmat.nc <- suppressPlot(plotMDS(elist.nc)$distance.matrix) %>% as.dist
 mds.nc<- cmdscale(dmat.nc, k=attr(dmat.nc, "Size") - 1, eig=TRUE)
-mds.nc$points %<>% add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
+mds.nc$points %<>% add_numbered_colnames("Dim") %>% data.frame(sample.table, .)
 dmat.cb <- suppressPlot(plotMDS(elist.cb)$distance.matrix) %>% as.dist
 mds.cb <- cmdscale(dmat.cb, k=attr(dmat.cb, "Size") - 1, eig=TRUE)
-mds.cb$points %<>% add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
+mds.cb$points %<>% add_numbered_colnames("Dim") %>% data.frame(sample.table, .)
 
 mdsggbase <- function(df) {
     ggplot(df) +
@@ -354,7 +353,7 @@ To have confidence in the significance measures returned, we should verify that 
 p <- bplapply(names(results.tables), function(testname) {
     pvals <- results.tables[[testname]]$PValue
     pi0 <- pi0est(pvals)$pi0
-    p <- plotpvals(pvals, ptn = pi0) +
+    p <- plot_pval_hist(pvals, ptn = pi0) +
         labs(title=sprintf("P-value histogram for %s", testname),
              subtitle=sprintf("Est. Non-Null Prop.: %g%%", (1 - pi0) * 100))
 })
