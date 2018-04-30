@@ -147,7 +147,7 @@ camera.results <- lapply(all_collections, function(coll) {
 We save one xlsx file for each Gene set collection, with a sheet for each contrast in each file. In each sheet, we keep all gene sets with FDR <= 0.1, or the top 100 gene sets, whichever is more.
 
 ```{r save_results}
-dir.create(here("results/ChIP-seq"), recursive = TRUE, showWarnings = FALSE)
+dir.create(here("results", "ChIP-seq"), recursive = TRUE, showWarnings = FALSE)
 for (i in names(camera.results)) {
     sig.results <- camera.results[[i]] %>%
         lapply(. %>% filter(FDR <= 0.1 | seq_along(FDR) <= 100))

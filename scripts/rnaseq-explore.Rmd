@@ -55,7 +55,7 @@ use_futures("multicore")
 We also set the output directory for all plot files.
 
 ```{r set_plotdir}
-plotdir <- here("plots/RNA-seq", params$dataset)
+plotdir <- here("plots", "RNA-seq", params$dataset)
 dir.create(plotdir, recursive = TRUE, showWarnings = FALSE)
 ```
 

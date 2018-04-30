@@ -7,10 +7,10 @@ library(ggplot2)
 library(ggforce)
 library(here)
 
-ccf <- readRDS(here("saved_data/chipseq-ccf.RDS"))
-ccf.nbl <- readRDS(here("saved_data/chipseq-ccf-noBL.RDS"))
+ccf <- readRDS(here("saved_data", "chipseq-ccf.RDS"))
+ccf.nbl <- readRDS(here("saved_data", "chipseq-ccf-noBL.RDS"))
 
-sample.table <- readRDS(here("saved_data/samplemeta-ChIPSeq.RDS")) %>%
+sample.table <- readRDS(here("saved_data", "samplemeta-ChIPSeq.RDS")) %>%
     ## Ensure that days_after_activation is a factor and can't be
     ## interpreted as a numeric
     mutate(days_after_activation=days_after_activation %>%
@@ -63,16 +63,16 @@ refline.table <- data.frame(
         loess_span0.1=baseplot +
             geom_smooth(fill=NA, method="loess", span=0.1, n=500, size=0.25, linetype="solid") +
             ggtitle("Cross-Correlation Function, Loess-Smoothed (span = 0.1)"))
-    pdf("plots/csaw/CCF-plots.pdf", width=12, height=8)
+    pdf(here("plots", "csaw", "CCF-plots.pdf"), width=12, height=8)
     print(p)
     dev.off()
-    pdf("plots/csaw/CCF-plots-relative.pdf", width=12, height=8)
+    pdf(here("plots", "csaw", "CCF-plots-relative.pdf"), width=12, height=8)
     print(lapply(p, . %>% add(aes(y=RelCCF))))
     dev.off()
-    pdf("plots/csaw/CCF-plots-noBL.pdf", width=12, height=8)
+    pdf(here("plots", "csaw", "CCF-plots-noBL.pdf"), width=12, height=8)
     print(lapply(p, . %>% add(aes(y=CCF.noBL))))
     dev.off()
-    pdf("plots/csaw/CCF-plots-relative-noBL.pdf", width=12, height=8)
+    pdf(here("plots", "csaw", "CCF-plots-relative-noBL.pdf"), width=12, height=8)
     print(lapply(p, . %>% add(aes(y=RelCCF.noBL))))
     dev.off()
 }
@@ -117,6 +117,6 @@ p <- ggplot(ccfmaxtable) +
     ylab("Delay of Maximum Cross-Correlation (No Blacklist)") +
     ggtitle("Delay of Maximum Cross-Correlation With and Without Blacklist")
 
-pdf(here("plots/csaw/CCF-max-plot.pdf"), width=10, height=10)
+pdf(here("plots", "csaw", "CCF-max-plot.pdf"), width=10, height=10)
 print(p)
 dev.off()

@@ -56,8 +56,6 @@ reproduce the full analysis.
 
 ## TODO Code cleanup
 
-* Standardize use of `cairo_pdf_onefile`
-* Fix up here() calls to avoid slashes
 * Remove unnecessary library() calls
 * Put spaces around equals signs
 

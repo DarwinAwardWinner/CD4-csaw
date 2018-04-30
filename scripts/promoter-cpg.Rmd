@@ -88,7 +88,7 @@ rnaseq_results <- load_in_new_env(
 Next, we load the list of CpG islands.
 
 ```{r load_cpgi}
-cpgi <- readRDS(here("saved_data/UCSC_hg38_cpgIslandExtUnmasked.RDS"))
+cpgi <- readRDS(here("saved_data", "UCSC_hg38_cpgIslandExtUnmasked.RDS"))
 ```
 
 # Fraction of changing promoters with CpGi overlaps

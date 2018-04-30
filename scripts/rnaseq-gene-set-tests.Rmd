@@ -50,17 +50,17 @@ library(codingMatrices)
 library(rex)
 library(graphite)
 library(GSEABase)
+library(rctutils)
 
-library(doParallel)
-ncores <- getOption("mc.cores", default=parallel::detectCores(logical = FALSE))
-registerDoParallel(cores=ncores)
+library(BSgenome.Hsapiens.UCSC.hg38)
+
 library(BiocParallel)
-BiocParallel:::.registry_init() # Workaround for https://github.com/Bioconductor/BiocParallel/issues/65
-register(DoparParam())
+library(future)
+options(future.globals.maxSize=4 * 1024^3)
+use_futures("multicore")
+
 # Tell graphite not to use its own parallel logic
 options(Ncpus=1)
-
-source(here("scripts/utilities.R"))
 ```
 
 We also set the random seed for reproducibility:
