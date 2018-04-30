@@ -1,6 +1,5 @@
 #!/usr/bin/env Rscript
 
-library(here)
 library(GEOquery)
 library(SRAdb)
 library(stringr)

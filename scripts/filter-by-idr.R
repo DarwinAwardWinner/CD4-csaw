@@ -51,12 +51,7 @@ invisible(get_options(commandArgs(TRUE)))
 
 library(magrittr)
 library(dplyr)
-library(ggplot2)
-library(scales)
-library(ks)
-library(reshape2)
 library(stringr)
-library(stringi)
 library(rex)
 library(Biobase)
 

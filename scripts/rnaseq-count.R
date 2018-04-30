@@ -86,17 +86,10 @@ epilogue = "")
 invisible(get_options(commandArgs(TRUE)))
 
 library(assertthat)
-library(dplyr)
 library(magrittr)
-library(openxlsx)
 library(stringr)
 
-library(annotate)
-library(GenomicRanges)
-library(Rsubread)
 library(SummarizedExperiment)
-library(withr)
-library(org.Hs.eg.db)
 
 ## Guess type of ID (currenly unused)
 identify.ids <- function(ids, db="org.Hs.eg.db", idtypes=c("ENTREZID", "ENSEMBL", "UNIGENE"), threshold=0.5) {

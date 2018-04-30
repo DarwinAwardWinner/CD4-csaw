@@ -5,21 +5,15 @@ suppressMessages({
     library(optparse)
     library(stringr)
     library(glue)
-    library(rex)
-    library(sitools)
     library(magrittr)
     library(GenomicRanges)
-    library(rtracklayer)
     library(SummarizedExperiment)
     library(dplyr)
     library(csaw)
-    library(Matrix)
     library(assertthat)
     library(rctutils)
 
     library(future)
-    library(doParallel)
-    library(BiocParallel)
 })
 
 get_options <- function(opts) {

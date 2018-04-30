@@ -1,6 +1,5 @@
 suppressMessages({
     library(rtracklayer)
-    library(stringr)
     library(assertthat)
     library(BSgenome.Hsapiens.UCSC.hg38)
 })

@@ -28,31 +28,13 @@ First we load the necessary libraries, along with a set of utility functions.
 
 ```{r load_packages, message=FALSE, cache=FALSE}
 library(here)
-library(stringr)
 library(glue)
 library(magrittr)
-library(openxlsx)
-library(SummarizedExperiment)
 library(dplyr)
-library(edgeR)
-library(limma)
-library(csaw)
-library(sva)
 library(ggplot2)
-library(scales)
-library(GGally)
-library(ggalt)
-library(ggthemes)
-library(splines)
-library(reshape2)
-library(assertthat)
-library(ggfortify)
 library(broom)
-library(ks)
-library(RColorBrewer)
 library(rctutils)
 
-library(BSgenome.Hsapiens.UCSC.hg38)
 ```
 
 We also set the random seed for reproducibility:

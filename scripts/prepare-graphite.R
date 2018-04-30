@@ -1,8 +1,5 @@
 #!/usr/bin/Rscript
-library(stringr)
 library(graphite)
-library(tidyverse)
-library(rlang)
 library(here)
 library(glue)
 library(BiocParallel)

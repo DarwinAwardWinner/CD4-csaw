@@ -6,15 +6,12 @@ tsmsg <- function(...) {
 
 library(here)
 library(stringr)
-library(glue)
 library(magrittr)
-library(GenomicRanges)
 library(rtracklayer)
 library(dplyr)
 library(reshape2)
 library(purrr)
 library(csaw)
-library(Matrix)
 library(assertthat)
 library(rctutils)
 

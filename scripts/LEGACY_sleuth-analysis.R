@@ -117,13 +117,9 @@ library(magrittr)
 library(openxlsx)
 library(stringr)
 
-library(annotate)
-library(GenomicRanges)
-library(Rsubread)
 library(sleuth)
 library(SummarizedExperiment)
 
-library(org.Hs.eg.db)
 
 library(sleuth)
 library(limma)
@@ -290,7 +286,6 @@ get.txdb <- function(txdbname) {
         pos <- str_c("package:", txdbname)
         get(txdbname, pos)
     }, error=function(...) {
-        library(GenomicFeatures)
         loadDb(txdbname)
     })
 }

@@ -4,8 +4,6 @@ suppressMessages({
     library(assertthat)
     library(dplyr)
     library(BSgenome.Hsapiens.UCSC.hg19)
-    library(BSgenome.Hsapiens.UCSC.hg38)
-    library(here)
 })
 
 {

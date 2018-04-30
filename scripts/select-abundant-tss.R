@@ -4,7 +4,6 @@ library(getopt)
 library(optparse)
 library(assertthat)
 library(rex)
-library(sitools)
 
 ## Deparse and then concatenate into a single string
 deparse_onestring <- function(...) {
@@ -93,8 +92,6 @@ library(magrittr)
 library(stringr)
 library(glue)
 library(future)
-library(GenomicRanges)
-library(edgeR)
 library(SummarizedExperiment)
 
 tsmsg <- function(...) {
@@ -190,7 +187,6 @@ get.txdb <- function(txdbname) {
         pos <- str_c("package:", txdbname)
         get(txdbname, pos)
     }, error=function(...) {
-        library(GenomicFeatures)
         loadDb(txdbname)
     })
 }

@@ -1,13 +1,9 @@
 #!/usr/bin/env Rscript
 
 suppressPackageStartupMessages(suppressMessages({
-    library(here)
     library(stringr)
     library(glue)
-    library(GEOquery)
     library(SRAdb)
-    library(magrittr)
-    library(dplyr)
     library(assertthat)
     library(rctutils)
 

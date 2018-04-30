@@ -5,9 +5,7 @@ library(glue)
 library(optparse)
 library(stringr)
 library(assertthat)
-library(magrittr)
 library(SummarizedExperiment)
-library(dplyr)
 library(rctutils)
 
 get_options <- function(opts) {

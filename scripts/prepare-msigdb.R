@@ -1,9 +1,6 @@
 library(GSEABase)
 library(BiocParallel)
-library(org.Hs.eg.db)
-library(rtracklayer)
 library(glue)
-library(tidyverse)
 library(assertthat)
 library(rctutils)
 
