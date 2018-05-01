@@ -74,7 +74,7 @@ We load the TFBS overlap data for all peaks. For RNA-seq genes, we say that a ge
 ```{r load_tfbs_overlap}
 overlap_sets <- readRDS(here("saved_data", glue_data(params, "promoter-tfbs-overlap_{genome}_{transcriptome}.RDS")))
 overlap_sets$RNA <- bplapply(names(overlap_sets[[1]]), function(tf) {
-    lapply(overlap_sets, . %>% .[[tf]] %>% str_replace("-P[0-9]+$", "")) %>% 
+    lapply(overlap_sets, . %>% .[[tf]] %>% str_replace("-P[0-9]+$", "")) %>%
         unlist %>% sort %>% unique
 }) %>% set_names(names(overlap_sets[[1]]))
 ```
@@ -125,7 +125,7 @@ We save one xlsx file for each Gene set collection, with a sheet for each contra
 ```{r save_results}
 dir.create(here("results", "RNA-seq"), recursive = TRUE, showWarnings = FALSE)
 for (i in names(camera.results)) {
-    sig.results <- camera.results[[i]] %>% 
+    sig.results <- camera.results[[i]] %>%
         lapply(. %>% filter(FDR <= 0.1 | seq_along(FDR) <= 100))
     write.xlsx(sig.results, here("results", "RNA-seq", glue("CAMERA-results-{i}.xlsx")))
 }

@@ -11,12 +11,12 @@ params:
     transcriptome:
         value: ensembl.85
     promoter_datasets:
-        value: !r c(H3K4me2 = "1kbp-radius_147bp-reads_H3K4me2", 
-                    H3K4me3 = "1kbp-radius_147bp-reads_H3K4me3", 
+        value: !r c(H3K4me2 = "1kbp-radius_147bp-reads_H3K4me2",
+                    H3K4me3 = "1kbp-radius_147bp-reads_H3K4me3",
                     H3K27me3 = "2.5kbp-radius_147bp-reads_H3K27me3")
     peak_datasets:
-        value: !r c(H3K4me2 = "epic_H3K4me2_147bp-reads", 
-                    H3K4me3 = "epic_H3K4me3_147bp-reads", 
+        value: !r c(H3K4me2 = "epic_H3K4me2_147bp-reads",
+                    H3K4me3 = "epic_H3K4me3_147bp-reads",
                     H3K27me3 = "epic_H3K27me3_147bp-reads")
 ---
 
@@ -58,12 +58,12 @@ First we load all the data sets that we will be using.
 promoter_sexps <-
     bplapply(here("saved_data",
                   glue_data(params, "promoter-counts_{genome}_{transcriptome}_{promoter_datasets}.RDS")),
-             readRDS) %>% 
+             readRDS) %>%
         setNames(names(params$promoter_datasets))
 peak_sexps <-
     bplapply(here("saved_data",
                   glue_data(params, "peak-counts_{genome}_{peak_datasets}.RDS")),
-             readRDS) %>% 
+             readRDS) %>%
         setNames(names(params$promoter_datasets))
 ```
 

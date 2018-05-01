@@ -43,7 +43,7 @@ We also set the random seed for reproducibility:
 set.seed(1986)
 ```
 
-# Data Loading 
+# Data Loading
 
 We start by loading the already-completed differential modification analysis data.
 
@@ -68,7 +68,7 @@ num.sig.table <-
                FDR10=colSums(all.padj <= 0.1),
                FDR20=colSums(all.padj <= 0.2))
 print(num.sig.table)
-num.sig.table %>% gather(Measure, Count, -Contrast) %>% ggplot() + 
+num.sig.table %>% gather(Measure, Count, -Contrast) %>% ggplot() +
     aes(x=Contrast, y=Count, color=Measure, group=Measure) + geom_point() + geom_line()
 ```
 

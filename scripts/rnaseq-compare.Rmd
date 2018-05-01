@@ -127,7 +127,7 @@ dges <- bplapply(sexps, function(sexp) {
 })
 ```
 
-Finally, we compute the normalized logCPM matrix for each dataset, and convert it into a tidy format. We also compute the normalized logCPM without taking into account the offsets derived from gene length normalization. 
+Finally, we compute the normalized logCPM matrix for each dataset, and convert it into a tidy format. We also compute the normalized logCPM without taking into account the offsets derived from gene length normalization.
 
 ```{r prepare_logCPM, message=FALSE}
 logcpm.matrices <- bplapply(dges, cpmWithOffset, log=TRUE)
@@ -149,15 +149,15 @@ logcpm.nooffset <- bplapply(dges, function(dge) {
         select(-GeneID)
 })
 ```
-    
+
 # Comparative Analysis
-    
-Now we can begin comparing the different methods of quantification. First, we will compare Ensembl vs UCSC annotations for each quantification method. 
-    
+
+Now we can begin comparing the different methods of quantification. First, we will compare Ensembl vs UCSC annotations for each quantification method.
+
 ## Ensembl vs UCSC
-    
+
 First, we format the logCPM tables into tidy format, and merge the tables of both datasets (Ensembl and UCSC knownGene) for each alignment/quantification program. The merging is performed only for genes with a one-to-one relationship between Ensembl and Entrez gene IDs.
-    
+
 ```{r compute_ensembl_vs_ucsc, message=FALSE}
 logcpm.tables <- datasetmeta %>%
     arrange(transcriptome) %>%
@@ -168,7 +168,7 @@ logcpm.tables <- datasetmeta %>%
         dsetB <- df$dataset[2]
         txA <- df$transcriptome[1]
         txB <- df$transcriptome[2]
-        logcpm_A <- logcpm[[dsetA]] %>% 
+        logcpm_A <- logcpm[[dsetA]] %>%
             rename(logCPM_A=logCPM) %>%
             filter(lengths(ENTREZID) == 1, lengths(ENSEMBL) == 1) %>%
             mutate(ENTREZID=unlist(ENTREZID),
@@ -179,7 +179,7 @@ logcpm.tables <- datasetmeta %>%
             mutate(ENTREZID=unlist(ENTREZID),
                    ENSEMBL=unlist(ENSEMBL))
         logcpm_merged <- inner_join(logcpm_A, logcpm_B)
-        data_frame(program=df$program[1], 
+        data_frame(program=df$program[1],
                    genome=df$genome[1],
                    datasetA=dsetA, datasetB=dsetB,
                    transcriptomeA=txA, transcriptomeB=txB,
@@ -203,12 +203,12 @@ logcpm.plots <- logcpm.tables %>% group_by(program) %>% do({
     ylabel <- str_c("Gene logCPM in ", df$datasetB)
     ptitle <- sprintf("logCPM, %s vs %s for %s on %s genome", df$transcriptomeA, df$transcriptomeB, df$program, df$genome)
     tab <- df$logcpm[[1]] %>% filter(logCPM_A != min(logCPM_A) | logCPM_B != min(logCPM_B))
-    p <- ggplot(tab) + 
+    p <- ggplot(tab) +
         aes(x=logCPM_A, y=logCPM_B) +
         geom_point(size=0.2, alpha=0.2) +
         geom_abline(slope=1, intercept=0, color="red", linetype="dashed") +
         coord_fixed(xlim=limits, ylim=limits) +
-        labs(title=ptitle, 
+        labs(title=ptitle,
              subtitle="Genes matched by unique Entrez & Ensembl IDs; identity line (red) plotted red for reference",
              x=xlabel, y=ylabel)
     cbind(.[c("program", "genome", "datasetA", "datasetB", "transcriptomeA", "transcriptomeB")],
@@ -219,17 +219,17 @@ ggprint(logcpm.plots$plot)
 
 Overall concordance is very high for all methods. The alignment-based methods (STAR and HISAT2) have slightly higher correlation, which is matched by the apparently tighter spread of points about the identity line in the plots. This is expected since these methods discard ambiguous reads, and are therefore biased toward unambiguously-defined genes, which are the same genes more likely to be annotated consistently between Entrez and Ensembl.
 
-Interestingly, the correlation for Shoal is lower than for Salmon, despite the fact that the Shoal plot looks like it has a tighter spread and the fact that Shoal is meant to regularize Salmon's quantification results, which would be expected to increase the correlation. Perhaps Shoal decreases the overall correlation by spreading many points away from the bottom left corner, where previously all the genes with zero counts were exactly overlaid on a single point. (This kind of effect is why pearson correlations on gene abundances is rarely informative.) 
+Interestingly, the correlation for Shoal is lower than for Salmon, despite the fact that the Shoal plot looks like it has a tighter spread and the fact that Shoal is meant to regularize Salmon's quantification results, which would be expected to increase the correlation. Perhaps Shoal decreases the overall correlation by spreading many points away from the bottom left corner, where previously all the genes with zero counts were exactly overlaid on a single point. (This kind of effect is why pearson correlations on gene abundances is rarely informative.)
 
 ## STAR vs HISAT2
 
 The two count-based methods differ only in the aligner that was used, so any discrepancy between them represents a difference in which reads they could align unambiguously.
 
 ```{r plot_star_vs_hisat2, message=FALSE}
-logcpm_A <- logcpm$hisat2_grch38_snp_tran_ensembl.85 %>% 
+logcpm_A <- logcpm$hisat2_grch38_snp_tran_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
     rename(logCPM_A=logCPM)
-logcpm_B <- logcpm$star_hg38.analysisSet_ensembl.85 %>% 
+logcpm_B <- logcpm$star_hg38.analysisSet_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
     rename(logCPM_B=logCPM)
 logcpm.merged <- inner_join(logcpm_A, logcpm_B) %>%
@@ -240,7 +240,7 @@ p <- ggplot(logcpm.merged) +
     geom_point(size=0.2, alpha=0.2) +
     geom_abline(slope=1, intercept=0, color="red", linetype="dashed") +
     coord_fixed(xlim=limits, ylim=limits) +
-    labs(title="logCPM, STAR vs HISAT2", 
+    labs(title="logCPM, STAR vs HISAT2",
          subtitle="Identity line (red) plotted red for reference",
          x="logCPM by HISAT2", y="logCPM by STAR")
 ggprint(p)
@@ -251,15 +251,15 @@ We now compare Salmon, Shoal, and Kallisto with and without normalizing for gene
 
 ```{r plot_length_norm_effect, message=FALSE}
 logcpm.plots <- datasetmeta %>%
-    filter(transcriptome == "ensembl.85", program %in% c("salmon", "shoal", "kallisto")) %>% 
+    filter(transcriptome == "ensembl.85", program %in% c("salmon", "shoal", "kallisto")) %>%
     group_by(dataset, program) %>% do({
         assert_that(nrow(.) == 1)
         dset <- .$dataset
         program <- .$program
-        logcpm_A <- logcpm.nooffset[[dset]] %>% 
+        logcpm_A <- logcpm.nooffset[[dset]] %>%
             select(ENSEMBL, Sample, logCPM) %>%
             rename(logCPM_A=logCPM)
-        logcpm_B <- logcpm[[dset]] %>% 
+        logcpm_B <- logcpm[[dset]] %>%
             select(ENSEMBL, Sample, logCPM) %>%
             rename(logCPM_B=logCPM)
         logcpm.merged <- inner_join(logcpm_A, logcpm_B) %>%
@@ -270,7 +270,7 @@ logcpm.plots <- datasetmeta %>%
             geom_point(size=0.2, alpha=0.2) +
             geom_abline(slope=1, intercept=0, color="red", linetype="dashed") +
             coord_fixed(xlim=limits, ylim=limits) +
-            labs(title=sprintf("%s logCPM, length-normalized vs non-length-normalized", program), 
+            labs(title=sprintf("%s logCPM, length-normalized vs non-length-normalized", program),
                  subtitle="Identity line (red) plotted red for reference",
                  x="logCPM without gene length normalization", y="logCPM with gene length normalization")
         data_frame(plot=list(p))
@@ -283,10 +283,10 @@ ggprint(logcpm.plots$plot)
 We now compare STAR, a count-based method, to Salmon, an alignment-free method. We use the Salmon results with no gene length normalization for an apples-to-apples comparison.
 
 ```{r plot_star_vs_salmon, message=FALSE}
-logcpm_A <- logcpm$star_hg38.analysisSet_ensembl.85 %>% 
+logcpm_A <- logcpm$star_hg38.analysisSet_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
     rename(logCPM_A=logCPM)
-logcpm_B <- logcpm.nooffset$salmon_hg38.analysisSet_ensembl.85 %>% 
+logcpm_B <- logcpm.nooffset$salmon_hg38.analysisSet_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
     rename(logCPM_B=logCPM)
 logcpm.merged <- inner_join(logcpm_A, logcpm_B) %>%
@@ -297,7 +297,7 @@ p <- ggplot(logcpm.merged) +
         geom_point(size=0.2, alpha=0.2) +
         geom_abline(slope=1, intercept=0, color="red", linetype="dashed") +
         coord_fixed(xlim=limits, ylim=limits) +
-        labs(title="logCPM, Salmon vs STAR", 
+        labs(title="logCPM, Salmon vs STAR",
              subtitle="Identity line (red) plotted red for reference",
              x="logCPM by STAR", y="logCPM by Salmon")
 ggprint(p)
@@ -308,10 +308,10 @@ ggprint(p)
 The next comparison is between Salmon and Kallisto, two conceptually very similar pseudoalignment-based methods.
 
 ```{r plot_salmon_vs_kallisto, message=FALSE}
-logcpm_A <- logcpm$kallisto_hg38.analysisSet_ensembl.85 %>% 
+logcpm_A <- logcpm$kallisto_hg38.analysisSet_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
     rename(logCPM_A=logCPM)
-logcpm_B <- logcpm$salmon_hg38.analysisSet_ensembl.85 %>% 
+logcpm_B <- logcpm$salmon_hg38.analysisSet_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
     rename(logCPM_B=logCPM)
 logcpm.merged <- inner_join(logcpm_A, logcpm_B) %>%
@@ -322,7 +322,7 @@ p <- ggplot(logcpm.merged) +
         geom_point(size=0.2, alpha=0.2) +
         geom_abline(slope=1, intercept=0, color="red", linetype="dashed") +
         coord_fixed(xlim=limits, ylim=limits) +
-        labs(title="logCPM, Salmon vs Kallisto", 
+        labs(title="logCPM, Salmon vs Kallisto",
              subtitle="Identity line (red) plotted red for reference",
              x="logCPM by Kallisto", y="logCPM by Salmon")
 ggprint(p)
@@ -333,10 +333,10 @@ ggprint(p)
 Last, we compare the basic Salmon results to the same results regularized by Shoal.
 
 ```{r plot_shoal_vs_salmon, message=FALSE}
-logcpm_A <- logcpm$salmon_hg38.analysisSet_ensembl.85 %>% 
+logcpm_A <- logcpm$salmon_hg38.analysisSet_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
     rename(logCPM_A=logCPM)
-logcpm_B <- logcpm$shoal_hg38.analysisSet_ensembl.85 %>% 
+logcpm_B <- logcpm$shoal_hg38.analysisSet_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
     rename(logCPM_B=logCPM)
 logcpm.merged <- inner_join(logcpm_A, logcpm_B) %>%
@@ -347,7 +347,7 @@ p <- ggplot(logcpm.merged) +
         geom_point(size=0.2, alpha=0.2) +
         geom_abline(slope=1, intercept=0, color="red", linetype="dashed") +
         coord_fixed(xlim=limits, ylim=limits) +
-        labs(title="logCPM, Shoal vs Salmon", 
+        labs(title="logCPM, Shoal vs Salmon",
              subtitle="Identity line (red) plotted red for reference",
              x="logCPM by Salmon", y="logCPM by Shoal")
 ggprint(p)

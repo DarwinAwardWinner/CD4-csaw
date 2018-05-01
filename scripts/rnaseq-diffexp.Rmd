@@ -338,7 +338,7 @@ save.image(here('saved_data', 'RNA-seq', glue_data(params, '{quant_method}_{geno
 write.xlsx(filtered.results.tables, here("results", "RNA-seq", glue_data(params, '{quant_method}_{genome}_{transcriptome}-diffexp.xlsx')))
 ```
 
-To have confidence in the significance measures returned, we should verify that the p-value distributions for each test look reasonable. Ideally, each p-value histogram should either be uniform or biased toward zero. Any other shape is indicative of a failure of some modelling step. 
+To have confidence in the significance measures returned, we should verify that the p-value distributions for each test look reasonable. Ideally, each p-value histogram should either be uniform or biased toward zero. Any other shape is indicative of a failure of some modelling step.
 
 ```{r pval_hist}
 p <- bplapply(names(results.tables), function(testname) {

@@ -93,8 +93,8 @@ f7a <- within(list(), {
                 filter(PromoterID %in% sig.results.tables[[tomerge[2]]]$PromoterID)
         }
     }
-    
-    cpgi.stats <- data.frame(Name=names(sig.results.tables)) %>% 
+
+    cpgi.stats <- data.frame(Name=names(sig.results.tables)) %>%
         separate(Name, into=c("HistoneMark", "Celltype", "Test", "Direction"), sep=rex("."), remove=FALSE) %>%
         mutate(
             TotalPromoters = sapply(sig.results.tables, nrow),
@@ -113,11 +113,11 @@ f7a <- within(list(), {
             Celltype=c("Naive", "Memory"),
             Direction=c("Up", "Down"))
 
-    p <- ggplot(cpgi.stats) + 
-        aes(x=Celltype, y=FractionCpGiGenes) + 
+    p <- ggplot(cpgi.stats) +
+        aes(x=Celltype, y=FractionCpGiGenes) +
         facet_grid(~ HistoneMark + Direction) +
-        geom_col() + ylim(0, 1) + 
-        ggtitle("CpG island frequencies relating to promoter histone changes at 5 days during\nCD4 T-cell activation") + 
+        geom_col() + ylim(0, 1) +
+        ggtitle("CpG island frequencies relating to promoter histone changes at 5 days during\nCD4 T-cell activation") +
         xlab("Cell type") + ylab("Fraction of gene promoters containing CpG islands")
 })
 print(f7a$cpgi.stats)
@@ -128,19 +128,19 @@ print(f7a$p)
 
 ```{r fig7b}
 f7b <- within(list(), {
-    cpgi.stats <- f7a$cpgi.stats %>% filter(HistoneMark != "Both") %>% group_by(HistoneMark, Celltype) %>% 
+    cpgi.stats <- f7a$cpgi.stats %>% filter(HistoneMark != "Both") %>% group_by(HistoneMark, Celltype) %>%
         summarize(
             TotalPromoters=sum(TotalPromoters),
-            TotalGenes=sum(TotalGenes), 
+            TotalGenes=sum(TotalGenes),
             CpGiPromoters=sum(CpGiPromoters),
             CpGiGenes=sum(CpGiGenes)) %>%
         mutate(
             FractionCpGiPromoters = CpGiPromoters / TotalPromoters,
             FractionCpGiGenes = CpGiGenes / TotalGenes)
-    p <- ggplot(cpgi.stats) + 
-        aes(x=HistoneMark:Celltype, y=FractionCpGiGenes) + 
-        geom_col() + ylim(0,1) + 
-        ggtitle("CpG island frequencies for genes with histone changes\nat day 5 after CD4 T-cell activation") + 
+    p <- ggplot(cpgi.stats) +
+        aes(x=HistoneMark:Celltype, y=FractionCpGiGenes) +
+        geom_col() + ylim(0,1) +
+        ggtitle("CpG island frequencies for genes with histone changes\nat day 5 after CD4 T-cell activation") +
         xlab("Gene group") + ylab("Fraction of gene promoters containing CpG islands")
 })
 print(f7b$cpgi.stats)
@@ -154,7 +154,7 @@ f7cd <- within(list(), {
     results.tables <- f7a$results.tables
     qqtables <- lapply(results.tables, function(rt) {
         x <- split(rt$logFC, rt$CpGi)
-        suppressPlot(qqplot(x[["FALSE"]], x[["TRUE"]])) %>% 
+        suppressPlot(qqplot(x[["FALSE"]], x[["TRUE"]])) %>%
             do.call(what=data.frame) %>%
             rename(CpGi="y", NoCpGi="x")
     })
@@ -163,22 +163,22 @@ f7cd <- within(list(), {
         .[rep(seq_len(nrow(.)), sapply(qqtables, nrow)),] %>%
         cbind(do.call(rbind, qqtables))
     lim <- max(abs(unlist(qqtable[c("CpGi", "NoCpGi")])))
-    
-    p <- ggplot(qqtable) + 
+
+    p <- ggplot(qqtable) +
         facet_grid(HistoneMark ~ Celltype) +
         aes(x=NoCpGi, y=CpGi) +
-        geom_abline(slope=1, intercept=0, color="gray40", linetype="dotted") + 
+        geom_abline(slope=1, intercept=0, color="gray40", linetype="dotted") +
         geom_line(size=0.1, alpha=0.2) +
         geom_smooth(method="lm", fullrange=TRUE, alpha=0) +
         geom_point(size=0.1) +
-        coord_fixed() + 
-        ggtitle("Promoter logFC QQ plots, CpGi vs non-CpGi\n5 days after CD4 T-cell activation") + 
+        coord_fixed() +
+        ggtitle("Promoter logFC QQ plots, CpGi vs non-CpGi\n5 days after CD4 T-cell activation") +
         xlab("logFC quantiles for non-CpGi promoters") +
         ylab("logFC quantiles for CpGi-overlapping promoters")
-        
-    
-    vartests <- results.tables %>% 
-        lapply(. %$% 
+
+
+    vartests <- results.tables %>%
+        lapply(. %$%
                    split(logFC, ifelse(CpGi, "CpGi", "NoCpGi")) %$%
                    var.test(NoCpGi, CpGi))
 })
@@ -199,9 +199,9 @@ f7e <- within(list(), {
         lapply(. %>% filter(ENSEMBL %in% both.down.naive.5d.genes) %>% mutate(CpGi = ifelse(ENSEMBL %in% cpgi.genes, "CpGi", "NoCpGi"))) %>%
         Map(cbind, ., Test=names(.)) %>%
         do.call(what=rbind)
-    p <- ggplot(rnaseq.table) + 
-        aes(x=Test, y=logFC) + geom_boxplot(notch = TRUE) + 
-        facet_wrap(~CpGi) + 
+    p <- ggplot(rnaseq.table) +
+        aes(x=Test, y=logFC) + geom_boxplot(notch = TRUE) +
+        facet_wrap(~CpGi) +
         ggtitle("RNA-seq logFC distributions for genes with H3K4me2 and H3K4me3 down at 5 days\nafter CD4 T-cell activation")
     mod <- lm(logFC ~ 0 + Test:CpGi, rnaseq.table)
 })

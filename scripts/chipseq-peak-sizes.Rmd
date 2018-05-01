@@ -12,7 +12,7 @@ output:
 ```{r setup, include=FALSE, cache=FALSE}
 knitr::opts_chunk$set(
     echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
-    cache.extra = list(params=params), 
+    cache.extra = list(params=params),
     fig.height=8, fig.width=8,
     cache.path = paste0(here::here("cache", "chipseq-peak-sizes"),
                         .Platform$file.sep))
@@ -60,12 +60,12 @@ First, we look at the granularity of the peak caller in terms of what peak width
 
 ```{r peak_width_granularity}
 combined.peaklist <- unlist(GRangesList(allpeaks))
-widths <- width(combined.peaklist) %>% table %>% as.data.frame %>% 
+widths <- width(combined.peaklist) %>% table %>% as.data.frame %>%
     set_colnames(c("Width", "Freq")) %>%
     mutate(Width=as.integer(as.character(Width))) %>%
     arrange(Width)
 print(widths)
-widths$Width %>% diff %>% table %>% as.data.frame %>% 
+widths$Width %>% diff %>% table %>% as.data.frame %>%
     set_colnames(c("Diff", "Freq")) %>%
     mutate(Diff=as.integer(as.character(Diff))) %>%
     arrange(Diff)
@@ -74,7 +74,7 @@ widths$Width %>% diff %>% table %>% as.data.frame %>%
 We can see that all peaks are called with a width that is a multiple of 200 bp, and no peaks smaller than 800 bp are called. This is expected based on the parameters used in the peak caller. We can also look at the distribution of start positions:
 
 ```{r peak_start_granularity}
-start(combined.peaklist) %>% sort %>% diff %>% table %>% as.data.frame %>% 
+start(combined.peaklist) %>% sort %>% diff %>% table %>% as.data.frame %>%
     set_colnames(c("Diff", "Freq")) %>%
     mutate(Diff=as.integer(as.character(Diff))) %>%
     arrange(Diff)
@@ -90,7 +90,7 @@ We begin by selecting only peaks  with an IDR value of 0.2 or less, then convert
 idr.threshold <- 0.2
 genome.size <- seqlengths(seqinfo(allpeaks[[1]])) %>% as.numeric %>% sum
 peaks <- lapply(allpeaks, . %>% .[.$qValue >= -log10(idr.threshold)])
-peaktable <- lapply(names(peaks), function(i) cbind(HistoneMark=i, as.data.frame(peaks[[i]]))) %>% 
+peaktable <- lapply(names(peaks), function(i) cbind(HistoneMark=i, as.data.frame(peaks[[i]]))) %>%
     do.call(what=rbind)
 ```
 
@@ -100,17 +100,17 @@ Now we examine the distribution of peak widths for each histone mark. We zoom in
 
 ```{r peak_width_dist}
 q95 <- quantile(peaktable$width, .95)
-p <- ggplot(peaktable) + 
-    aes(x=width) + 
-    geom_histogram(binwidth=200, boundary=100) + 
-    facet_wrap(~HistoneMark, ncol=1) + 
+p <- ggplot(peaktable) +
+    aes(x=width) +
+    geom_histogram(binwidth=200, boundary=100) +
+    facet_wrap(~HistoneMark, ncol=1) +
     ggtitle("Histogram of peak widths")
 ggprint(p + labs(subtitle="Full distribution"))
 ggprint(p + coord_cartesian(xlim=c(0, q95)) +
             labs(subtitle="Bottom 95%"))
-ggprint(p + coord_cartesian(xlim=c(0, 10000)) + 
+ggprint(p + coord_cartesian(xlim=c(0, 10000)) +
             labs(subtitle="Truncated at 10000bp"))
-ggprint(p + coord_cartesian(xlim=c(0, 5000)) + 
+ggprint(p + coord_cartesian(xlim=c(0, 5000)) +
             labs(subtitle="Truncated at 5000bp"))
 ```
 

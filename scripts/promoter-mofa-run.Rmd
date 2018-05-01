@@ -14,16 +14,16 @@ params:
     rna_dataset:
         value: "shoal_hg38.analysisSet"
     promoter_datasets:
-        value: !r c(H3K4me2 = "1kbp-radius_147bp-reads_H3K4me2", 
-                    H3K4me3 = "1kbp-radius_147bp-reads_H3K4me3", 
+        value: !r c(H3K4me2 = "1kbp-radius_147bp-reads_H3K4me2",
+                    H3K4me3 = "1kbp-radius_147bp-reads_H3K4me3",
                     H3K27me3 = "2.5kbp-radius_147bp-reads_H3K27me3")
     peak_datasets:
-        value: !r c(H3K4me2 = "H3K4me2_147bp-reads", 
-                    H3K4me3 = "H3K4me3_147bp-reads", 
+        value: !r c(H3K4me2 = "H3K4me2_147bp-reads",
+                    H3K4me3 = "H3K4me3_147bp-reads",
                     H3K27me3 = "H3K27me3_147bp-reads")
     window_datasets:
-        value: !r c(H3K4me2 = "500bp-windows_147bp-reads_H3K4me2", 
-                    H3K4me3 = "500bp-windows_147bp-reads_H3K4me3", 
+        value: !r c(H3K4me2 = "500bp-windows_147bp-reads_H3K4me2",
+                    H3K4me3 = "500bp-windows_147bp-reads_H3K4me3",
                     H3K27me3 = "500bp-windows_147bp-reads_H3K27me3")
 ---
 
@@ -63,7 +63,7 @@ library(future)
 options(future.globals.maxSize=4 * 1024^3)
 use_futures("multicore")
 
-# Export environment variables to make NumPy respect the desired level of 
+# Export environment variables to make NumPy respect the desired level of
 # parallelism. (Different variables are required for different libraries.)
 ncores <- availableCores()
 Sys.setenv(MKL_NUM_THREADS = ncores,
@@ -79,7 +79,7 @@ First we load all the count data sets that we will be using.
 promoter.sexps %<-% {
     bplapply(here("saved_data",
                   glue_data(params, "promoter-counts_{genome}_{transcriptome}_{promoter_datasets}.RDS")),
-             readRDS) %>% 
+             readRDS) %>%
         set_names(names(params$promoter_datasets))
 }
 rnaseq.sexp %<-% {
@@ -94,7 +94,7 @@ for (i in names(promoter.sexps)) {
         transform(donor_id = str_replace(donor_id, "^Dn*", "Dn")) %>%
         transform(PrimarySample = glue("{cell_type}-{time_point}-{donor_id}"))
 }
-colData(rnaseq.sexp) %<>% 
+colData(rnaseq.sexp) %<>%
     transform(time_point = glue("D{days_after_activation}")) %>%
     transform(donor_id = str_replace(donor_id, "^Dn*", "Dn")) %>%
     transform(PrimarySample = glue("{cell_type}-{time_point}-{donor_id}"))
@@ -149,7 +149,7 @@ for (i in names(sexps)) {
         colData(sexps[[i]])$totals <- colSums(assay(sexps[[i]], "counts"))
     }
     colData(sexps[[i]])$norm.factors <- calcNormFactors(asDGEList(sexps[[i]]))$samples$norm.factors
-    
+
     if ("length" %in% assayNames(sexps[[i]])) {
         normMat <- assay(sexps[[i]], "length") %>% divide_by(exp(rowMeans(log(.))))
         normCounts <- assay(sexps[[i]], "counts")/normMat
@@ -164,13 +164,13 @@ for (i in names(sexps)) {
 Next, we identify possible outlier samples in the data. For our purposes, these are defined as samples for which the percentage of zero counts is 3 standard deviations below the mean for all samples. This criterion was determined through exploratory data analysis. We drop these samples before running MOFA.
 
 ```{r filter_outlier_samples}
-outlier.samples <- sexps %>% 
-    lapply(. %>% 
+outlier.samples <- sexps %>%
+    lapply(. %>%
                set_colnames(colData(.)$PrimarySample) %>%
                assay("counts") %>%
-               is_greater_than(0) %>% 
+               is_greater_than(0) %>%
                colMeans %>%
-               .[. < mean(.) - sd(.) * 3] %>% 
+               .[. < mean(.) - sd(.) * 3] %>%
                names)
 for (i in names(sexps))  {
     outliers <- sexps[[i]]$PrimarySample %in% outlier.samples[[i]]
@@ -271,7 +271,7 @@ for (i in seq_len(params$mofa_runs)) {
     DirOpt <- DirOptions.exploreList[[i]]
     seed <- explore.random.seeds[i]
     dir.create(DirOpt$dataDir, recursive=TRUE)
-    mofa.explore[[i]] <- mofa %>% 
+    mofa.explore[[i]] <- mofa %>%
         prepareMOFA(DirOptions = DirOpt, ModelOptions = ModelOptions, TrainOptions = TrainOptions.explore) %>%
         runMOFA(DirOptions = DirOpt, seed=seed)
     saveRDS(mofa.explore[[i]], DirOpt$rdsFile)
@@ -311,25 +311,25 @@ Since all the models seem to be discovering the same factors, we can use any mod
 ```{r bee_swarm_plots}
 # p <- list(
 #     TimePoint=plotFactorBeeswarm(
-#         mofa.final, 
-#         factors = seq_len(ncol(getFactors(mofa.final, include_intercept = FALSE))), 
-#         color_by = "time_point") + 
-#         aes(x=0) + xlab("") + ylab("Factor Value") + 
-#         facet_wrap(~factor, scales="free") + 
+#         mofa.final,
+#         factors = seq_len(ncol(getFactors(mofa.final, include_intercept = FALSE))),
+#         color_by = "time_point") +
+#         aes(x=0) + xlab("") + ylab("Factor Value") +
+#         facet_wrap(~factor, scales="free") +
 #         scale_x_continuous(breaks=NULL),
 #     CellType=plotFactorBeeswarm(
-#         mofa.final, 
-#         factors = seq_len(ncol(getFactors(mofa.final, include_intercept = FALSE))), 
-#         color_by = "cell_type") + 
-#         aes(x=0) + xlab("") + ylab("Factor Value") + 
-#         facet_wrap(~factor, scales="free") + 
+#         mofa.final,
+#         factors = seq_len(ncol(getFactors(mofa.final, include_intercept = FALSE))),
+#         color_by = "cell_type") +
+#         aes(x=0) + xlab("") + ylab("Factor Value") +
+#         facet_wrap(~factor, scales="free") +
 #         scale_x_continuous(breaks=NULL),
 #     Donor=plotFactorBeeswarm(
-#         mofa.final, 
-#         factors = seq_len(ncol(getFactors(mofa.final, include_intercept = FALSE))), 
-#         color_by = "donor_id") + 
-#         aes(x=0) + xlab("") + ylab("Factor Value") + 
-#         facet_wrap(~factor, scales="free") + 
+#         mofa.final,
+#         factors = seq_len(ncol(getFactors(mofa.final, include_intercept = FALSE))),
+#         color_by = "donor_id") +
+#         aes(x=0) + xlab("") + ylab("Factor Value") +
+#         facet_wrap(~factor, scales="free") +
 #         scale_x_continuous(breaks=NULL))
 # ggprint(p)
 ```

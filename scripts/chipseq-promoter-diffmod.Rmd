@@ -182,7 +182,7 @@ We plot the surrogate variables against known variables and also test for signif
 sv.cor.tests <- expand.grid(SV=colnames(svmat),
                             Var=c("cell_type", "time_point", "group", "donor_id", "totals")) %>%
     select(Var, SV) %>%
-    group_by_all() %>% 
+    group_by_all() %>%
     do(mod=list(lm(as.formula(glue("{.$SV} ~ {.$Var}")), data=cbind(sample.table, svmat)))) %>%
     mutate(aov=lapply(mod, anova)) %>%
     ungroup() %>%
@@ -261,8 +261,8 @@ results.tables %>% lapply(function(rt) {
     summarize(rt,
               NumSignif=FDR %>% is_weakly_less_than(0.1) %>% sum,
               EstNonNull=floor(length(PValue) * (1 - propTrueNull(PValue))))
-}) %>% 
-    do.call(what=rbind) %>% 
+}) %>%
+    do.call(what=rbind) %>%
     mutate(Test=rownames(.)) %>%
     select(Test, everything())
 ```

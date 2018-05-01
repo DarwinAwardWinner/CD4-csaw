@@ -461,10 +461,10 @@ To further investigate the sources of variance within the data, we can use the `
 vp.formula <- ~ (1|group) + (1|donor_id) + (1|batch)
 elists <- list(NoBC=elist.w, BatSub=elist.bc, ComBat=elist.cb)
 # Function is already parallelized, so don't call it in parallel
-varParts <- mapply(function(...) try(fitExtractVarPartModel(...)), 
-                   exprObj = elists, 
+varParts <- mapply(function(...) try(fitExtractVarPartModel(...)),
+                   exprObj = elists,
                    MoreArgs = list(
-                       formula = vp.formula, 
+                       formula = vp.formula,
                        data=sample.table),
                    SIMPLIFY = FALSE)
 # Collapse SVs to a single column

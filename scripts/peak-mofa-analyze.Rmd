@@ -71,7 +71,7 @@ We load the TFBS overlap data for all peaks. For RNA-seq genes, we say that a ge
 overlap_sets <- readRDS(here("saved_data", glue_data(params, "peak-tfbs-overlap_{genome}.RDS")))
 promoter_overlap_sets <- readRDS(here("saved_data", glue_data(params, "promoter-tfbs-overlap_{genome}_{transcriptome}.RDS")))
 overlap_sets$RNA <- bplapply(names(promoter_overlap_sets[[1]]), function(tf) {
-    lapply(overlap_sets, . %>% .[[tf]] %>% str_replace("-P[0-9]+$", "")) %>% 
+    lapply(overlap_sets, . %>% .[[tf]] %>% str_replace("-P[0-9]+$", "")) %>%
         unlist %>% sort %>% unique
 }) %>% set_names(names(overlap_sets[[1]]))
 ```
@@ -107,15 +107,15 @@ Next, we plot the values of each latent factor for each sample, distinguishing t
 factor_table <- getFactors(mofa, as.data.frame = TRUE, include_intercept = FALSE)  %>%
     mutate(sample=as.character(sample)) %>%
     inner_join(as.data.frame(colData(mofa@InputData)), by=c(sample="PrimarySample")) %>%
-    arrange(cell_type, days_after_activation) %>% 
+    arrange(cell_type, days_after_activation) %>%
     mutate(time_point = fct_inorder(time_point))
-p <- ggplot(factor_table) + 
-    facet_wrap(~factor, scales="free") + 
-    aes(x=0, y=value, color=time_point, shape=cell_type) + 
-    geom_quasirandom() + 
+p <- ggplot(factor_table) +
+    facet_wrap(~factor, scales="free") +
+    aes(x=0, y=value, color=time_point, shape=cell_type) +
+    geom_quasirandom() +
     scale_x_continuous(breaks=NULL) +
     labs(title="Latent factor distributions",
-         x = "", y = "Factor value") + 
+         x = "", y = "Factor value") +
     theme_bw()
 ggprint(p)
 ```
@@ -146,15 +146,15 @@ We are now ready to conduct feature set enrichment tests for the factors of inte
 ```{r fsea_plot}
 # sigCounts <- lapply(names(fsea_results), function(view) {
 #     fsea_results[[view]] %$%
-#         tibble(Test = "Enrichment", 
+#         tibble(Test = "Enrichment",
 #                View = view,
-#                Factor = colnames(pval.adj), 
+#                Factor = colnames(pval.adj),
 #                SigSets = colSums(pval.adj <= 0.05))
 # }) %>% do.call(what=rbind) %>%
 #     mutate_if(is.character, fct_inorder)
-# p <- ggplot(sigCounts) + 
-#     aes(x=Factor, y=SigSets) + 
-#     geom_bar(stat="identity") + 
+# p <- ggplot(sigCounts) +
+#     aes(x=Factor, y=SigSets) +
+#     geom_bar(stat="identity") +
 #     facet_wrap(~View)
 # ggprint(p)
 ```
@@ -197,9 +197,9 @@ ggmdsbatch <- function(dat, dims=1:2) {
         coord_equal()
 }
 
-p <- list() 
+p <- list()
 for (i in names(mds)) {
-    p[[i]] <- ggmdsbatch(mds[[i]]) + 
+    p[[i]] <- ggmdsbatch(mds[[i]]) +
         ggtitle("MDS plot for RNA-seq data",
                 subtitle = glue("Batch correction method: {i}"))
 }
