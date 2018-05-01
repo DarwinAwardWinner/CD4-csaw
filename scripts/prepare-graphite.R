@@ -15,8 +15,8 @@ dbnames <- pathwayDatabases() %>%
 graphite.species <- "hsapiens"
 dbs.raw <- dbnames %>% set_names %>%
     lapply(pathways, species = graphite.species)
-idtypes <- c(entrez="entrez", ensembl="ENSEMBL", symbol="symbol")
-dbs <- suppressMessages(lapply(idtypes, . %>% bplapply(dbs.raw, convertIdentifiers, to=.)))
+idtypes <- c(entrez = "entrez", ensembl = "ENSEMBL", symbol = "symbol")
+dbs <- suppressMessages(lapply(idtypes, . %>% bplapply(dbs.raw, convertIdentifiers, to = .)))
 
 for (i in names(dbs)) {
     fname <- here("saved_data", glue("graphite-{i}.RDS"))
@@ -24,12 +24,12 @@ for (i in names(dbs)) {
 }
 
 spia.outdir <- here("saved_data", "SPIA")
-dir.create(spia.outdir, recursive=TRUE, showWarnings=FALSE)
+dir.create(spia.outdir, recursive = TRUE, showWarnings = FALSE)
 
 ## Prepare SPIA databases
 for (idtype in names(dbs)) {
     db <- dbs[[idtype]]
     bpmapply(prepareSPIA,
-             db=db,
-             pathwaySetName=file.path(spia.outdir, glue("graphite-{idtype}-{names(db)}Ex")))
+             db = db,
+             pathwaySetName = file.path(spia.outdir, glue("graphite-{idtype}-{names(db)}Ex")))
 }

@@ -15,16 +15,16 @@ params:
 
 # Preliminary Setup
 
-```{r setup, include=FALSE, cache=FALSE}
-knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
-                      cache.extra = list(params=params),
-                      fig.height=8, fig.width=8,
+```{r setup, include = FALSE, cache = FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina = 2, cache = TRUE, autodep = TRUE,
+                      cache.extra = list(params = params),
+                      fig.height = 8, fig.width = 8,
                       cache.path = here::here("cache", "rnaseq-gst"))
 ```
 
 First we load the necessary libraries, along with a set of utility functions.
 
-```{r load_packages, message=FALSE, cache=FALSE}
+```{r load_packages, message = FALSE, cache = FALSE}
 library(here)
 library(stringr)
 library(magrittr)
@@ -38,11 +38,11 @@ library(rctutils)
 
 library(BiocParallel)
 library(future)
-options(future.globals.maxSize=4 * 1024^3)
+options(future.globals.maxSize = 4 * 1024^3)
 use_futures("multicore")
 
 # Tell graphite not to use its own parallel logic
-options(Ncpus=1)
+options(Ncpus = 1)
 ```
 
 We also set the random seed for reproducibility:
@@ -100,9 +100,9 @@ graphite_gene_sets %<>% split(names(.)) %>% lapply(. %>% unname %>% unlist)
 ## Collect all gene sets
 
 ```{r collect_all_gene_sets}
-all_collections <- c(MSigDB=msigdb_gene_sets,
-                     list(graphite=graphite_gene_sets),
-                     list(TFBS_overlap=overlap_sets$RNA))
+all_collections <- c(MSigDB = msigdb_gene_sets,
+                     list(graphite = graphite_gene_sets),
+                     list(TFBS_overlap = overlap_sets$RNA))
 ```
 # Run the CAMERA gene set test
 
@@ -111,8 +111,8 @@ We now run the CAMERA gene set test on all the TFBS overlap sets. We run CAMERA 
 ```{r run_camera}
 camera.results <- lapply(all_collections, function(coll) {
     bplapply(single.contrast.tests, function(ct) {
-        camera(elist.cb, index=ids2indices(coll, elist.cb$genes$ENSEMBL),
-               design=design, contrast=makeContrasts(contrasts = ct, levels=design)) %>%
+        camera(elist.cb, index = ids2indices(coll, elist.cb$genes$ENSEMBL),
+               design = design, contrast = makeContrasts(contrasts = ct, levels = design)) %>%
             rownames_to_column("GeneSet")
     })
 })

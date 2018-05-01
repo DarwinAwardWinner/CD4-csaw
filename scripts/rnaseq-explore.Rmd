@@ -11,10 +11,10 @@ params:
 
 # Preliminary Setup
 
-```{r setup, include=FALSE, cache=FALSE}
-knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
-                      cache.extra = list(params=params),
-                      fig.height=8, fig.width=8,
+```{r setup, include = FALSE, cache = FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina = 2, cache = TRUE, autodep = TRUE,
+                      cache.extra = list(params = params),
+                      fig.height = 8, fig.width = 8,
                       cache.path = paste0(
                           here::here("cache", "rnaseq-explore", params$dataset),
                           .Platform$file.sep))
@@ -22,7 +22,7 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
 
 First we load the necessary libraries, along with a set of utility functions.
 
-```{r load_packages, message=FALSE, cache=FALSE}
+```{r load_packages, message = FALSE, cache = FALSE}
 library(here)
 library(stringr)
 library(magrittr)
@@ -37,11 +37,11 @@ library(reshape2)
 library(assertthat)
 library(broom)
 library(variancePartition)
+library(forcats)
 library(rctutils)
 
-
 library(future)
-options(future.globals.maxSize=4 * 1024^3)
+options(future.globals.maxSize = 4 * 1024^3)
 use_futures("multicore")
 ```
 
@@ -73,9 +73,9 @@ We extract the sample metadata from the SummarizedExperiment. We also tell R to 
 ```{r extract_samplemeta}
 sample.table <- colData(sexp) %>%
     as.data.frame %>% auto_factorize_columns %>%
-    rename(batch=technical_batch) %>%
-    mutate(time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
-           group=interaction(cell_type, time_point, sep=""))
+    rename(batch = technical_batch) %>%
+    mutate(time_point = factor(days_after_activation) %>% fct_relevel(sprintf("D%s", levels(.))),
+           group = interaction(cell_type, time_point, sep = ""))
 for (i in names(sample.table)) {
     if (is.factor(sample.table[[i]]) && nlevels(sample.table[[i]]) > 1) {
         contrasts(sample.table[[i]]) <- code_control_named(levels(sample.table[[i]]))
@@ -88,15 +88,15 @@ Next we extract the count matrix from the SummarizedExperiment. This is made mor
 For SummarizedExperiments generated using tximport, this step is skipped, since the quantification tool has already been told which strand to use and only provides counts for that strand.
 
 ```{r extract_counts}
-libtype.assayNames <- c(SF="sense.counts", SR="antisense.counts")
+libtype.assayNames <- c(SF = "sense.counts", SR = "antisense.counts")
 if (all(libtype.assayNames %in% assayNames(sexp))) {
     message("Selecting stranded counts for each sample")
-    sample.table %<>% mutate(count_type=libtype.assayNames[libType])
+    sample.table %<>% mutate(count_type = libtype.assayNames[libType])
     assay(sexp, "unstranded.counts") <- assay(sexp, "counts")
     assay(sexp, "counts") <- lapply(seq_len(nrow(sample.table)), function(i) {
         message("Using ", sample.table[i,]$count_type, " for ", colnames(sexp)[i])
         assay(sexp, sample.table[i,]$count_type %>% as.character)[,i]
-    }) %>% do.call(what=cbind)
+    }) %>% do.call(what = cbind)
 }
 ```
 
@@ -105,8 +105,8 @@ As a sanity check, we make sure that we selected the strand sense with the highe
 ```{r strand_sanity_check}
 if (all(libtype.assayNames %in% assayNames(sexp))) {
     total.counts <- sexp %>% assays %>% sapply(colSums) %>% data.frame %>%
-        mutate(SampleName=row.names(.)) %>%
-        inner_join(sample.table, by="SampleName")
+        mutate(SampleName = row.names(.)) %>%
+        inner_join(sample.table, by = "SampleName")
     total.counts %$% invisible(assert_that(all(counts == pmax(sense.counts, antisense.counts))))
 }
 ```
@@ -121,8 +121,8 @@ Now we create a DGEList from the counts.
 ## Extract gene metadata and colapse lists
 all.gene.meta <- mcols(sexp) %>% as.data.frame
 # Convert list columns to character vectors
-all.gene.meta[] %<>% lapply(function(x) if (is.list(x)) sapply(x, str_c, collapse=",") else x)
-dge <- DGEList(counts=assay(sexp, "counts"))
+all.gene.meta[] %<>% lapply(function(x) if (is.list(x)) sapply(x, str_c, collapse = ",") else x)
+dge <- DGEList(counts = assay(sexp, "counts"))
 dge$genes <- all.gene.meta
 ```
 Next we take care of the initial scaling normalization for sequencing depth and composition bias. We also discard any genes with all zero counts, since there is no meaningful analysis that can be done with these genes.
@@ -153,30 +153,30 @@ a <- aveLogCPMWithOffset(dge)
 avelogcpm.presence.threshold <- -1
 
 p <- list(
-    Histogram=ggplot(data.frame(logCPM=a)) +
-        aes(x=logCPM) +
-        geom_histogram(aes(y=100*(..count..)/sum(..count..)), binwidth=0.25, boundary=0) +
-        geom_vline(xintercept=avelogcpm.presence.threshold, color="red", linetype="dashed") +
+    Histogram = ggplot(data.frame(logCPM = a)) +
+        aes(x = logCPM) +
+        geom_histogram(aes(y = 100*(..count..)/sum(..count..)), binwidth = 0.25, boundary = 0) +
+        geom_vline(xintercept = avelogcpm.presence.threshold, color = "red", linetype = "dashed") +
         xlab("Average logCPM") + ylab("Percent of genes in bin") +
-        coord_cartesian(xlim=quantile(a, c(0, 0.995)), ylim=c(0,10)) +
-        labs(title="Average gene LogCPM distribution",
-             subtitle="for genes with at least 1 read") +
+        coord_cartesian(xlim = quantile(a, c(0, 0.995)), ylim = c(0,10)) +
+        labs(title = "Average gene LogCPM distribution",
+             subtitle = "for genes with at least 1 read") +
         theme(plot.caption = element_text(hjust = 0)),
-    ECDF=ggplot(fortify(ecdf(a))) +
-        aes(x=x, y=y*100) +
+    ECDF = ggplot(fortify(ecdf(a))) +
+        aes(x = x, y = y*100) +
         geom_step() +
-        geom_vline(xintercept=avelogcpm.presence.threshold, color="red", linetype="dashed") +
+        geom_vline(xintercept = avelogcpm.presence.threshold, color = "red", linetype = "dashed") +
         xlab("Average logCPM") + ylab("Percent of genes with smaller average logCPM") +
-        coord_cartesian(xlim=quantile(a, c(0, 0.995))) +
-        labs(title="Empirical Cumulative Distribution Function of gene LogCPM values",
-             subtitle="for genes with at least 1 read") +
+        coord_cartesian(xlim = quantile(a, c(0, 0.995))) +
+        labs(title = "Empirical Cumulative Distribution Function of gene LogCPM values",
+             subtitle = "for genes with at least 1 read") +
         theme(plot.caption = element_text(hjust = 0)))
 
 ggprint(p)
 ```
 
-```{r avelogCPM_plots_pdf, cache=FALSE, include=FALSE}
-ggprint(p, device=cairo_pdf(file.path(plotdir, "AveLogCPM-plots.pdf"), onefile=TRUE))
+```{r avelogCPM_plots_pdf, cache = FALSE, include = FALSE}
+ggprint(p, device = cairo_pdf(file.path(plotdir, "AveLogCPM-plots.pdf"), onefile = TRUE))
 ```
 
 The red dashed line in each plot indicates the chosen presence threshold. We now subset the DGEList to only those genes above the threshold.
@@ -193,67 +193,67 @@ Now we estimate the dispersions for each gene, to get an idea of what the variab
 design <- model.matrix(~0 + group + donor_id, sample.table)
 colnames(design) %<>% str_replace("^group", "")
 
-dge %<>% estimateDisp(design, robust=TRUE)
+dge %<>% estimateDisp(design, robust = TRUE)
 
 message("Common dispersion: ", dge$common.dispersion)
 message("BCV: ", sqrt(dge$common.dispersion))
 
-dge.with.eBayes <- dge %>% estimateDisp(design, robust=FALSE)
-dge.with.robust.eBayes <- dge %>% estimateDisp(design, robust=TRUE)
-dge.without.eBayes <- dge %>% estimateDisp(design, prior.df=0)
+dge.with.eBayes <- dge %>% estimateDisp(design, robust = FALSE)
+dge.with.robust.eBayes <- dge %>% estimateDisp(design, robust = TRUE)
+dge.without.eBayes <- dge %>% estimateDisp(design, prior.df = 0)
 ```
 
 We now plot all 3 dispersion estimates, along with the overall average and estimated trend. Each plot includes the points from the previous plots in lighter colors for comparison.
 
 ```{r plot_disp}
 disptable <- data.frame(
-    logCPM=dge.without.eBayes$AveLogCPM,
-    CommonBCV=dge.with.eBayes$common.dispersion %>% sqrt,
-    TrendBCV=dge.with.eBayes$trended.dispersion %>% sqrt,
-    GeneWiseBCV=dge.without.eBayes$tagwise.dispersion %>% sqrt,
-    eBayesBCV=dge.with.eBayes$tagwise.dispersion %>% sqrt,
-    RobustBCV=dge.with.robust.eBayes$tagwise.dispersion %>% sqrt) %>%
+    logCPM = dge.without.eBayes$AveLogCPM,
+    CommonBCV = dge.with.eBayes$common.dispersion %>% sqrt,
+    TrendBCV = dge.with.eBayes$trended.dispersion %>% sqrt,
+    GeneWiseBCV = dge.without.eBayes$tagwise.dispersion %>% sqrt,
+    eBayesBCV = dge.with.eBayes$tagwise.dispersion %>% sqrt,
+    RobustBCV = dge.with.robust.eBayes$tagwise.dispersion %>% sqrt) %>%
     cbind(dge$genes)
 
 ## Reduce the number of points to plot for each line for performance
 ## reasons
-npoints <- c(Common=2, Trend=500)
+npoints <- c(Common = 2, Trend = 500)
 disp.line.table <-
     disptable %>%
     select(logCPM, TrendBCV, CommonBCV) %>%
-    melt(id.vars="logCPM", variable.name="DispType", value.name = "BCV") %>%
-    mutate(DispType=str_replace(DispType, "BCV$", "")) %>%
+    melt(id.vars = "logCPM", variable.name = "DispType", value.name = "BCV") %>%
+    mutate(DispType = str_replace(DispType, "BCV$", "")) %>%
     group_by(DispType) %>%
     do({
-        spline(x=.$logCPM, y=.$BCV, n=npoints[.$DispType[1]]) %>% data.frame(logCPM=.$x, BCV=.$y)
+        spline(x = .$logCPM, y = .$BCV, n = npoints[.$DispType[1]]) %>% data.frame(logCPM = .$x, BCV = .$y)
     })
 
 baseplot <- ggplot(disptable) +
-    aes(x=logCPM)
+    aes(x = logCPM)
 raw.disp.plot <- baseplot +
-    geom_point(aes(y=GeneWiseBCV), size=0.1, color="black") +
-    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, group=DispType), color="white", size=1.5, alpha=0.5) +
-    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, linetype=DispType), color="darkred", size=0.5) +
-    scale_linetype_manual(name="Dispersion Type", values=c(Trend="solid", Common="dashed")) +
+    geom_point(aes(y = GeneWiseBCV), size = 0.1, color = "black") +
+    geom_line(data = disp.line.table, aes(x = logCPM, y = BCV, group = DispType), color = "white", size = 1.5, alpha = 0.5) +
+    geom_line(data = disp.line.table, aes(x = logCPM, y = BCV, linetype = DispType), color = "darkred", size = 0.5) +
+    scale_linetype_manual(name = "Dispersion Type", values = c(Trend = "solid", Common = "dashed")) +
     ylab("Biological coefficient of variation") +
     ggtitle("BCV plot (Raw dispersions)")
 
 eBayes.disp.plot <- baseplot +
-    geom_point(aes(y=GeneWiseBCV), size=0.4, color="gray") +
-    geom_point(aes(y=eBayesBCV), size=0.1, color="darkblue") +
-    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, group=DispType), color="white", size=1.5, alpha=0.5) +
-    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, linetype=DispType), color="darkred", size=0.5) +
-    scale_linetype_manual(name="Dispersion Type", values=c(Trend="solid", Common="dashed")) +
+    geom_point(aes(y = GeneWiseBCV), size = 0.4, color = "gray") +
+    geom_point(aes(y = eBayesBCV), size = 0.1, color = "darkblue") +
+    geom_line(data = disp.line.table, aes(x = logCPM, y = BCV, group = DispType), color = "white", size = 1.5, alpha = 0.5) +
+    geom_line(data = disp.line.table, aes(x = logCPM, y = BCV, linetype = DispType), color = "darkred", size = 0.5) +
+    scale_linetype_manual(name = "Dispersion Type", values = c(Trend = "solid", Common = "dashed")) +
     ylab("Biological coefficient of variation") +
     ggtitle("BCV plot (Raw & squeezed dispersions)")
 
 robust.eBayes.disp.plot <- baseplot +
-    geom_point(aes(y=GeneWiseBCV), size=0.4, color="gray") +
-    geom_point(aes(y=eBayesBCV), size=0.4, color="deepskyblue") +
-    geom_point(aes(y=RobustBCV), size=0.1, color="darkgreen") +
-    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, group=DispType), color="white", size=1.5, alpha=0.5) +
-    geom_line(data=disp.line.table, aes(x=logCPM, y=BCV, linetype=DispType), color="darkred", size=0.5) +
-    scale_linetype_manual(name="Dispersion Type", values=c(Trend="solid", Common="dashed")) +
+    geom_point(aes(y = GeneWiseBCV), size = 0.4, color = "gray") +
+    geom_point(aes(y = eBayesBCV), size = 0.4, color = "deepskyblue") +
+    geom_point(aes(y = RobustBCV), size = 0.1, color = "darkgreen") +
+    geom_line(data = disp.line.table, aes(x = logCPM, y = BCV, group = DispType), color = "white", size = 1.5, alpha = 0.5) +
+    geom_line(data = disp.line.table, aes(x = logCPM, y = BCV, linetype = DispType), color = "darkred", size = 0.5) +
+    scale_linetype_manual(name = "Dispersion Type", values = c(Trend = "solid", Common = "dashed")) +
     ylab("Biological coefficient of variation") +
     ggtitle("BCV plot (Raw & squeezed & robust dispersions)")
 
@@ -261,14 +261,14 @@ p <- list(raw.disp.plot, eBayes.disp.plot, robust.eBayes.disp.plot)
 ggprint(p)
 ```
 
-```{r plot_disp_pdf, cache=FALSE, include=FALSE}
-ggprint(p, device=cairo_pdf(file.path(plotdir, "disp-plots.pdf"), onefile=TRUE))
-rasterpdf(file.path(plotdir, "disp-plots.pdf"), resolution=600)
+```{r plot_disp_pdf, cache = FALSE, include = FALSE}
+ggprint(p, device = cairo_pdf(file.path(plotdir, "disp-plots.pdf"), onefile = TRUE))
+rasterpdf(file.path(plotdir, "disp-plots.pdf"), resolution = 600)
 ```
 
 Next, we use limma's sample weight calculating methods to investigate possible quality issues. To confirm our results, we also split the samples into treatment groups and use edgeR to estimate the dispersion within each group. This is a crude method, and these group-specific dispersion estimate would be too unstable for use in a differential expression analysis, but comparing the overall mean dispersion for each sample to the sample quality weights determined by limma provides a useful sanity check.
 
-```{r compute_quality_weights, message=FALSE, warning=FALSE}
+```{r compute_quality_weights, message = FALSE, warning = FALSE}
 elist.w <- voomWithQualityWeightsAndOffset(dge, design)
 dbg <- estimateDispByGroup(dge, sample.table$group, sample.table$batch)
 ```
@@ -277,17 +277,17 @@ To see whether the weights are correlated with specific experimental factors, we
 
 ```{r plot_quality_weights}
 covars <- sample.table %>% dplyr::select(group, time_point, donor_id, batch, cell_type)
-qcmetrics <- data.frame(Weight=elist.w$sample.weights,
-                        GroupBCV=sapply(dbg, `[[`, "common.dispersion")[as.character(covars$group)])
+qcmetrics <- data.frame(Weight = elist.w$sample.weights,
+                        GroupBCV = sapply(dbg, `[[`, "common.dispersion")[as.character(covars$group)])
 
-p <- ggduo_dataXY(covars, qcmetrics %>% transmute(Log2Weight=log2(Weight), GroupBCV)) +
+p <- ggduo_dataXY(covars, qcmetrics %>% transmute(Log2Weight = log2(Weight), GroupBCV)) +
   ggtitle("Weights and dispersions by group") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5))
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 ggprint(p)
 ```
 
-```{r plot_quality_weights_pdf, cache=FALSE, include=FALSE}
-ggprint(p, device=cairo_pdf(file.path(plotdir, "qc-weights.pdf"), onefile = TRUE))
+```{r plot_quality_weights_pdf, cache = FALSE, include = FALSE}
+ggprint(p, device = cairo_pdf(file.path(plotdir, "qc-weights.pdf"), onefile = TRUE))
 ```
 We also make plots of the individual weights against each covariate, and compute the ANOVA p-value for the relationship between the weights and each covariate separately.
 
@@ -299,24 +299,24 @@ anovas <- lapply(colnames(covars), function(x) {
     formula <- as.formula(str_c("log2(Weight) ~ ", x))
     lm(formula, awdf) %>% aov %>% tidy %>% filter(term == x)
 }) %>%
-    do.call(what=rbind) %>%
-    mutate(padj=p.adjust(p.value, method="BH"))
+    do.call(what = rbind) %>%
+    mutate(padj = p.adjust(p.value, method = "BH"))
 pvals <- anovas %$% setNames(p.value, term)
 aw.plot.base <- ggplot(awdf) +
-    aes(y=Weight) +
-    scale_y_continuous(trans=log_trans(2)) +
-    geom_dotplot(binaxis = "y", stackdir="center", binwidth=0.1)
+    aes(y = Weight) +
+    scale_y_continuous(trans = log_trans(2)) +
+    geom_dotplot(binaxis = "y", stackdir = "center", binwidth = 0.1)
 p <- lapply(colnames(covars), function(x) {
     pretty.covar.name <- x %>% str_replace_all("_", " ") %>% str_to_title
-    aw.plot.base + aes_string(x=x) +
-        labs(title=str_c("Array weights by ", pretty.covar.name),
-             subtitle=sprintf("ANOVA p-value = %0.3g", pvals[x]))
+    aw.plot.base + aes_string(x = x) +
+        labs(title = str_c("Array weights by ", pretty.covar.name),
+             subtitle = sprintf("ANOVA p-value = %0.3g", pvals[x]))
 })
 ggprint(p)
 ```
 
-```{r plot_weights_vs_covars_pdf, cache=FALSE, include=FALSE}
-ggprint(p, device=cairo_pdf(file.path(plotdir, "weights-vs-covars.pdf"), onefile = TRUE))
+```{r plot_weights_vs_covars_pdf, cache = FALSE, include = FALSE}
+ggprint(p, device = cairo_pdf(file.path(plotdir, "weights-vs-covars.pdf"), onefile = TRUE))
 ```
 
 ## Batch correction
@@ -328,21 +328,21 @@ elist.bc <- elist.w
 # Batch is confounded with time point, so we leave it out of the design for this step
 design.NoTime <- model.matrix(~ cell_type + donor_id, sample.table)
 elist.bc$E %<>%
-    removeBatchEffect(batch=sample.table %$% batch:donor_id, design=design.NoTime,
-                      weights=elist.bc$weights)
+    removeBatchEffect(batch = sample.table %$% batch:donor_id, design = design.NoTime,
+                      weights = elist.bc$weights)
 ```
 
 Second, we use ComBat, which performs empirical Bayes shrinkage of the batch correction parameters. First, we run ComBat in parametric prior mode in order to produce a diagnostic plot of the priors. Note that we use ComBat here to subtract both the batch and donor effects, so that the MDS plots will be more reflective of the desired biological effects.
 
 ```{r combat_plot}
 # Right now we're just running ComBat to produce the plot, so we discard the output.
-invisible(capture.output(ComBat(elist.w$E, batch=sample.table$batch, mod=design.NoTime, par.prior=TRUE, prior.plots = TRUE)))
+invisible(capture.output(ComBat(elist.w$E, batch = sample.table$batch, mod = design.NoTime, par.prior = TRUE, prior.plots = TRUE)))
 ```
 
-```{r combat_plot_pdf, echo=TRUE, message=FALSE, cache=FALSE}
+```{r combat_plot_pdf, echo = TRUE, message = FALSE, cache = FALSE}
 cairo_pdf(file.path(plotdir, "rnaseq-ComBat-qc.pdf"))
 # Run the same thing again to output the plot to the PDF file
-invisible(ComBat(elist.w$E, batch=sample.table$batch, mod=design.NoTime, par.prior=TRUE, prior.plots = TRUE))
+invisible(ComBat(elist.w$E, batch = sample.table$batch, mod = design.NoTime, par.prior = TRUE, prior.plots = TRUE))
 invisible(dev.off())
 ```
 
@@ -352,65 +352,65 @@ Since the parametric fit for the variance is not a good match for the empirical 
 # Now perform the actual batch correction using non-parametric prior
 design.cb <- model.matrix(~cell_type, sample.table)
 elist.cb <- elist.w
-elist.cb$E %<>% ComBat(batch=sample.table$batch, mod=design.NoTime, par.prior=FALSE)
+elist.cb$E %<>% ComBat(batch = sample.table$batch, mod = design.NoTime, par.prior = FALSE)
 ```
 
 For each of the batch correction methods, we compute the sample distance matrix using multidimensional scaling and plot the first 3 principal coordinates. We reflect all the principal coordinates so as to make the mean of the Naive D0 samples negative in all dimensions, so that MDS plots have a greater chance of being oriented consistently with each other.
 
-```{r batch_correction_mds_plot, warning=FALSE}
+```{r batch_correction_mds_plot, warning = FALSE}
 naive.d0.samples <- sample.table$group == "NaiveD0"
 dmat <- suppressPlot(plotMDS(elist.w)$distance.matrix) %>% as.dist
-mds <- cmdscale(dmat, k=attr(dmat, "Size") - 1, eig=TRUE)
-mds$points %<>% scale(center=FALSE, scale=-sign(colMeans(.[naive.d0.samples,]))) %>%
+mds <- cmdscale(dmat, k = attr(dmat, "Size") - 1, eig = TRUE)
+mds$points %<>% scale(center = FALSE, scale = -sign(colMeans(.[naive.d0.samples,]))) %>%
     add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
 dmat.bc <- suppressPlot(plotMDS(elist.bc)$distance.matrix) %>% as.dist
-mds.bc <- cmdscale(dmat.bc, k=attr(dmat, "Size") - 1, eig=TRUE)
-mds.bc$points %<>% scale(center=FALSE, scale=sign(colMeans(.[naive.d0.samples,]))) %>%
+mds.bc <- cmdscale(dmat.bc, k = attr(dmat, "Size") - 1, eig = TRUE)
+mds.bc$points %<>% scale(center = FALSE, scale = sign(colMeans(.[naive.d0.samples,]))) %>%
     add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
 dmat.cb <- suppressPlot(plotMDS(elist.cb)$distance.matrix) %>% as.dist
-mds.cb <- cmdscale(dmat.cb, k=attr(dmat, "Size") - 1, eig=TRUE)
-mds.cb$points %<>% scale(center=FALSE, scale=sign(colMeans(.[naive.d0.samples,]))) %>%
+mds.cb <- cmdscale(dmat.cb, k = attr(dmat, "Size") - 1, eig = TRUE)
+mds.cb$points %<>% scale(center = FALSE, scale = sign(colMeans(.[naive.d0.samples,]))) %>%
      add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
 
-ggmdsbatch <- function(dat, dims=1:2) {
+ggmdsbatch <- function(dat, dims = 1:2) {
     if (length(dims) == 1) {
         dims <- dims + c(0,1)
     }
     assert_that(length(dims) == 2)
     ggplot(dat) +
-        aes_string(x=str_c("Dim", dims[1]), y=str_c("Dim", dims[2])) +
-        aes(color=batch, label=SampleName) +
+        aes_string(x = str_c("Dim", dims[1]), y = str_c("Dim", dims[2])) +
+        aes(color = batch, label = SampleName) +
         geom_text() +
-        scale_x_continuous(expand=c(0.15, 0)) +
+        scale_x_continuous(expand = c(0.15, 0)) +
         coord_equal()
 }
 
 p <- list(
     ggmdsbatch(mds$points) +
-        labs(title="limma voom Principal Coordinates 1 & 2",
-             subtitle="No batch correction"),
+        labs(title = "limma voom Principal Coordinates 1 & 2",
+             subtitle = "No batch correction"),
     ggmdsbatch(mds.bc$points) +
-        labs(title="limma voom Principal Coordinates 1 & 2",
-             subtitle="After naive batch subtraction"),
+        labs(title = "limma voom Principal Coordinates 1 & 2",
+             subtitle = "After naive batch subtraction"),
     ggmdsbatch(mds.cb$points) +
         ggtitle("limma voom Principal Coordinates 1 & 2",
-             subtitle="After ComBat batch correction"),
-    ggmdsbatch(mds$points, dims=2:3) +
+             subtitle = "After ComBat batch correction"),
+    ggmdsbatch(mds$points, dims = 2:3) +
         ggtitle("limma voom Principal Coordinates 2 & 3",
-             subtitle="No batch correction"),
-    ggmdsbatch(mds.bc$points, dims=2:3) +
+             subtitle = "No batch correction"),
+    ggmdsbatch(mds.bc$points, dims = 2:3) +
         ggtitle("limma voom Principal Coordinates 2 & 3",
-             subtitle="After naive batch subtraction"),
-    ggmdsbatch(mds.cb$points, dims=2:3) +
+             subtitle = "After naive batch subtraction"),
+    ggmdsbatch(mds.cb$points, dims = 2:3) +
         ggtitle("limma voom Principal Coordinates 2 & 3",
-             subtitle="After ComBat batch correction"))
+             subtitle = "After ComBat batch correction"))
 ggprint(p)
 ```
 
 The naive batch subtraction seems to leave one donor as an outlier for unclear reasons, while ComBat avoids this artifact, instead yielding abiologically more plausible MDS plot.
 
-```{r batch_correction_mds_plot_pdf, cache=FALSE, include=FALSE}
-ggprint(p, device=cairo_pdf(file.path(plotdir, "rnaseq-MDSPlots-BatchCorrect.pdf"), width=12, height=12, onefile = TRUE))
+```{r batch_correction_mds_plot_pdf, cache = FALSE, include = FALSE}
+ggprint(p, device = cairo_pdf(file.path(plotdir, "rnaseq-MDSPlots-BatchCorrect.pdf"), width = 12, height = 12, onefile = TRUE))
 ```
 
 ## MDS Plots
@@ -421,35 +421,35 @@ Choosing ComBat as the best-looking batch correction, we make more MDS plots for
 xlims <- range(unlist(mds.cb$points[c("Dim1", "Dim2")]))
 ylims <- range(unlist(mds.cb$points[c("Dim2", "Dim3")]))
 pbase <- ggplot(mds.cb$points) +
-    aes(x=Dim1, y=Dim2, label=SampleName, color=batch, fill=time_point, shape=cell_type, linetype=donor_id, group=cell_type:donor_id) +
-    geom_encircle(aes(group=time_point:cell_type, color=NULL), s_shape=0.75, expand=0.05, color=NA, alpha=0.2) +
-    geom_path(color=hcl(c=0, l=45), aes(color=NULL)) +
-    geom_point(size=4) +
-    scale_shape_manual(values=c(Naive=21, Memory=24)) +
-    scale_color_manual(values=col2hcl(c(B1="green", B2="magenta"), l=80)) +
-    scale_fill_hue(l=55) +
-    scale_linetype_manual(values=c("solid", "dashed", "dotdash", "twodash")) +
+    aes(x = Dim1, y = Dim2, label = SampleName, color = batch, fill = time_point, shape = cell_type, linetype = donor_id, group = cell_type:donor_id) +
+    geom_encircle(aes(group = time_point:cell_type, color = NULL), s_shape = 0.75, expand = 0.05, color = NA, alpha = 0.2) +
+    geom_path(color = hcl(c = 0, l = 45), aes(color = NULL)) +
+    geom_point(size = 4) +
+    scale_shape_manual(values = c(Naive = 21, Memory = 24)) +
+    scale_color_manual(values = col2hcl(c(B1 = "green", B2 = "magenta"), l = 80)) +
+    scale_fill_hue(l = 55) +
+    scale_linetype_manual(values = c("solid", "dashed", "dotdash", "twodash")) +
     guides(colour = guide_legend(override.aes = list(shape = 21)),
            fill = guide_legend(override.aes = list(shape = 21)),
-           shape = guide_legend(override.aes = list(color=hcl(c=0, l=80), fill=hcl(c=0, l=55)))) +
-    labs(title="limma voom Principal Coordinates 1 & 2",
-         subtitle=" (after ComBat batch correction)") +
-    coord_equal(xlim=xlims, ylim=ylims)
-p <- list(PC12=pbase,
-          PC23=pbase +
-              aes(x=Dim2, y=Dim3) +
-              labs(title="limma voom Principal Coordinates 2 & 3"),
-          PC34=pbase +
-              aes(x=Dim3, y=Dim4) +
-              labs(title="limma voom Principal Coordinates 3 & 4"),
-          PC45=pbase +
-              aes(x=Dim4, y=Dim5) +
-              labs(title="limma voom Principal Coordinates 4 & 5"))
+           shape = guide_legend(override.aes = list(color = hcl(c = 0, l = 80), fill = hcl(c = 0, l = 55)))) +
+    labs(title = "limma voom Principal Coordinates 1 & 2",
+         subtitle = " (after ComBat batch correction)") +
+    coord_equal(xlim = xlims, ylim = ylims)
+p <- list(PC12 = pbase,
+          PC23 = pbase +
+              aes(x = Dim2, y = Dim3) +
+              labs(title = "limma voom Principal Coordinates 2 & 3"),
+          PC34 = pbase +
+              aes(x = Dim3, y = Dim4) +
+              labs(title = "limma voom Principal Coordinates 3 & 4"),
+          PC45 = pbase +
+              aes(x = Dim4, y = Dim5) +
+              labs(title = "limma voom Principal Coordinates 4 & 5"))
 ggprint(p)
 ```
 
-```{r mds_plot_pdf, cache=FALSE, include=FALSE}
-ggprint(p, device=cairo_pdf(file.path(plotdir, "rnaseq-MDSPlots.pdf"), onefile = TRUE))
+```{r mds_plot_pdf, cache = FALSE, include = FALSE}
+ggprint(p, device = cairo_pdf(file.path(plotdir, "rnaseq-MDSPlots.pdf"), onefile = TRUE))
 ```
 
 ## Variance Partitioning analysis
@@ -459,13 +459,13 @@ To further investigate the sources of variance within the data, we can use the `
 ```{r run_vpart}
 # Fit all factors as random effects, since group and batch are confounded
 vp.formula <- ~ (1|group) + (1|donor_id) + (1|batch)
-elists <- list(NoBC=elist.w, BatSub=elist.bc, ComBat=elist.cb)
+elists <- list(NoBC = elist.w, BatSub = elist.bc, ComBat = elist.cb)
 # Function is already parallelized, so don't call it in parallel
 varParts <- mapply(function(...) try(fitExtractVarPartModel(...)),
                    exprObj = elists,
                    MoreArgs = list(
                        formula = vp.formula,
-                       data=sample.table),
+                       data = sample.table),
                    SIMPLIFY = FALSE)
 # Collapse SVs to a single column
 varTables <- list()
@@ -478,7 +478,7 @@ for (i in names(varParts)) {
         x.sv <- x %>% select(dplyr::matches("^SV\\d+$"))
         if (ncol(x.sv) > 0) {
             x.nosv <- x[setdiff(colnames(x), colnames(x.sv))]
-            x <- data.frame(x.nosv, SV=rowSums(x.sv))
+            x <- data.frame(x.nosv, SV = rowSums(x.sv))
         }
         varTables[[i]] <- cbind(select(x, -Residuals), select(x, Residuals))
     }
@@ -492,7 +492,7 @@ p <- list()
 for (i in names(varTables)) {
     incl <- str_replace_all(i, "_and_", " + ")
     p[[i]] <- plotVarPart(varTables[[i]]) +
-        labs(title=str_c("Variance Partitions, ", incl))
+        labs(title = str_c("Variance Partitions, ", incl))
 }
 ggprint(p)
 ```

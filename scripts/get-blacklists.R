@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 
-options(download.file.method="wget", download.file.extra="--continue --tries=2")
+options(download.file.method = "wget", download.file.extra = "--continue --tries=2")
 
 ## Remember to cite: https://sites.google.com/site/anshulkundaje/projects/blacklists
 urls <- c(

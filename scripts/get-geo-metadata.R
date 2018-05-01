@@ -12,7 +12,7 @@ library(rex)
 library(rctutils)
 
 getGEO <- function(...) {
-    GEOquery::getGEO(..., destdir=here("saved_data"))
+    GEOquery::getGEO(..., destdir = here("saved_data"))
 }
 
 sra_con <- {
@@ -60,16 +60,16 @@ get_relations <- function(pdata) {
 
 get_samplemeta_from_geo_pdata <- function(eset) {
     pdata <- pData(eset)
-    front_data <- pdata %>% select(SampleName=title, geo_accession)
-    back_data  <- pdata %>%
+    front_data <- pdata %>% select(SampleName = title, geo_accession)
+    back_data <- pdata %>%
         select(submission_date, last_update_date)
     samplemeta <- get_characteristics(get_channel_meta(pdata)[[1]])
     relations <- get_relations(pdata)
     cbind(front_data, samplemeta, relations, back_data) %>% fac2char
 }
 
-geo_ids <- c(RNASeq="GSE73213",
-             ChIPSeq="GSE73212")
+geo_ids <- c(RNASeq = "GSE73213",
+             ChIPSeq = "GSE73212")
 
 tsmsg("Loading GEO data")
 esets <- lapply(geo_ids, . %>% getGEO %>% .[[1]])
@@ -78,29 +78,29 @@ tsmsg("Extracting sample metadata")
 samplemeta <- lapply(esets, function(eset) {
     eset %>% get_samplemeta_from_geo_pdata %>%
         ## Extract just the IDs from the URLs
-        mutate(BioSample=str_replace(BioSample, "^\\Qhttp://www.ncbi.nlm.nih.gov/biosample/", ""),
-               SRA=str_replace(SRA, "^\\Qhttp://www.ncbi.nlm.nih.gov/sra?term=", "")) %>%
-        rename(SRA_experiment=SRA) %>%
+        mutate(BioSample = str_replace(BioSample, "^\\Qhttp://www.ncbi.nlm.nih.gov/biosample/", ""),
+               SRA = str_replace(SRA, "^\\Qhttp://www.ncbi.nlm.nih.gov/sra?term=", "")) %>%
+        rename(SRA_experiment = SRA) %>%
         ## Get all relevant SRA IDs
-        inner_join(sraConvert(.$SRA, out_type=as.list(args(sraConvert))$out_type, sra_con) %>% setNames(str_c("SRA_", names(.)))) %>%
+        inner_join(sraConvert(.$SRA, out_type = as.list(args(sraConvert))$out_type, sra_con) %>% setNames(str_c("SRA_", names(.)))) %>%
         ## Fix column types and ensure that non-numeric variables
         ## never start with numbers
-        mutate(cell_type=factor(cell_type, levels=c("Naive", "Memory")),
-               activated=as.logical(activated),
-               days_after_activation=as.numeric(days_after_activation),
-               donor_id=glue("D{donor_id}"),
-               submission_date=mdy(submission_date),
-               last_update_date=mdy(last_update_date)) %>%
+        mutate(cell_type = factor(cell_type, levels = c("Naive", "Memory")),
+               activated = as.logical(activated),
+               days_after_activation = as.numeric(days_after_activation),
+               donor_id = glue("D{donor_id}"),
+               submission_date = mdy(submission_date),
+               last_update_date = mdy(last_update_date)) %>%
         ## Only in RNA-seq
         mutate_if_present(
             "technical_batch",
-            technical_batch=glue("B{technical_batch}"),
-            libType=ifelse(technical_batch == "B1", "SF", "SR")) %>%
+            technical_batch = glue("B{technical_batch}"),
+            libType = ifelse(technical_batch == "B1", "SF", "SR")) %>%
         ## Only in ChIP-seq
         mutate_if_present(
             "chip_antibody",
-            chip_antibody=factor(chip_antibody,
-                                 levels=c("input", "H3K4me2", "H3K4me3", "H3K27me3")))
+            chip_antibody = factor(chip_antibody,
+                                 levels = c("input", "H3K4me2", "H3K4me3", "H3K27me3")))
 })
 assert_that(all(!is.na(unlist(samplemeta))))
 

@@ -23,12 +23,12 @@ params:
 
 # Preliminary Setup
 
-```{r setup, include=FALSE, cache=FALSE}
-knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
-                      cache.extra = list(params=params),
+```{r setup, include = FALSE, cache = FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina = 2, cache = TRUE, autodep = TRUE,
+                      cache.extra = list(params = params),
                       # https://github.com/yihui/knitr/issues/572
-                      cache.lazy=FALSE,
-                      fig.height=8, fig.width=8,
+                      cache.lazy = FALSE,
+                      fig.height = 8, fig.width = 8,
                       cache.path = paste0(
                           here::here("cache", "chipseq-promoter-explore", params$histone_mark),
                           .Platform$file.sep))
@@ -36,7 +36,7 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
 
 First we load the necessary libraries, along with a set of utility functions.
 
-```{r load_packages, message=FALSE, cache=FALSE}
+```{r load_packages, message = FALSE, cache = FALSE}
 library(here)
 library(stringr)
 library(glue)
@@ -56,13 +56,14 @@ library(assertthat)
 library(ks)
 library(RColorBrewer)
 library(variancePartition)
+library(forcats)
 library(rctutils)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
 
 library(BiocParallel)
 library(future)
-options(future.globals.maxSize=4 * 1024^3)
+options(future.globals.maxSize = 4 * 1024^3)
 use_futures("multicore")
 ```
 
@@ -113,9 +114,9 @@ We extract the sample metadata from the SummarizedExperiment. We set all factors
 ```{r extract_samplemeta}
 sample.table <- colData(sexp) %>%
     as.data.frame %>% auto_factorize_columns %>%
-    mutate(days_after_activation=time_point %>% str_extract("\\d+$") %>% as.numeric(),
-           time_point=factor(days_after_activation) %>% `levels<-`(glue("D{levels(.)}")),
-           group=interaction(cell_type, time_point, sep="")) %>%
+    mutate(days_after_activation = time_point %>% str_extract("\\d+$") %>% as.numeric(),
+           time_point = factor(days_after_activation) %>% fct_relevel(glue("D{levels(.)}")),
+           group = interaction(cell_type, time_point, sep = "")) %>%
     auto_factorize_columns %>%
     set_rownames(colnames(sexp))
 for (i in names(sample.table)) {
@@ -137,7 +138,7 @@ peaks <- allpeaks[allpeaks$qValue >= -log10(idr.threshold)]
 pct.genome.covered <- width(peaks) %>% sum %>% divide_by(genome.size) %>% multiply_by(100)
 peak.overlap <- overlapsAny(sexp, peaks)
 pct.promoters.covered <- mean(peak.overlap) * 100
-message(glue("Selected {length(peaks)} peaks at an IDR threshold of {format(idr.threshold, digits=3)}, with an average width of {round(mean(width(peaks)))}, covering a total of {format(pct.genome.covered, digits=3)}%% of the genome and {format(pct.promoters.covered, digits=3)}% of promoters."))
+message(glue("Selected {length(peaks)} peaks at an IDR threshold of {format(idr.threshold, digits = 3)}, with an average width of {round(mean(width(peaks)))}, covering a total of {format(pct.genome.covered, digits = 3)}%% of the genome and {format(pct.promoters.covered, digits = 3)}% of promoters."))
 ```
 
 We need a strategy to filter out unbound promoters promoters representing background regions of the genome where no specific binding is observed. First, we examine the overall distribution of average logCPM values, splitting the distribution based on which promoters overlap peaks:
@@ -147,34 +148,34 @@ a <- aveLogCPM(asDGEList(sexp), prior.count = 2)
 ```
 
 ```{r plot_aveLogCPM}
-adata <- data.frame(logCPM=a, PeakOverlap=peak.overlap)
+adata <- data.frame(logCPM = a, PeakOverlap = peak.overlap)
 threshold.q <- 0.05
 logcpm.threshold <- adata %>% filter(PeakOverlap) %$% quantile(logCPM, threshold.q)
 count.threshold <- 2^logcpm.threshold * mean(colData(sexp)$totals) / 1e6
 message(glue("
-    Filter theshold at {threshold.q} quantile of peak-overlapping promoters is {format(count.threshold, digits=3)} reads, a logCPM of {format(logcpm.threshold, digits=3)}. \\
-    This threshold keeps {format(100 * mean(a >= logcpm.threshold), digits=3)}% of promoters.
+    Filter theshold at {threshold.q} quantile of peak-overlapping promoters is {format(count.threshold, digits = 3)} reads, a logCPM of {format(logcpm.threshold, digits = 3)}. \\
+    This threshold keeps {format(100 * mean(a >= logcpm.threshold), digits = 3)}% of promoters.
 "))
 p <- list(
-    Histogram=ggplot(adata) +
-        aes(x=logCPM, fill=PeakOverlap) +
-        geom_histogram(aes(y=100*(..count..)/sum(..count..)), binwidth=0.1, boundary=0) +
-        geom_vline(xintercept=logcpm.threshold, linetype="dashed") +
+    Histogram = ggplot(adata) +
+        aes(x = logCPM, fill = PeakOverlap) +
+        geom_histogram(aes(y = 100*(..count..)/sum(..count..)), binwidth = 0.1, boundary = 0) +
+        geom_vline(xintercept = logcpm.threshold, linetype = "dashed") +
         xlab("Average logCPM") + ylab("Percent of promoters in bin") +
-        coord_cartesian(xlim=quantile(a, c(0, 0.999)), ylim=c(0,5)) +
-        labs(title="Histogram of average promoter logCPM values",
-             subtitle="Colored by peak overlap"),
-    Violin=ggplot(adata) +
-        aes(x=PeakOverlap, y=logCPM) +
-        geom_violin(aes(fill=PeakOverlap), scale = "area") +
-        geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
-        geom_hline(yintercept=logcpm.threshold, linetype="dashed") +
-        scale_fill_hue(guide="none") +
-        coord_cartesian(ylim=quantile(a, c(0, 0.999))) +
-        labs(title="Violin plot of average promoter logCPM values",
-             subtitle="Grouped by peak overlap"))
+        coord_cartesian(xlim = quantile(a, c(0, 0.999)), ylim = c(0,5)) +
+        labs(title = "Histogram of average promoter logCPM values",
+             subtitle = "Colored by peak overlap"),
+    Violin = ggplot(adata) +
+        aes(x = PeakOverlap, y = logCPM) +
+        geom_violin(aes(fill = PeakOverlap), scale = "area") +
+        geom_boxplot(width = 0.07, fill = "grey", alpha = 0.75, outlier.alpha = 0) +
+        geom_hline(yintercept = logcpm.threshold, linetype = "dashed") +
+        scale_fill_hue(guide = "none") +
+        coord_cartesian(ylim = quantile(a, c(0, 0.999))) +
+        labs(title = "Violin plot of average promoter logCPM values",
+             subtitle = "Grouped by peak overlap"))
 ggprint(p)
-summary(lm(logCPM ~ PeakOverlap, data=adata))
+summary(lm(logCPM ~ PeakOverlap, data = adata))
 ```
 
 Happily, there is a clear bimodal distribution, which we presume separates bound from unbound promoters. We use the logCPM distribution of peak-overlapping promoters to choose a low-count filter threshold that keeps 95% of such promoters, and then we keep *all* promoters that pass this threshold, regardless of whether they contain a called peak. This ensures that we capture most activity in any peak-containing promoters without relying directly on the peak calls. Thus, if a promoter contains a peak that was not called because it is only present in certain conditions, it is still likely to be included based on this filter criterion.
@@ -190,10 +191,10 @@ Now we create a DGEList from the counts.
 ```{r prepare_dgelist}
 ## Extract gene metadata and colapse lists
 all.promoter.meta <- rowRanges(sexp) %>% as.data.frame %>%
-    rename(chr=seqnames) %>%
+    rename(chr = seqnames) %>%
     select(-width, -strand)
 # Convert list columns to character vectors
-all.promoter.meta[] %<>% lapply(function(x) if (is.list(x)) sapply(x, str_c, collapse=",") else x)
+all.promoter.meta[] %<>% lapply(function(x) if (is.list(x)) sapply(x, str_c, collapse = ",") else x)
 dge <- asDGEList(sexp) %>%
     assign_into(.$offset, NULL) %>%
     assign_into(.$genes, all.promoter.meta) %>%
@@ -206,20 +207,20 @@ Normalization is a non-trivial issue for ChIP-Seq data. We will test three norma
 
 ```{r compute_norm_factors}
 # Compute these in parallel
-bgnf %<-% normOffsets(bigbin.sexp, type="scaling", weighted=FALSE)
-pnf %<-% normOffsets(sexp, type="scaling", weighted=TRUE)
-loff %<-% { normOffsets(sexp, type="loess") + mean(getOffset(dge)) }
+bgnf %<-% normOffsets(bigbin.sexp, type = "scaling", weighted = FALSE)
+pnf %<-% normOffsets(sexp, type = "scaling", weighted = TRUE)
+loff %<-% { normOffsets(sexp, type = "loess") + mean(getOffset(dge)) }
 sample.table$BGNormFactors <- colData(sexp)$BGNormFactors <- bgnf
 sample.table$PromoterNormFactors <- colData(sexp)$PromoterNormFactors <- pnf
-assay(sexp, "offsets.loess")  <- loff
+assay(sexp, "offsets.loess") <- loff
 ```
 
 We plot both normalizations against all relevant experimental factors:
 
 ```{r plot_normfactors}
 p <- list(ggduo(as.data.frame(colData(sexp)),
-                columnsX=c("cell_type", "time_point", "donor_id", "totals"),
-                columnsY=c("BGNormFactors", "PromoterNormFactors")),
+                columnsX = c("cell_type", "time_point", "donor_id", "totals"),
+                columnsY = c("BGNormFactors", "PromoterNormFactors")),
          ggpairs(as.data.frame(colData(sexp)[c("totals", "BGNormFactors", "PromoterNormFactors")])))
 ggprint(p)
 ```
@@ -240,10 +241,10 @@ To account for the variable effect of donor, efficiency bias, and as any other s
 
 ```{r sva}
 dges <- list(
-    BGNorm=dge %>% assign_into(.$samples$norm.factors, colData(sexp)$BGNormFactors),
-    PromoterNorm=dge %>% assign_into(.$samples$norm.factors, colData(sexp)$PromoterNormFactors),
-    LoessNorm=dge %>% assign_into(.$offset, assay(sexp, "offsets.loess")))
-logcpms <- lapply(dges, cpmWithOffset, prior.count=1)
+    BGNorm = dge %>% assign_into(.$samples$norm.factors, colData(sexp)$BGNormFactors),
+    PromoterNorm = dge %>% assign_into(.$samples$norm.factors, colData(sexp)$PromoterNormFactors),
+    LoessNorm = dge %>% assign_into(.$offset, assay(sexp, "offsets.loess")))
+logcpms <- lapply(dges, cpmWithOffset, prior.count = 1)
 # Need a design with an intercept for sva
 svobjs <- bplapply(logcpms, sva, design.int)
 # We are expecting at least 1 SV. If there are no SVs, then the downstream code
@@ -254,16 +255,16 @@ for (i in names(svobjs)) {
 svmats <- lapply(svobjs, . %$% sv %>% cbind %>% add_numbered_colnames("SV"))
 sv.designs <- lapply(svmats, . %>% cbind(design, .))
 sv.designs.int <- lapply(svmats, . %>% cbind(design.int, .))
-numsv.table <- sapply(svobjs, . %$% n.sv) %>% data_frame(NormType=names(.) , NumSV=.)
+numsv.table <- sapply(svobjs, . %$% n.sv) %>% data_frame(NormType = names(.) , NumSV = .)
 print(numsv.table)
 p <- list()
 for (i in names(svmats)) {
     d <- cbind(sample.table, svmats[[i]])
     p[[i]] <- ggduo(d,
-                    columnsX=c("cell_type", "time_point", "donor_id", "totals"),
-                    columnsY=c(colnames(svmats[[i]]))) +
-        labs(title="Covariates vs surrogate variables",
-             subtitle=glue("For SVs from {i} normalization"))
+                    columnsX = c("cell_type", "time_point", "donor_id", "totals"),
+                    columnsY = c(colnames(svmats[[i]]))) +
+        labs(title = "Covariates vs surrogate variables",
+             subtitle = glue("For SVs from {i} normalization"))
 }
 ggprint(p)
 ```
@@ -275,10 +276,10 @@ Nothing in this plots particularly stands out as problematic. By analogy to the 
 Now we estimate the dispersions with and without empirical Bayes shrinkage, with and without surrogate variables.
 
 ```{r estimate_disp_normtest}
-dges.noebayes <- bpmapply(estimateDisp, y=dges, design=sv.designs, MoreArgs=list(prior.df=0))
-dges.noebayes.nosv <- bpmapply(estimateDisp, y=dges, MoreArgs=list(design=design, prior.df=0))
-dges <- bpmapply(estimateDisp, y=dges, design=sv.designs, MoreArgs=list(robust=TRUE))
-dges.nosv <- bpmapply(estimateDisp, y=dges, MoreArgs=list(design=design, robust=TRUE))
+dges.noebayes <- bpmapply(estimateDisp, y = dges, design = sv.designs, MoreArgs = list(prior.df = 0))
+dges.noebayes.nosv <- bpmapply(estimateDisp, y = dges, MoreArgs = list(design = design, prior.df = 0))
+dges <- bpmapply(estimateDisp, y = dges, design = sv.designs, MoreArgs = list(robust = TRUE))
+dges.nosv <- bpmapply(estimateDisp, y = dges, MoreArgs = list(design = design, robust = TRUE))
 # Hopefully save memory by re-sharing common parts after running in separate processes
 for (i in names(dges)) {
     for (slot in c("counts", "genes")) {
@@ -290,9 +291,9 @@ for (i in names(dges)) {
     }
 }
 xlims <- lapply(c(dges, dges.nosv), . %$% AveLogCPM %>% range) %>%
-    unlist %>% range %>% expand_range(mul=0.05)
+    unlist %>% range %>% expand_range(mul = 0.05)
 ylims <- lapply(c(dges, dges.nosv), . %$% c(quantile(tagwise.dispersion, c(0, 0.975)), trended.dispersion, common.dispersion) %>% range) %>%
-    unlist %>% c(0) %>% range %>% sqrt %>% pmax(0) %>% expand_range(mul=0.05)
+    unlist %>% c(0) %>% range %>% sqrt %>% pmax(0) %>% expand_range(mul = 0.05)
 ```
 
 We now inspect the dispersion plot for each of the normalizations.
@@ -301,10 +302,10 @@ We now inspect the dispersion plot for each of the normalizations.
 p <- list()
 for (i in names(dges)) {
     prior.df <- dges[[i]]$prior.df %>% median
-    p[[i]] <- ggplotBCV(dges[[i]], rawdisp=dges.noebayes[[i]]) +
-        coord_cartesian(xlim = xlims, ylim=ylims, expand=FALSE) +
-        labs(title=glue("BCV Plot with {i}"),
-             subtitle=glue("Prior d.f. = {format(prior.df, digits=3)}"))
+    p[[i]] <- ggplotBCV(dges[[i]], rawdisp = dges.noebayes[[i]]) +
+        coord_cartesian(xlim = xlims, ylim = ylims, expand = FALSE) +
+        labs(title = glue("BCV Plot with {i}"),
+             subtitle = glue("Prior d.f. = {format(prior.df, digits = 3)}"))
 }
 ggprint(p)
 ```
@@ -317,10 +318,10 @@ We also inspect the BCV plot without SVA:
 p <- list()
 for (i in names(dges.nosv)) {
     prior.df <- dges.nosv[[i]]$prior.df %>% median
-    p[[i]] <- ggplotBCV(dges.nosv[[i]], rawdisp=dges.noebayes.nosv[[i]]) +
-        coord_cartesian(xlim = xlims, ylim=ylims, expand=FALSE) +
-        labs(title=glue("BCV Plot with {i} and no SVA"),
-             subtitle=glue("Prior d.f. = {format(prior.df, digits=3)}"))
+    p[[i]] <- ggplotBCV(dges.nosv[[i]], rawdisp = dges.noebayes.nosv[[i]]) +
+        coord_cartesian(xlim = xlims, ylim = ylims, expand = FALSE) +
+        labs(title = glue("BCV Plot with {i} and no SVA"),
+             subtitle = glue("Prior d.f. = {format(prior.df, digits = 3)}"))
 }
 ggprint(p)
 ```
@@ -341,34 +342,34 @@ disptable <- lapply(names(dges), function(i) {
 rm(dges.nosv, dges.noebayes, dges.noebayes.nosv); invisible(gc())
 disptable %>% group_by(NormType) %>% do({
     summary(.$BCV_Change) %>% unclass %>% rbind %>% as_data_frame
-}) %>% inner_join(numsv.table, ., by="NormType")
+}) %>% inner_join(numsv.table, ., by = "NormType")
 bcv_upper_limit <- disptable %>% select(BCV_SVA, BCV_NoSVA) %>% unlist %>% quantile(.999)
 ggplot(disptable) +
-    aes(x=NormType, y=BCV_NoSVA) +
-    geom_violin(aes(fill=NormType), scale = "area") +
-    geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
-    scale_fill_hue(guide="none") +
-    coord_cartesian(ylim=c(0, bcv_upper_limit)) +
-    labs(title="BCV estimates without SVA") +
+    aes(x = NormType, y = BCV_NoSVA) +
+    geom_violin(aes(fill = NormType), scale = "area") +
+    geom_boxplot(width = 0.07, fill = "grey", alpha = 0.75, outlier.alpha = 0) +
+    scale_fill_hue(guide = "none") +
+    coord_cartesian(ylim = c(0, bcv_upper_limit)) +
+    labs(title = "BCV estimates without SVA") +
     xlab("Normalization Type") +
     ylab("BCV")
 ggplot(disptable) +
-    aes(x=NormType, y=BCV_SVA) +
-    geom_violin(aes(fill=NormType), scale = "area") +
-    geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
-    scale_fill_hue(guide="none") +
-    coord_cartesian(ylim=c(0, bcv_upper_limit)) +
-    labs(title="BCV estimates with SVA") +
+    aes(x = NormType, y = BCV_SVA) +
+    geom_violin(aes(fill = NormType), scale = "area") +
+    geom_boxplot(width = 0.07, fill = "grey", alpha = 0.75, outlier.alpha = 0) +
+    scale_fill_hue(guide = "none") +
+    coord_cartesian(ylim = c(0, bcv_upper_limit)) +
+    labs(title = "BCV estimates with SVA") +
     xlab("Normalization Type") +
     ylab("BCV")
 ggplot(disptable) +
-    aes(x=NormType, y=BCV_Change) +
-    geom_hline(yintercept = 0, linetype="dashed", alpha=0.5) +
-    geom_violin(aes(fill=NormType), scale = "area") +
-    geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
-    scale_fill_hue(guide="none") +
-    coord_cartesian(ylim=quantile(disptable$BCV_Change, c(.001, .999))) +
-    labs(title="Effect of SVA on BCV estimates") +
+    aes(x = NormType, y = BCV_Change) +
+    geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.5) +
+    geom_violin(aes(fill = NormType), scale = "area") +
+    geom_boxplot(width = 0.07, fill = "grey", alpha = 0.75, outlier.alpha = 0) +
+    scale_fill_hue(guide = "none") +
+    coord_cartesian(ylim = quantile(disptable$BCV_Change, c(.001, .999))) +
+    labs(title = "Effect of SVA on BCV estimates") +
     xlab("Normalization Type") +
     ylab("Change in BCV with SVA")
 ```
@@ -388,19 +389,19 @@ bcdata <- mapply(function(dge, des) {
     v <- voomWithOffset(dge, des)
     v$E <- suppressMessages(subtractCoefs(v$E, des, coefsToSubtract = sv.cols))
     v
-}, dge=dges, des=sv.designs.int, SIMPLIFY = FALSE)
+}, dge = dges, des = sv.designs.int, SIMPLIFY = FALSE)
 prep.mds <- function(x) {
     mds <- suppressPlot(plotMDS(x))
     mds.distances <- mds %$% distance.matrix %>% as.dist
     df <- mds.distances %>%
-    {suppressWarnings(cmdscale(., k=ncol(x)-1))} %>%
-        add.numbered.colnames(prefix="Dim") %>%
+    {suppressWarnings(cmdscale(., k = ncol(x)-1))} %>%
+        add.numbered.colnames(prefix = "Dim") %>%
         as.data.frame %>%
         cbind(sample.table)
     # Use Naive D0 as the reference group, and flip the signs of each dimension
     # such that the mean of this group is negative. This makes it more likely that
     mdscols <- colnames(df) %>% .[str_detect(., "Dim\\d+")]
-    needflip <- df %>% filter(group=="NaiveD0") %>%
+    needflip <- df %>% filter(group == "NaiveD0") %>%
         .[mdscols] %>% colMeans %>% is_greater_than(0)
     for (i in mdscols[needflip]) {
         df[[i]] %<>% multiply_by(-1)
@@ -411,36 +412,36 @@ mdstabs <- lapply(bcdata, prep.mds)
 mdstabs.nosv <- lapply(dges, prep.mds)
 ggmds <- function(x) {
      ggplot(x %>% arrange(cell_type, time_point, donor_id)) +
-        aes(x=Dim1, y=Dim2, label=SampleName, color=time_point,
-            shape=cell_type, linetype=donor_id, group=cell_type:donor_id) +
-        geom_encircle(aes(group=time_point:cell_type, color=NULL, fill=time_point), s_shape=0.75, expand=0.05, color=NA, alpha=0.2) +
-        geom_path(color=hcl(c=0, l=45), aes(color=NULL)) +
-        # geom_point(   size=4) +
-        geom_point(aes(size=totals)) +
-        scale_shape_manual(values=c(Naive=16, Memory=17)) +
-        scale_fill_hue(l=55) +
-        scale_linetype_manual(values=c("solid", "dashed", "dotdash", "twodash")) +
-        guides(shape = guide_legend(order=1, ncol=2, override.aes = list(size=4, color=hcl(c=0, l=80), fill=hcl(c=0, l=55))),
-               fill = guide_legend(order=2, ncol=2, override.aes = list(shape = 16, size=4)),
-               color = guide_legend(order=2, ncol=2),
-               linetype = guide_legend(order=3, ncol=2),
-               size = guide_legend(order=4, title = "total_reads")) +
+        aes(x = Dim1, y = Dim2, label = SampleName, color = time_point,
+            shape = cell_type, linetype = donor_id, group = cell_type:donor_id) +
+        geom_encircle(aes(group = time_point:cell_type, color = NULL, fill = time_point), s_shape = 0.75, expand = 0.05, color = NA, alpha = 0.2) +
+        geom_path(color = hcl(c = 0, l = 45), aes(color = NULL)) +
+        # geom_point(   size = 4) +
+        geom_point(aes(size = totals)) +
+        scale_shape_manual(values = c(Naive = 16, Memory = 17)) +
+        scale_fill_hue(l = 55) +
+        scale_linetype_manual(values = c("solid", "dashed", "dotdash", "twodash")) +
+        guides(shape = guide_legend(order = 1, ncol = 2, override.aes = list(size = 4, color = hcl(c = 0, l = 80), fill = hcl(c = 0, l = 55))),
+               fill = guide_legend(order = 2, ncol = 2, override.aes = list(shape = 16, size = 4)),
+               color = guide_legend(order = 2, ncol = 2),
+               linetype = guide_legend(order = 3, ncol = 2),
+               size = guide_legend(order = 4, title = "total_reads")) +
         coord_equal()
 }
 p12 <- p23 <- p12.nosv <- p23.nosv <- list()
 for (i in names(mdstabs)) {
     p12[[i]] <- ggmds(mdstabs[[i]]) +
-        labs(title="MDS Principal Coordinates 1 & 2",
-             subtitle=glue("With {i} normalization; SVs subtracted")) +
+        labs(title = "MDS Principal Coordinates 1 & 2",
+             subtitle = glue("With {i} normalization; SVs subtracted")) +
         coord_equal()
-    p23[[i]] <- p12[[i]] + aes(x=Dim2, y=Dim3) +
-        labs(title="MDS Principal Coordinates 2 & 3")
+    p23[[i]] <- p12[[i]] + aes(x = Dim2, y = Dim3) +
+        labs(title = "MDS Principal Coordinates 2 & 3")
     p12.nosv[[i]] <- ggmds(mdstabs.nosv[[i]]) +
-        labs(title="MDS Principal Coordinates 1 & 2",
-             subtitle=glue("With {i} normalization; SVs not subtracted")) +
+        labs(title = "MDS Principal Coordinates 1 & 2",
+             subtitle = glue("With {i} normalization; SVs not subtracted")) +
         coord_equal()
-    p23.nosv[[i]] <- p12.nosv[[i]] + aes(x=Dim2, y=Dim3) +
-        labs(title="MDS Principal Coordinates 2 & 3")
+    p23.nosv[[i]] <- p12.nosv[[i]] + aes(x = Dim2, y = Dim3) +
+        labs(title = "MDS Principal Coordinates 2 & 3")
 }
 ```
 
@@ -478,13 +479,13 @@ To further investigate the sources of variance within the data, we can use the `
 sample.table.with.sv <- cbind(sample.table, svmats$PromoterNorm)
 vp.formulas <- list(Group_Only = ~group,
                     Group_and_Covars = ~ group + donor_id,
-                    Group_and_SV = as.formula(str_c(c("~ group", colnames(svmats$PromoterNorm)), collapse=" + ")),
-                    Group_and_Covars_and_SV = as.formula(str_c(c("~ group + donor_id", colnames(svmats$PromoterNorm)), collapse=" + ")))
-designs <- lapply(vp.formulas, model.matrix, data=sample.table.with.sv)
-elists <- bplapply(designs, voomWithOffset, dge=dges$PromoterNorm)
+                    Group_and_SV = as.formula(str_c(c("~ group", colnames(svmats$PromoterNorm)), collapse = " + ")),
+                    Group_and_Covars_and_SV = as.formula(str_c(c("~ group + donor_id", colnames(svmats$PromoterNorm)), collapse = " + ")))
+designs <- lapply(vp.formulas, model.matrix, data = sample.table.with.sv)
+elists <- bplapply(designs, voomWithOffset, dge = dges$PromoterNorm)
 # Function is already parallelized, so don't call it in parallel
-varParts <- mapply(function(...) try(fitExtractVarPartModel(...)), exprObj=elists, formula=vp.formulas,
-                   MoreArgs=list(data=sample.table.with.sv))
+varParts <- mapply(function(...) try(fitExtractVarPartModel(...)), exprObj = elists, formula = vp.formulas,
+                   MoreArgs = list(data = sample.table.with.sv))
 # Collapse SVs to a single column
 varTables <- list()
 for (i in names(varParts)) {
@@ -496,7 +497,7 @@ for (i in names(varParts)) {
         x.sv <- x %>% select(dplyr::matches("^SV\\d+$"))
         if (ncol(x.sv) > 0) {
             x.nosv <- x[setdiff(colnames(x), colnames(x.sv))]
-            x <- data.frame(x.nosv, SV=rowSums(x.sv))
+            x <- data.frame(x.nosv, SV = rowSums(x.sv))
         }
         varTables[[i]] <- cbind(select(x, -Residuals), select(x, Residuals))
     }
@@ -510,7 +511,7 @@ p <- list()
 for (i in names(varTables)) {
     incl <- str_replace_all(i, "_and_", " + ")
     p[[i]] <- plotVarPart(varTables[[i]]) +
-        labs(title=str_c("Variance Partitions, ", incl))
+        labs(title = str_c("Variance Partitions, ", incl))
 }
 ggprint(p)
 ```
@@ -519,20 +520,20 @@ It is an encouraging sign that no matter which covariates are included, the perc
 
 ```{r selectModel}
 sm <- selectModelParallel(voomWithOffset(dges$PromoterNorm, designs[[1]]), designs, criterion = "bic")
-as.data.frame(table(sm$pref)) %>% rename(Model=Var1)
-ggplot(melt(sm$IC) %>% rename(Model=Models, Probe=Probes, IC=value)) +
-    aes(x=Model, fill=Model, y=IC) + geom_violin() +
-    geom_boxplot(width = 0.07, fill = "grey", alpha=0.75, outlier.alpha = 0) +
-    scale_fill_hue(guide="none") +
+as.data.frame(table(sm$pref)) %>% rename(Model = Var1)
+ggplot(melt(sm$IC) %>% rename(Model = Models, Probe = Probes, IC = value)) +
+    aes(x = Model, fill = Model, y = IC) + geom_violin() +
+    geom_boxplot(width = 0.07, fill = "grey", alpha = 0.75, outlier.alpha = 0) +
+    scale_fill_hue(guide = "none") +
     ylab("BIC") +
-    labs(title="Promoter BIC distribution by model",
-         subtitle="(lower is better)")
-ggplot(sm$IC) + aes(x=Group_and_SV, y=Group_and_Covars_and_SV) +
-    geom_point(size=0.1) +
-    geom_abline(slope=1, intercept=0, linetype = "longdash", color=muted("red", l=50, c=90)) +
+    labs(title = "Promoter BIC distribution by model",
+         subtitle = "(lower is better)")
+ggplot(sm$IC) + aes(x = Group_and_SV, y = Group_and_Covars_and_SV) +
+    geom_point(size = 0.1) +
+    geom_abline(slope = 1, intercept = 0, linetype = "longdash", color = muted("red", l = 50, c = 90)) +
     geom_density2d() +
     coord_fixed() +
-    labs(title="Promoter BIC with vs. without Donor & FRiP covariates")
+    labs(title = "Promoter BIC with vs. without Donor & FRiP covariates")
 ```
 
 When the donor is added into any model, the BIC for the average gene gets larger (i.e. worse), indicating that donor ID is not explaining enough additional variation to justify including them in the model. Note that this does not mean these are unimportant covariates, but that the surrogate variables inferred by SVA are already capturing most of the variation explained by these covariates, making their inclusion mostly redundant. Looking at the scatter plot above, we can see that there is a minority of promoters below the identity line for which including donor improves the model, but the majority lie above the identity line, where the no-donor model is better.
@@ -547,66 +548,66 @@ middle.samples <- colData(sexp)$nf.logratio %>% abs %>% order
 bn.higher.samples <- colData(sexp)$nf.logratio %>% order
 pn.higher.samples <- rev(bn.higher.samples)
 
-logcpm <- cpm(dge, log=TRUE, prior.count=0.5)
+logcpm <- cpm(dge, log = TRUE, prior.count = 0.5)
 # The same measure used for the loess normalization
 AveLogCPM <- aveLogCPM(dge, dispersion = 0.05, prior.count = 0.5)
-logcpm.loess <- cpmWithOffset(dges$LoessNorm, log=TRUE, prior.count=0.5)
-bigbin.logcpm <- cpm(asDGEList(bigbin.sexp), log=TRUE, prior.count=0.5)
+logcpm.loess <- cpmWithOffset(dges$LoessNorm, log = TRUE, prior.count = 0.5)
+bigbin.logcpm <- cpm(asDGEList(bigbin.sexp), log = TRUE, prior.count = 0.5)
 
 getLineData <- function(s1, s2) {
-    linenames <- c(BG="BGNorm",
-                   Promoters="PromoterNorm")
+    linenames <- c(BG = "BGNorm",
+                   Promoters = "PromoterNorm")
     assert_that(all(linenames %in% names(dges)))
     dgelists <- dges[linenames] %>% setNames(names(linenames))
     getNormLineData(dgelists, s1, s2)
 }
 
-getOffsetCurveData <- function(s1, s2, n=1000) {
+getOffsetCurveData <- function(s1, s2, n = 1000) {
     getOffsetNormCurveData(dges$LoessNorm, s1, s2, n)
 }
 
-doMAPlot <- function(logcpm.matrix, s1, s2, linedata=getLineData(s1, s2), curvedata=NULL,
-                     AveLogCPM, Acutoff=-2) {
-    pointdata <- data.frame(S1=logcpm.matrix[,s1], S2=logcpm.matrix[,s2]) %>%
-        transmute(A=(S1+S2)/2, M=S2-S1)
+doMAPlot <- function(logcpm.matrix, s1, s2, linedata = getLineData(s1, s2), curvedata = NULL,
+                     AveLogCPM, Acutoff = -2) {
+    pointdata <- data.frame(S1 = logcpm.matrix[,s1], S2 = logcpm.matrix[,s2]) %>%
+        transmute(A = (S1+S2)/2, M = S2-S1)
     if (!missing(AveLogCPM)) {
         pointdata$A <- AveLogCPM
     }
     pointdata %<>% filter(A >= Acutoff)
     ## Compute bandwidth and kernel smooth surface
-    H <- pointdata %>% Hbcv.diag(binned=TRUE) %>% divide_by(4)
+    H <- pointdata %>% Hbcv.diag(binned = TRUE) %>% divide_by(4)
     k <- pointdata %>%
         as.matrix %>%
-        kde(gridsize=1024, bgridsize=rep(1024, 2), verbose=TRUE,
-            H=H, binned=TRUE)
+        kde(gridsize = 1024, bgridsize = rep(1024, 2), verbose = TRUE,
+            H = H, binned = TRUE)
     ## Sometimes the estimate goes a bit negative, which is no good
 
     densdata <- melt(k$estimate) %>%
         transmute(
-            A=k$eval.points[[1]][Var1],
-            M=k$eval.points[[2]][Var2],
-            Density=value %>% pmax(0),
+            A = k$eval.points[[1]][Var1],
+            M = k$eval.points[[2]][Var2],
+            Density = value %>% pmax(0),
             ## Part of a hack to make the alpha look less bad
-            AlphaDens=value %>% pmax(1e-15))
+            AlphaDens = value %>% pmax(1e-15))
 
     p <- ggplot(pointdata) +
-        coord_fixed(ratio=1/2) +
+        coord_fixed(ratio = 1/2) +
         ## MA Plot density
-        geom_raster(aes(x=A, y=M, fill=Density, alpha=AlphaDens),
-                    data=densdata,
-                    interpolate=TRUE) +
-        scale_fill_gradientn(colors=suppressWarnings(brewer.pal(Inf, "Blues")),
-                             trans=power_trans(1/8),
-                             name="Density") +
-        scale_alpha_continuous(trans=power_trans(1/40), guide=FALSE)
+        geom_raster(aes(x = A, y = M, fill = Density, alpha = AlphaDens),
+                    data = densdata,
+                    interpolate = TRUE) +
+        scale_fill_gradientn(colors = suppressWarnings(brewer.pal(Inf, "Blues")),
+                             trans = power_trans(1/8),
+                             name = "Density") +
+        scale_alpha_continuous(trans = power_trans(1/40), guide = FALSE)
     if (!is.null(linedata) && nrow(linedata) > 0) {
         p <- p +
             ## Normalization lines
-            geom_hline(data=linedata, aes(yintercept=NormFactor, color=NormType)) +
-            scale_color_discrete(name="Norm Type")
+            geom_hline(data = linedata, aes(yintercept = NormFactor, color = NormType)) +
+            scale_color_discrete(name = "Norm Type")
     }
     if (!is.null(curvedata)) {
-        p <- p + geom_line(data=curvedata, aes(x=A, y=M))
+        p <- p + geom_line(data = curvedata, aes(x = A, y = M))
     }
     p
 }
@@ -620,8 +621,8 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm, s1, s2) +
-            labs(title=glue("MA plot of {params$promoter_radius}-radius promoters"),
-                 subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
+            labs(title = glue("MA plot of {params$promoter_radius}-radius promoters"),
+                 subtitle = glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
 ggprint(p)
 ```
@@ -633,10 +634,10 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
     lapply(function(i) {
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
-        doMAPlot(logcpm, s1, s2, AveLogCPM=AveLogCPM,
-                 curvedata=getOffsetCurveData(s1, s2)) +
-            labs(title=glue("MA plot of {params$promoter_radius}-radius promoters with common A scale"),
-                 subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
+        doMAPlot(logcpm, s1, s2, AveLogCPM = AveLogCPM,
+                 curvedata = getOffsetCurveData(s1, s2)) +
+            labs(title = glue("MA plot of {params$promoter_radius}-radius promoters with common A scale"),
+                 subtitle = glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
 ggprint(p)
 ```
@@ -649,9 +650,9 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(logcpm.loess, s1, s2, linedata = NULL) +
-            geom_hline(yintercept=0) +
-            labs(title=glue("MA plot of {params$promoter_radius}-radius promoters, loess normalized"),
-                 subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
+            geom_hline(yintercept = 0) +
+            labs(title = glue("MA plot of {params$promoter_radius}-radius promoters, loess normalized"),
+                 subtitle = glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
 ggprint(p)
 ```
@@ -664,9 +665,9 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(bcdata$PromoterNorm$E, s1, s2, linedata = NULL) +
-            geom_hline(yintercept=0) +
-            labs(title=glue("MA plot of {params$promoter_radius}-radius promoters, peak-normalized & SVA-corrected"),
-                 subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
+            geom_hline(yintercept = 0) +
+            labs(title = glue("MA plot of {params$promoter_radius}-radius promoters, peak-normalized & SVA-corrected"),
+                 subtitle = glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
 ggprint(p)
 ```
@@ -679,8 +680,8 @@ p <- seq_len(floor(length(bn.higher.samples) / 2)) %>%
         s1 <- bn.higher.samples[i]
         s2 <- bn.higher.samples[length(bn.higher.samples) - i + 1]
         doMAPlot(bigbin.logcpm, s1, s2) +
-            labs(title=glue("MA plot of {params$bigbin_size} bins"),
-                 subtitle=glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
+            labs(title = glue("MA plot of {params$bigbin_size} bins"),
+                 subtitle = glue("{colnames(dge)[s1]} vs {colnames(dge)[s2]}"))
     })
 ggprint(p)
 ```

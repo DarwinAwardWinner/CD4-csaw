@@ -21,18 +21,18 @@ params:
 
 # Preliminary Setup
 
-```{r setup, include=FALSE, cache=FALSE}
-knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
-                      cache.extra = list(params=params),
+```{r setup, include = FALSE, cache = FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina = 2, cache = TRUE, autodep = TRUE,
+                      cache.extra = list(params = params),
                       # https://github.com/yihui/knitr/issues/572
-                      cache.lazy=FALSE,
-                      fig.height=8, fig.width=8,
+                      cache.lazy = FALSE,
+                      fig.height = 8, fig.width = 8,
                       cache.path = paste0(here::here("cache", "promoter-cpg", params$histone_mark), .Platform$file.sep))
 ```
 
 First we load the necessary libraries, along with a set of utility functions.
 
-```{r load_packages, message=FALSE, cache=FALSE}
+```{r load_packages, message = FALSE, cache = FALSE}
 library(stringr)
 library(glue)
 library(magrittr)
@@ -45,7 +45,7 @@ library(rctutils)
 
 
 library(future)
-options(future.globals.maxSize=4 * 1024^3)
+options(future.globals.maxSize = 4 * 1024^3)
 use_futures("multicore")
 ```
 
@@ -82,9 +82,9 @@ results.tables <- chipseq_results$results.tables
 single.coef.tests <- chipseq_results$alltests %>% .[lengths(.) == 1] %>% names
 # One big table
 single.coef.results <- results.tables[single.coef.tests] %>%
-    data_frame(Test=fct_inorder(names(.)), x=.) %>% unnest %>%
+    data_frame(Test = fct_inorder(names(.)), x = .) %>% unnest %>%
     mutate(
-        Direction = ifelse(logFC > 0, "Up", "Down") %>% factor(levels=c("Up", "Down")),
+        Direction = ifelse(logFC > 0, "Up", "Down") %>% factor(levels = c("Up", "Down")),
         CpGi = overlapsAny(as(., "GRanges"), cpgi))
 
 single.timepoint.tests <- chipseq_results$alltests %>% names %>% .[str_detect(., "^(Naive|Memory)\\.D\\d+vD\\d+$")]
@@ -102,18 +102,18 @@ single.coef.gene.results <- single.coef.results %>%
 
 get.sig.cpg.stats <- . %>%
     filter(FDR <= 0.1) %>%
-    mutate(CpGi = factor(CpGi, levels=c("FALSE", "TRUE"))) %>%
+    mutate(CpGi = factor(CpGi, levels = c("FALSE", "TRUE"))) %>%
     group_by(Test) %>%
     do({
         {.} %$% table(Direction, CpGi) %>%
-            addmargins(margin=2) %>%
+            addmargins(margin = 2) %>%
             as.data.frame
     }) %>%
     ungroup %>%
-    spread(CpGi, Freq, sep=".") %>%
-    select(Test, Direction, CpGiCount=CpGi.TRUE, Total=CpGi.Sum) %>%
+    spread(CpGi, Freq, sep = ".") %>%
+    select(Test, Direction, CpGiCount = CpGi.TRUE, Total = CpGi.Sum) %>%
     # Fill in tests with 0 significant genes
-    complete(Test, Direction, fill=list(CpGiCount=0, Total=0)) %>%
+    complete(Test, Direction, fill = list(CpGiCount = 0, Total = 0)) %>%
     mutate(CpGiFraction = CpGiCount / Total)
 
 
@@ -132,7 +132,7 @@ doplot <- function(x) {
         }) %>% ungroup %>%
         mutate(Desc = fct_inorder(Desc))
     ggplot(droplevels(x)) +
-        aes(x=Direction, y=CpGiFraction) +
+        aes(x = Direction, y = CpGiFraction) +
         facet_wrap(~ Desc) +
         geom_col() + ylim(0, 1) +
         xlab("Direction of significant histone change in promoter") + ylab("Fraction of promoters containing CpG islands") +
@@ -141,9 +141,9 @@ doplot <- function(x) {
 
 p <- list(
     Timepoint = doplot(promoter.cpg.stats %>% filter(Test %in% single.timepoint.tests)) +
-        labs(subtitle="For changes over time in naive and memory cells"),
+        labs(subtitle = "For changes over time in naive and memory cells"),
     NvM = doplot(promoter.cpg.stats %>% filter(Test %in% single.nvm.tests)) +
-        labs(subtitle="For differeces between naive and memory at each time point"))
+        labs(subtitle = "For differeces between naive and memory at each time point"))
 suppressWarnings(ggprint(p))
 ```
 
@@ -154,19 +154,19 @@ qqtable <- single.coef.results %>%
     group_by(Test) %>%
     do({
         x <- split(.$logFC, .$CpGi)
-        qqplot(x[["FALSE"]], x[["TRUE"]], plot.it=FALSE) %>%
-            do.call(what=data.frame) %>%
-            rename(CpGi="y", NoCpGi="x")
+        qqplot(x[["FALSE"]], x[["TRUE"]], plot.it = FALSE) %>%
+            do.call(what = data.frame) %>%
+            rename(CpGi = "y", NoCpGi = "x")
     })
 
 doplot <- function(x) {
     ggplot(droplevels(x)) +
-        aes(x=NoCpGi, y=CpGi) +
+        aes(x = NoCpGi, y = CpGi) +
         facet_wrap(~ Test) +
-        geom_abline(slope=1, intercept=0, color="gray60", linetype="dashed") +
-        geom_line(size=0.1, alpha=0.2) +
-        geom_smooth(method="lm", fullrange=TRUE, alpha=0) +
-        geom_point(size=0.1) +
+        geom_abline(slope = 1, intercept = 0, color = "gray60", linetype = "dashed") +
+        geom_line(size = 0.1, alpha = 0.2) +
+        geom_smooth(method = "lm", fullrange = TRUE, alpha = 0) +
+        geom_point(size = 0.1) +
         coord_fixed() +
         xlab("logFC quantiles for non-CpGi promoters") +
         ylab("logFC quantiles for CpGi-overlapping promoters") +
@@ -175,9 +175,9 @@ doplot <- function(x) {
 
 p <- list(
     Timepoint = doplot(qqtable %>% filter(Test %in% single.timepoint.tests)) +
-        labs(subtitle="For changes over time in naive and memory cells"),
+        labs(subtitle = "For changes over time in naive and memory cells"),
     NvM = doplot(qqtable %>% filter(Test %in% single.nvm.tests)) +
-        labs(subtitle="For differeces between naive and memory at each time point"))
+        labs(subtitle = "For differeces between naive and memory at each time point"))
 ggprint(p)
 ```
 
@@ -185,23 +185,23 @@ ggprint(p)
 
 ```{r rna_vs_promoter_vs_cpgi_plot}
 rna.single.coef.results <- rnaseq_results$results.tables[single.coef.tests] %>%
-    data_frame(Test=fct_inorder(names(.)), x=.) %>% unnest
+    data_frame(Test = fct_inorder(names(.)), x = .) %>% unnest
 
 combined.table <- inner_join(
-    x = rna.single.coef.results %>% select(Test, GeneID=ENSEMBL, PValue, FDR, logCPM, logFC),
+    x = rna.single.coef.results %>% select(Test, GeneID = ENSEMBL, PValue, FDR, logCPM, logFC),
     y = single.coef.gene.results %>% select(Test, GeneID, PValue, FDR, logFC, logCPM, CpGi),
     by = c("Test", "GeneID"),
     suffix = c(x = ".RNA", y = ".Histone")) %>%
-    mutate(CpGi = ifelse(CpGi, "CpGi", "NoCpGi") %>% factor(levels=c("NoCpGi", "CpGi")))
+    mutate(CpGi = ifelse(CpGi, "CpGi", "NoCpGi") %>% factor(levels = c("NoCpGi", "CpGi")))
 
 doplot <- function(x) {
     ggplot(droplevels(x)) +
         aes(x = logFC.Histone,
             y = logFC.RNA) +
         facet_grid(Test ~ CpGi) +
-        geom_point(size=0.1) +
-        geom_density2d(color=muted("red"), alpha=0.5) +
-        geom_smooth(method="lm", fullrange=TRUE) +
+        geom_point(size = 0.1) +
+        geom_density2d(color = muted("red"), alpha = 0.5) +
+        geom_smooth(method = "lm", fullrange = TRUE) +
         xlab(glue("Promoter {params$histone_mark} logFC")) +
         ylab("RNA-seq gene logFC") +
         ggtitle(glue("RNA-seq logFC vs promoter {params$histone_mark} logFC, CpGi vs non-CpGi"))
@@ -209,15 +209,15 @@ doplot <- function(x) {
 
 p <- list(
     Timepoint = doplot(combined.table %>% filter(Test %in% single.timepoint.tests)) +
-        labs(subtitle="For changes over time in naive and memory cells"),
+        labs(subtitle = "For changes over time in naive and memory cells"),
     NvM = doplot(combined.table %>% filter(Test %in% single.nvm.tests)) +
-        labs(subtitle="For differeces between naive and memory at each time point"))
+        labs(subtitle = "For differeces between naive and memory at each time point"))
 ggprint(p)
 ```
 
 ```{r rna_vs_promoter_vs_cpgi_lm}
 lm(logFC.RNA ~ CpGi*Test:logFC.Histone,
-   data=combined.table %>% filter(Test %in% c(single.timepoint.tests, single.nvm.tests))) %>%
+   data = combined.table %>% filter(Test %in% c(single.timepoint.tests, single.nvm.tests))) %>%
     tidy %>%
     mutate(term = str_replace_all(term, "^CpGi|Test", "")) %>%
     filter(str_detect(term, "^CpGi:")) %>%

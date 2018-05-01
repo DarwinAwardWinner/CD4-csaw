@@ -9,6 +9,7 @@ library(csaw)
 library(edgeR)
 library(BSgenome.Hsapiens.UCSC.hg38)
 library(SummarizedExperiment)
+library(forcats)
 library(rctutils)
 
 use_futures("multicore")
@@ -17,18 +18,18 @@ tsmsg("Loading sample data")
 
 sample.table <- readRDS(here("saved_data", "samplemeta-ChIPSeq.RDS")) %>%
     ## Compute full path to BAM file
-    mutate(bam_file=here("aligned", "chipseq_bowtie2_hg38.analysisSet", SRA_run, "Aligned.bam")) %>%
+    mutate(bam_file = here("aligned", "chipseq_bowtie2_hg38.analysisSet", SRA_run, "Aligned.bam")) %>%
     ## Ensure that days_after_activation is a factor and can't be
     ## interpreted as a numeric
-    mutate(days_after_activation=days_after_activation %>%
-               factor %>% `levels<-`(str_c("Day", levels(.)))) %>%
+    mutate(days_after_activation = days_after_activation %>%
+               factor %>% fct_relevel(str_c("Day", levels(.)))) %>%
     ## Use better names for things
-    rename(Sample=SampleName,
-           ChIP=chip_antibody,
-           TimePoint=days_after_activation,
-           CellType=cell_type,
-           Donor=donor_id) %>%
-    mutate(TreatmentGroup=interaction(CellType, TimePoint, sep="."))
+    rename(Sample = SampleName,
+           ChIP = chip_antibody,
+           TimePoint = days_after_activation,
+           CellType = cell_type,
+           Donor = donor_id) %>%
+    mutate(TreatmentGroup = interaction(CellType, TimePoint, sep = "."))
 
 assert_that(all(file.exists(sample.table$bam_file)))
 
@@ -37,14 +38,14 @@ input.sample.table <- sample.table %>% filter(ChIP == "input")
 tsmsg("Preparing SeqInfo for HG38 standard chromosomes")
 std.chr <- extractSeqlevels("Homo sapiens", "UCSC")
 std.seqinfo <- BSgenome.Hsapiens.UCSC.hg38 %>%
-    seqinfo %>% keepSeqlevels(std.chr, pruning.mode="coarse")
+    seqinfo %>% keepSeqlevels(std.chr, pruning.mode = "coarse")
 
 set.seed(1986)
 
 tsmsg("Doing 1kb window counts")
 
-param <- readParam(restrict=std.chr)
-binned1kb <- windowCountsParallel(input.sample.table$bam_file, bin=TRUE, width=1000, param=param, filter=0)
+param <- readParam(restrict = std.chr)
+binned1kb <- windowCountsParallel(input.sample.table$bam_file, bin = TRUE, width = 1000, param = param, filter = 0)
 binned1kb %<>% keepSeqlevels(std.chr)
 seqinfo(binned1kb) <- std.seqinfo[seqlevels(binned1kb)]
 colnames(binned1kb) <- input.sample.table$Sample
@@ -66,14 +67,14 @@ size <- sapply(nbfits, `[[`, "theta")
 
 colData(binned1kb) %<>%
     cbind(data.frame(
-        nbinom.mu=mu, nbinom.size=size))
+        nbinom.mu = mu, nbinom.size = size))
 
 tsmsg("Computing theoretical and empirical quantiles for each bin")
 
 assay(binned1kb, "pnbinom") <-
     pnbinom(assay(binned1kb, "counts"),
-            size=expandAsMatrix(size, dim(binned1kb)),
-            mu=expandAsMatrix(mu, dim(binned1kb)))
+            size = expandAsMatrix(size, dim(binned1kb)),
+            mu = expandAsMatrix(mu, dim(binned1kb)))
 assay(binned1kb, "pemp") <- assay(binned1kb, "counts") %>% apply(2, . %>% {ecdf(.)(.)})
 
 tsmsg("Saving bin counts and quantiles")

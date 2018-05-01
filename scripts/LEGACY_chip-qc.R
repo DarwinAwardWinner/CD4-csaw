@@ -10,7 +10,7 @@ library(ChIPQC)
 library(rctutils)
 
 ## Don't run in parallel because of memory issues
-options(mc.cores=1)
+options(mc.cores = 1)
 registerDoSEQ()
 library(BiocParallel)
 register(SerialParam())
@@ -23,34 +23,34 @@ sample.table <- read.xlsx(here("data_files/ChIP-Seq/sample-tables.xlsx"), "Sampl
     set_colnames(make.unique(colnames(.))) %>%
     ## Select/compute/rename desired columns
     transmute(
-        Sample=title,
-        ChIP=`characteristics:.sampletype`,
-        Celltype=`characteristics:.celltype`,
-        Activated=`characteristics:.activated`,
-        Day=`characteristics:.days.after.activation`,
-        Donor=`characteristics:.donor.ID`,
-        bam.file.name=raw.file,
-        peak.file.name=processed.data.file.3 %>% str_replace("bb$", "bed")
+        Sample = title,
+        ChIP = `characteristics:.sampletype`,
+        Celltype = `characteristics:.celltype`,
+        Activated = `characteristics:.activated`,
+        Day = `characteristics:.days.after.activation`,
+        Donor = `characteristics:.donor.ID`,
+        bam.file.name = raw.file,
+        peak.file.name = processed.data.file.3 %>% str_replace("bb$", "bed")
     ) %>%
     ## Make sure no factorial variables can be accidentally
     ## numericized by prefixing them with letters
     mutate(
-        Donor=glue("Dn{Donor}"),
-        Day=glue("D{Day}")
+        Donor = glue("Dn{Donor}"),
+        Day = glue("D{Day}")
     ) %>%
     ## Compute full path to files
     mutate(
-        bampath=here("data_files/ChIP-Seq", bam.file.name),
-        peakpath=here("data_files/ChIP-Seq", peak.file.name)
+        bampath = here("data_files/ChIP-Seq", bam.file.name),
+        peakpath = here("data_files/ChIP-Seq", peak.file.name)
     ) %>%
     ## Reorder levels on factors (not ASCIIbetical order)
     mutate(
-        ChIP=factor(ChIP),
-        Celltype=factor(Celltype, levels=c("Naive", "Memory")),
-        Day=factor(Day, levels=glue("D{day}", day=c(0,1,5,14))),
-        TreatmentGroup=interaction(Celltype, Day, sep=""),
-        Group=interaction(ChIP, TreatmentGroup, sep="."),
-        Donor=factor(Donor)
+        ChIP = factor(ChIP),
+        Celltype = factor(Celltype, levels = c("Naive", "Memory")),
+        Day = factor(Day, levels = glue("D{day}", day = c(0,1,5,14))),
+        TreatmentGroup = interaction(Celltype, Day, sep = ""),
+        Group = interaction(ChIP, TreatmentGroup, sep = "."),
+        Donor = factor(Donor)
     )
 
 ## > colnames(sample.table)
@@ -59,19 +59,19 @@ sample.table <- read.xlsx(here("data_files/ChIP-Seq/sample-tables.xlsx"), "Sampl
 ##  [9] "TreatmentGroup" "Group"
 
 inputs <- sample.table %>% filter(ChIP == "input") %>%
-    transmute(Celltype, Activated, Day, Donor, input.bampath=bampath)
+    transmute(Celltype, Activated, Day, Donor, input.bampath = bampath)
 chipqc.exp.df <- sample.table %>% filter(ChIP != "input") %>%
     droplevels %>% merge(inputs) %>%
     transmute(
-        SampleID=Sample,
-        Tissue=Celltype,
-        Factor=ChIP,
-        Treatment=Day,
-        Condition=TreatmentGroup,
-        Replicate=Donor,
-        bamReads=bampath,
-        bamControl=input.bampath,
-        Peaks=peakpath
+        SampleID = Sample,
+        Tissue = Celltype,
+        Factor = ChIP,
+        Treatment = Day,
+        Condition = TreatmentGroup,
+        Replicate = Donor,
+        bamReads = bampath,
+        bamControl = input.bampath,
+        Peaks = peakpath
     )
 
 cqc <- ChIPQC(

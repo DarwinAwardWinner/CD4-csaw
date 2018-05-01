@@ -15,10 +15,10 @@ params:
 
 # Preliminary Setup
 
-```{r setup, include=FALSE, cache=FALSE}
-knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
-                      cache.extra = list(params=params),
-                      fig.height=8, fig.width=8,
+```{r setup, include = FALSE, cache = FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina = 2, cache = TRUE, autodep = TRUE,
+                      cache.extra = list(params = params),
+                      fig.height = 8, fig.width = 8,
                       cache.path = paste0(
                           here::here("cache", "rnaseq-diffexp", params$dataset),
                           .Platform$file.sep))
@@ -26,7 +26,7 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
 
 First we load the necessary libraries, along with a set of utility functions.
 
-```{r load_packages, message=FALSE, cache=FALSE}
+```{r load_packages, message = FALSE, cache = FALSE}
 library(here)
 library(stringr)
 library(limma)
@@ -34,7 +34,7 @@ library(rctutils)
 
 library(BiocParallel)
 library(future)
-options(future.globals.maxSize=4 * 1024^3)
+options(future.globals.maxSize = 4 * 1024^3)
 use_futures("multicore")
 ```
 
@@ -77,7 +77,7 @@ We now run the CAMERA gene set test on all the TFBS overlap sets. We run CAMERA 
 ```{r run_camera}
 single.contrast.tests <- alltests %>% .[lengths(.) == 1]
 camera.results <- bplapply(single.contrast.tests, function(ct) {
-    cmat <- makeContrasts(contrasts=ct, levels=design)
+    cmat <- makeContrasts(contrasts = ct, levels = design)
     camera(fit)
 })
 ```

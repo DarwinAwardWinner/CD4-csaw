@@ -7,18 +7,18 @@ output: html_notebook
 
 # Preliminary Setup
 
-```{r setup, include=FALSE, cache=FALSE}
-knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
-                      cache.extra = list(params=params),
-                      fig.height=8, fig.width=8,
+```{r setup, include = FALSE, cache = FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina = 2, cache = TRUE, autodep = TRUE,
+                      cache.extra = list(params = params),
+                      fig.height = 8, fig.width = 8,
                       cache.path = paste0(here::here("cache", "rnaseq-compare"),
                                           .Platform$file.sep))
-options(dplyr.show_progress=FALSE)
+options(dplyr.show_progress = FALSE)
 ```
 
 First we load the necessary libraries.
 
-```{r load_packages, message=FALSE, cache=FALSE}
+```{r load_packages, message = FALSE, cache = FALSE}
 library(here)
 library(stringr)
 library(magrittr)
@@ -28,12 +28,12 @@ library(edgeR)
 library(ggplot2)
 library(reshape2)
 library(assertthat)
+library(forcats)
 library(rctutils)
-
 
 library(BiocParallel)
 library(future)
-options(future.globals.maxSize=4 * 1024^3)
+options(future.globals.maxSize = 4 * 1024^3)
 use_futures("multicore")
 ```
 
@@ -70,9 +70,9 @@ We extract the sample metadata from the SummarizedExperiment (we only do this on
 ```{r extract_samplemeta}
 sample.table <- colData(sexps[[1]]) %>%
     as.data.frame %>% auto_factorize_columns %>%
-    rename(batch=technical_batch) %>%
-    mutate(time_point=factor(days_after_activation) %>% `levels<-`(sprintf("D%s", levels(.))),
-           group=interaction(cell_type, time_point, sep=""))
+    rename(batch = technical_batch) %>%
+    mutate(time_point = factor(days_after_activation) %>% fct_relevel(sprintf("D%s", levels(.))),
+           group = interaction(cell_type, time_point, sep = ""))
 ```
 
 Next we extract the count matrix from each SummarizedExperiment. This is made more complicated than usual by the fact that half of the samples were sequenced with a different protocol than the other half, and the two protocols produce reads with opposite strand orientations. Hence, we need the sense counts for half of the samples and the antisense counts for the other half. The appropriate strand for each sample is documented in the `libType` column of the sample metadata, using the library type abbreviations [established by Salmon](http://salmon.readthedocs.io/en/latest/salmon.html#what-s-this-libtype).
@@ -80,26 +80,26 @@ Next we extract the count matrix from each SummarizedExperiment. This is made mo
 For SummarizedExperiments generated using tximport, this step is skipped, since the quantification tool has already been told which strand to use and only provides counts for that strand.
 
 ```{r extract_counts}
-libtype.assayNames <- c(SF="sense.counts", SR="antisense.counts")
+libtype.assayNames <- c(SF = "sense.counts", SR = "antisense.counts")
 for (dset in seq_along(sexps)) {
     if (all(libtype.assayNames %in% assayNames(sexps[[dset]]))) {
-        sample.table %<>% mutate(count_type=libtype.assayNames[libType])
+        sample.table %<>% mutate(count_type = libtype.assayNames[libType])
         assay(sexps[[dset]], "unstranded.counts") <- assay(sexps[[dset]], "counts")
         assay(sexps[[dset]], "counts") <- lapply(seq_len(nrow(sample.table)), function(i) {
             assay(sexps[[dset]], sample.table[i,]$count_type %>% as.character)[,i]
-        }) %>% do.call(what=cbind)
+        }) %>% do.call(what = cbind)
     }
 }
 ```
 
 As a sanity check, we make sure that we selected the strand sense with the higher total count for each sample.
 
-```{r strand_sanity_check, message=FALSE}
+```{r strand_sanity_check, message = FALSE}
 for (dset in seq_along(sexps)) {
     if (all(libtype.assayNames %in% assayNames(sexps[[dset]]))) {
         total.counts <- sexps[[dset]] %>% assays %>% sapply(colSums) %>% data.frame %>%
-            mutate(SampleName=row.names(.)) %>%
-            inner_join(sample.table, by="SampleName")
+            mutate(SampleName = row.names(.)) %>%
+            inner_join(sample.table, by = "SampleName")
         total.counts %$% invisible(assert_that(all(counts == pmax(sense.counts, antisense.counts))))
     }
 }
@@ -112,8 +112,8 @@ dges <- bplapply(sexps, function(sexp) {
     ## Extract gene metadata and colapse lists
     all.gene.meta <- mcols(sexp) %>% as.data.frame
     # Convert list columns to character vectors
-    all.gene.meta[] %<>% lapply(function(x) if (is.list(x)) sapply(x, str_c, collapse=",") else x)
-    dge <- DGEList(counts=assay(sexp, "counts"))
+    all.gene.meta[] %<>% lapply(function(x) if (is.list(x)) sapply(x, str_c, collapse = ",") else x)
+    dge <- DGEList(counts = assay(sexp, "counts"))
     dge$genes <- all.gene.meta
     rownames(dge$genes) <- rownames(dge)
     dge %<>% calcNormFactors
@@ -129,23 +129,23 @@ dges <- bplapply(sexps, function(sexp) {
 
 Finally, we compute the normalized logCPM matrix for each dataset, and convert it into a tidy format. We also compute the normalized logCPM without taking into account the offsets derived from gene length normalization.
 
-```{r prepare_logCPM, message=FALSE}
-logcpm.matrices <- bplapply(dges, cpmWithOffset, log=TRUE)
-logcpm.matrices.nooffset <- bplapply(dges, cpm, log=TRUE)
+```{r prepare_logCPM, message = FALSE}
+logcpm.matrices <- bplapply(dges, cpmWithOffset, log = TRUE)
+logcpm.matrices.nooffset <- bplapply(dges, cpm, log = TRUE)
 logcpm <- bplapply(dges, function(dge) {
-    cpm.mat <- cpmWithOffset(dge, log=TRUE)
-    cpm.df <- melt(cpm.mat, varnames=c("GeneID", "Sample"), value.name = "logCPM") %>%
-        mutate(GeneID=as.character(GeneID), Sample=as.character(Sample))
-    genes <- dge$genes %>% mutate(GeneID=rownames(.))
-    inner_join(genes[c("GeneID", "ENTREZID", "ENSEMBL")], cpm.df, by="GeneID") %>%
+    cpm.mat <- cpmWithOffset(dge, log = TRUE)
+    cpm.df <- melt(cpm.mat, varnames = c("GeneID", "Sample"), value.name = "logCPM") %>%
+        mutate(GeneID = as.character(GeneID), Sample = as.character(Sample))
+    genes <- dge$genes %>% mutate(GeneID = rownames(.))
+    inner_join(genes[c("GeneID", "ENTREZID", "ENSEMBL")], cpm.df, by = "GeneID") %>%
         select(-GeneID)
 })
 logcpm.nooffset <- bplapply(dges, function(dge) {
-    cpm.mat <- cpm(dge, log=TRUE)
-    cpm.df <- melt(cpm.mat, varnames=c("GeneID", "Sample"), value.name = "logCPM") %>%
-        mutate(GeneID=as.character(GeneID), Sample=as.character(Sample))
-    genes <- dge$genes %>% mutate(GeneID=rownames(.))
-    inner_join(genes[c("GeneID", "ENTREZID", "ENSEMBL")], cpm.df, by="GeneID") %>%
+    cpm.mat <- cpm(dge, log = TRUE)
+    cpm.df <- melt(cpm.mat, varnames = c("GeneID", "Sample"), value.name = "logCPM") %>%
+        mutate(GeneID = as.character(GeneID), Sample = as.character(Sample))
+    genes <- dge$genes %>% mutate(GeneID = rownames(.))
+    inner_join(genes[c("GeneID", "ENTREZID", "ENSEMBL")], cpm.df, by = "GeneID") %>%
         select(-GeneID)
 })
 ```
@@ -158,7 +158,7 @@ Now we can begin comparing the different methods of quantification. First, we wi
 
 First, we format the logCPM tables into tidy format, and merge the tables of both datasets (Ensembl and UCSC knownGene) for each alignment/quantification program. The merging is performed only for genes with a one-to-one relationship between Ensembl and Entrez gene IDs.
 
-```{r compute_ensembl_vs_ucsc, message=FALSE}
+```{r compute_ensembl_vs_ucsc, message = FALSE}
 logcpm.tables <- datasetmeta %>%
     arrange(transcriptome) %>%
     group_by(program) %>% do({
@@ -169,25 +169,25 @@ logcpm.tables <- datasetmeta %>%
         txA <- df$transcriptome[1]
         txB <- df$transcriptome[2]
         logcpm_A <- logcpm[[dsetA]] %>%
-            rename(logCPM_A=logCPM) %>%
+            rename(logCPM_A = logCPM) %>%
             filter(lengths(ENTREZID) == 1, lengths(ENSEMBL) == 1) %>%
-            mutate(ENTREZID=unlist(ENTREZID),
-                   ENSEMBL=unlist(ENSEMBL))
+            mutate(ENTREZID = unlist(ENTREZID),
+                   ENSEMBL = unlist(ENSEMBL))
         logcpm_B <- logcpm[[dsetB]] %>%
-            rename(logCPM_B=logCPM) %>%
+            rename(logCPM_B = logCPM) %>%
             filter(lengths(ENTREZID) == 1, lengths(ENSEMBL) == 1) %>%
-            mutate(ENTREZID=unlist(ENTREZID),
-                   ENSEMBL=unlist(ENSEMBL))
+            mutate(ENTREZID = unlist(ENTREZID),
+                   ENSEMBL = unlist(ENSEMBL))
         logcpm_merged <- inner_join(logcpm_A, logcpm_B)
-        data_frame(program=df$program[1],
-                   genome=df$genome[1],
-                   datasetA=dsetA, datasetB=dsetB,
-                   transcriptomeA=txA, transcriptomeB=txB,
-                   logcpm=list(logcpm_merged))
+        data_frame(program = df$program[1],
+                   genome = df$genome[1],
+                   datasetA = dsetA, datasetB = dsetB,
+                   transcriptomeA = txA, transcriptomeB = txB,
+                   logcpm = list(logcpm_merged))
     })
 # Print the correlations
 logcpm.tables %>% group_by_(names(.)[1:5]) %>% do({
-    data.frame(Correlation=.$logcpm[[1]] %$% cor(logCPM_A, logCPM_B))
+    data.frame(Correlation = .$logcpm[[1]] %$% cor(logCPM_A, logCPM_B))
 })
 ```
 
@@ -204,15 +204,15 @@ logcpm.plots <- logcpm.tables %>% group_by(program) %>% do({
     ptitle <- sprintf("logCPM, %s vs %s for %s on %s genome", df$transcriptomeA, df$transcriptomeB, df$program, df$genome)
     tab <- df$logcpm[[1]] %>% filter(logCPM_A != min(logCPM_A) | logCPM_B != min(logCPM_B))
     p <- ggplot(tab) +
-        aes(x=logCPM_A, y=logCPM_B) +
-        geom_point(size=0.2, alpha=0.2) +
-        geom_abline(slope=1, intercept=0, color="red", linetype="dashed") +
-        coord_fixed(xlim=limits, ylim=limits) +
-        labs(title=ptitle,
-             subtitle="Genes matched by unique Entrez & Ensembl IDs; identity line (red) plotted red for reference",
-             x=xlabel, y=ylabel)
+        aes(x = logCPM_A, y = logCPM_B) +
+        geom_point(size = 0.2, alpha = 0.2) +
+        geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+        coord_fixed(xlim = limits, ylim = limits) +
+        labs(title = ptitle,
+             subtitle = "Genes matched by unique Entrez & Ensembl IDs; identity line (red) plotted red for reference",
+             x = xlabel, y = ylabel)
     cbind(.[c("program", "genome", "datasetA", "datasetB", "transcriptomeA", "transcriptomeB")],
-          data_frame(plot=list(p)))
+          data_frame(plot = list(p)))
 })
 ggprint(logcpm.plots$plot)
 ```
@@ -225,31 +225,31 @@ Interestingly, the correlation for Shoal is lower than for Salmon, despite the f
 
 The two count-based methods differ only in the aligner that was used, so any discrepancy between them represents a difference in which reads they could align unambiguously.
 
-```{r plot_star_vs_hisat2, message=FALSE}
+```{r plot_star_vs_hisat2, message = FALSE}
 logcpm_A <- logcpm$hisat2_grch38_snp_tran_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
-    rename(logCPM_A=logCPM)
+    rename(logCPM_A = logCPM)
 logcpm_B <- logcpm$star_hg38.analysisSet_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
-    rename(logCPM_B=logCPM)
+    rename(logCPM_B = logCPM)
 logcpm.merged <- inner_join(logcpm_A, logcpm_B) %>%
     filter(logCPM_A != min(logCPM_A) | logCPM_B != min(logCPM_B))
 limits <- logcpm.merged %>% select(logCPM_A, logCPM_B) %>% lapply(range) %>% unlist %>% range
 p <- ggplot(logcpm.merged) +
-    aes(x=logCPM_A, y=logCPM_B) +
-    geom_point(size=0.2, alpha=0.2) +
-    geom_abline(slope=1, intercept=0, color="red", linetype="dashed") +
-    coord_fixed(xlim=limits, ylim=limits) +
-    labs(title="logCPM, STAR vs HISAT2",
-         subtitle="Identity line (red) plotted red for reference",
-         x="logCPM by HISAT2", y="logCPM by STAR")
+    aes(x = logCPM_A, y = logCPM_B) +
+    geom_point(size = 0.2, alpha = 0.2) +
+    geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+    coord_fixed(xlim = limits, ylim = limits) +
+    labs(title = "logCPM, STAR vs HISAT2",
+         subtitle = "Identity line (red) plotted red for reference",
+         x = "logCPM by HISAT2", y = "logCPM by STAR")
 ggprint(p)
 ```
 ## Effect of gene length normalization
 
 We now compare Salmon, Shoal, and Kallisto with and without normalizing for gene length. This will show how much or how little the gene length normalization affects the abundance estimation.
 
-```{r plot_length_norm_effect, message=FALSE}
+```{r plot_length_norm_effect, message = FALSE}
 logcpm.plots <- datasetmeta %>%
     filter(transcriptome == "ensembl.85", program %in% c("salmon", "shoal", "kallisto")) %>%
     group_by(dataset, program) %>% do({
@@ -258,22 +258,22 @@ logcpm.plots <- datasetmeta %>%
         program <- .$program
         logcpm_A <- logcpm.nooffset[[dset]] %>%
             select(ENSEMBL, Sample, logCPM) %>%
-            rename(logCPM_A=logCPM)
+            rename(logCPM_A = logCPM)
         logcpm_B <- logcpm[[dset]] %>%
             select(ENSEMBL, Sample, logCPM) %>%
-            rename(logCPM_B=logCPM)
+            rename(logCPM_B = logCPM)
         logcpm.merged <- inner_join(logcpm_A, logcpm_B) %>%
             filter(logCPM_A != min(logCPM_A) | logCPM_B != min(logCPM_B))
         limits <- logcpm.merged %>% select(logCPM_A, logCPM_B) %>% lapply(range) %>% unlist %>% range
         p <- ggplot(logcpm.merged) +
-            aes(x=logCPM_A, y=logCPM_B) +
-            geom_point(size=0.2, alpha=0.2) +
-            geom_abline(slope=1, intercept=0, color="red", linetype="dashed") +
-            coord_fixed(xlim=limits, ylim=limits) +
-            labs(title=sprintf("%s logCPM, length-normalized vs non-length-normalized", program),
-                 subtitle="Identity line (red) plotted red for reference",
-                 x="logCPM without gene length normalization", y="logCPM with gene length normalization")
-        data_frame(plot=list(p))
+            aes(x = logCPM_A, y = logCPM_B) +
+            geom_point(size = 0.2, alpha = 0.2) +
+            geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+            coord_fixed(xlim = limits, ylim = limits) +
+            labs(title = sprintf("%s logCPM, length-normalized vs non-length-normalized", program),
+                 subtitle = "Identity line (red) plotted red for reference",
+                 x = "logCPM without gene length normalization", y = "logCPM with gene length normalization")
+        data_frame(plot = list(p))
     })
 ggprint(logcpm.plots$plot)
 ```
@@ -282,24 +282,24 @@ ggprint(logcpm.plots$plot)
 
 We now compare STAR, a count-based method, to Salmon, an alignment-free method. We use the Salmon results with no gene length normalization for an apples-to-apples comparison.
 
-```{r plot_star_vs_salmon, message=FALSE}
+```{r plot_star_vs_salmon, message = FALSE}
 logcpm_A <- logcpm$star_hg38.analysisSet_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
-    rename(logCPM_A=logCPM)
+    rename(logCPM_A = logCPM)
 logcpm_B <- logcpm.nooffset$salmon_hg38.analysisSet_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
-    rename(logCPM_B=logCPM)
+    rename(logCPM_B = logCPM)
 logcpm.merged <- inner_join(logcpm_A, logcpm_B) %>%
     filter(logCPM_A != min(logCPM_A) | logCPM_B != min(logCPM_B))
 limits <- logcpm.merged %>% select(logCPM_A, logCPM_B) %>% lapply(range) %>% unlist %>% range
 p <- ggplot(logcpm.merged) +
-        aes(x=logCPM_A, y=logCPM_B) +
-        geom_point(size=0.2, alpha=0.2) +
-        geom_abline(slope=1, intercept=0, color="red", linetype="dashed") +
-        coord_fixed(xlim=limits, ylim=limits) +
-        labs(title="logCPM, Salmon vs STAR",
-             subtitle="Identity line (red) plotted red for reference",
-             x="logCPM by STAR", y="logCPM by Salmon")
+        aes(x = logCPM_A, y = logCPM_B) +
+        geom_point(size = 0.2, alpha = 0.2) +
+        geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+        coord_fixed(xlim = limits, ylim = limits) +
+        labs(title = "logCPM, Salmon vs STAR",
+             subtitle = "Identity line (red) plotted red for reference",
+             x = "logCPM by STAR", y = "logCPM by Salmon")
 ggprint(p)
 ```
 
@@ -307,24 +307,24 @@ ggprint(p)
 
 The next comparison is between Salmon and Kallisto, two conceptually very similar pseudoalignment-based methods.
 
-```{r plot_salmon_vs_kallisto, message=FALSE}
+```{r plot_salmon_vs_kallisto, message = FALSE}
 logcpm_A <- logcpm$kallisto_hg38.analysisSet_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
-    rename(logCPM_A=logCPM)
+    rename(logCPM_A = logCPM)
 logcpm_B <- logcpm$salmon_hg38.analysisSet_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
-    rename(logCPM_B=logCPM)
+    rename(logCPM_B = logCPM)
 logcpm.merged <- inner_join(logcpm_A, logcpm_B) %>%
     filter(logCPM_A != min(logCPM_A) | logCPM_B != min(logCPM_B))
 limits <- logcpm.merged %>% select(logCPM_A, logCPM_B) %>% lapply(range) %>% unlist %>% range
 p <- ggplot(logcpm.merged) +
-        aes(x=logCPM_A, y=logCPM_B) +
-        geom_point(size=0.2, alpha=0.2) +
-        geom_abline(slope=1, intercept=0, color="red", linetype="dashed") +
-        coord_fixed(xlim=limits, ylim=limits) +
-        labs(title="logCPM, Salmon vs Kallisto",
-             subtitle="Identity line (red) plotted red for reference",
-             x="logCPM by Kallisto", y="logCPM by Salmon")
+        aes(x = logCPM_A, y = logCPM_B) +
+        geom_point(size = 0.2, alpha = 0.2) +
+        geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+        coord_fixed(xlim = limits, ylim = limits) +
+        labs(title = "logCPM, Salmon vs Kallisto",
+             subtitle = "Identity line (red) plotted red for reference",
+             x = "logCPM by Kallisto", y = "logCPM by Salmon")
 ggprint(p)
 ```
 
@@ -332,23 +332,23 @@ ggprint(p)
 
 Last, we compare the basic Salmon results to the same results regularized by Shoal.
 
-```{r plot_shoal_vs_salmon, message=FALSE}
+```{r plot_shoal_vs_salmon, message = FALSE}
 logcpm_A <- logcpm$salmon_hg38.analysisSet_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
-    rename(logCPM_A=logCPM)
+    rename(logCPM_A = logCPM)
 logcpm_B <- logcpm$shoal_hg38.analysisSet_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
-    rename(logCPM_B=logCPM)
+    rename(logCPM_B = logCPM)
 logcpm.merged <- inner_join(logcpm_A, logcpm_B) %>%
     filter(logCPM_A != min(logCPM_A) | logCPM_B != min(logCPM_B))
 limits <- logcpm.merged %>% select(logCPM_A, logCPM_B) %>% lapply(range) %>% unlist %>% range
 p <- ggplot(logcpm.merged) +
-        aes(x=logCPM_A, y=logCPM_B) +
-        geom_point(size=0.2, alpha=0.2) +
-        geom_abline(slope=1, intercept=0, color="red", linetype="dashed") +
-        coord_fixed(xlim=limits, ylim=limits) +
-        labs(title="logCPM, Shoal vs Salmon",
-             subtitle="Identity line (red) plotted red for reference",
-             x="logCPM by Salmon", y="logCPM by Shoal")
+        aes(x = logCPM_A, y = logCPM_B) +
+        geom_point(size = 0.2, alpha = 0.2) +
+        geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+        coord_fixed(xlim = limits, ylim = limits) +
+        labs(title = "logCPM, Shoal vs Salmon",
+             subtitle = "Identity line (red) plotted red for reference",
+             x = "logCPM by Salmon", y = "logCPM by Shoal")
 ggprint(p)
 ```

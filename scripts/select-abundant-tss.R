@@ -7,12 +7,12 @@ library(rex)
 
 ## Deparse and then concatenate into a single string
 deparse_onestring <- function(...) {
-    deparse(...) %>% str_c(collapse="\n")
+    deparse(...) %>% str_c(collapse = "\n")
 }
 
 ## Extension of match.arg with automatic detection of the argument
 ## name for use in error messages.
-match.arg <- function (arg, choices, several.ok = FALSE, argname=substitute(arg), ignore.case=FALSE) {
+match.arg <- function (arg, choices, several.ok = FALSE, argname = substitute(arg), ignore.case = FALSE) {
     if (missing(choices)) {
         formal.args <- formals(sys.function(sys.parent()))
         choices <- eval(formal.args[[as.character(substitute(arg))]])
@@ -48,21 +48,21 @@ get.options <- function(opts) {
     ## Do argument parsing early so the script exits quickly if
     ## arguments are invalid
     optlist <- list(
-        make_option(c("-q", "--transcript-quant"), metavar="SEXP.RDS", type="character",
-                    help="File name of an R data file containing a RangedSummarizedExperiment of transcript abundances. These will be used to select the highest-expressed TSS for each gene."),
+        make_option(c("-q", "--transcript-quant"), metavar = "SEXP.RDS", type = "character",
+                    help = "File name of an R data file containing a RangedSummarizedExperiment of transcript abundances. These will be used to select the highest-expressed TSS for each gene."),
         ## So far this script only supports TxDb objects because
         ## figuring out the first exon and TSS from other
         ## less-structured formats is a pain.
-        make_option(c("-t", "--annotation-txdb"), metavar="TXDBNAME", type="character",
-                    help="Name of TxDb package, or the name of a database file, to use for gene annotation"),
-        make_option(c("-o", "--output-file"), metavar="FILENAME.RDS", type="character",
-                    help="Output file name. The GRanges object containing the promoter regions will be saved here using saveRDS, so it should end in '.RDS'."),
-        make_option(c("-a", "--additional-gene-info"), metavar="FILENAME", type="character",
-                    help="RDS/RData/xlsx/csv file containing a table of gene metadata. Row names (or the first column of the file if there are no row names) should be gene/feature IDs that match the ones used in the main annotation, and these should be unique. This can also be a GFF3 file where the metadata is in the attributes of elements of type 'gene', where the 'ID' attribute specifies the gene ID."))
+        make_option(c("-t", "--annotation-txdb"), metavar = "TXDBNAME", type = "character",
+                    help = "Name of TxDb package, or the name of a database file, to use for gene annotation"),
+        make_option(c("-o", "--output-file"), metavar = "FILENAME.RDS", type = "character",
+                    help = "Output file name. The GRanges object containing the promoter regions will be saved here using saveRDS, so it should end in '.RDS'."),
+        make_option(c("-a", "--additional-gene-info"), metavar = "FILENAME", type = "character",
+                    help = "RDS/RData/xlsx/csv file containing a table of gene metadata. Row names (or the first column of the file if there are no row names) should be gene/feature IDs that match the ones used in the main annotation, and these should be unique. This can also be a GFF3 file where the metadata is in the attributes of elements of type 'gene', where the 'ID' attribute specifies the gene ID."))
     progname <- na.omit(c(get_Rscript_filename(), "rnaseq-count.R"))[1]
     parser <- OptionParser(
-        usage="Usage: %prog [options] -q SEXP.RDS -t TXDB -o OUTPUT.RDS",
-        description="Select the most abundant TSS for each gene.
+        usage = "Usage: %prog [options] -q SEXP.RDS -t TXDB -o OUTPUT.RDS",
+        description = "Select the most abundant TSS for each gene.
 
 For each gene, transcripts are grouped by TSS, and their average abundances are added up. The TSS with the largest sum of average transcript abundances is selected as the representative TSS for that gene. These are all stored in a GRanges object in the output file. The resulting GRanges object will be annotated with a GeneID column. For transcripts with no associaated Gene ID, the GeneID column will be identical to the TxID column. Since a single TSS is being chosen for each gene, the GeneID column should not contain any duplicates.",
 option_list = optlist,
@@ -109,10 +109,10 @@ read.single.object.from.rda <- function(filename) {
 }
 
 ## Read a single object from RDS or RDA file
-read.RDS.or.RDA <- function(filename, expected.class="ANY") {
+read.RDS.or.RDA <- function(filename, expected.class = "ANY") {
     object <- suppressWarnings(tryCatch({
         readRDS(filename)
-    }, error=function(...) {
+    }, error = function(...) {
         read.single.object.from.rda(filename)
     }))
     if (!is(object, expected.class)) {
@@ -123,12 +123,12 @@ read.RDS.or.RDA <- function(filename, expected.class="ANY") {
 
 save.RDS.or.RDA <-
     function(object, file, ascii = FALSE, version = NULL, compress = TRUE,
-             savetype=ifelse(str_detect(file, regex("\\.rda(ta)?", ignore_case = TRUE)),
+             savetype = ifelse(str_detect(file, regex("\\.rda(ta)?", ignore_case = TRUE)),
                              "rda", "rds")) {
     if (savetype == "rda") {
-        save(list="object", file=file, ascii=ascii, version=version, compress=compress)
+        save(list = "object", file = file, ascii = ascii, version = version, compress = compress)
     } else{
-        saveRDS(object=object, file=file, ascii=ascii, version=version, compress=compress)
+        saveRDS(object = object, file = file, ascii = ascii, version = version, compress = compress)
     }
 }
 
@@ -139,7 +139,7 @@ is.empty <- function(x) {
 ## Get column names that are always the same for all elements of a
 ## gene. Used for extracting only the gene metadata from exon
 ## metadata.
-get.gene.common.colnames <- function(df, geneids, blacklist=c("type", "Parent")) {
+get.gene.common.colnames <- function(df, geneids, blacklist = c("type", "Parent")) {
     if (nrow(df) < 1) {
         return(character(0))
     }
@@ -171,9 +171,9 @@ get.gene.common.colnames <- function(df, geneids, blacklist=c("type", "Parent"))
 ## Given a GRangesList whose underlying ranges have mcols, find mcols
 ## of the ranges that are constant within each gene and promote them
 ## to mcols of the GRangesList. For example, if exons are annotated with
-promote.common.mcols <- function(grl, delete.from.source=FALSE, ...) {
+promote.common.mcols <- function(grl, delete.from.source = FALSE, ...) {
     colnames.to.promote <- get.gene.common.colnames(mcols(unlist(grl)), rep(names(grl), lengths(grl)), ...)
-    promoted.df <- mcols(unlist(grl))[cumsum(lengths(grl)),colnames.to.promote, drop=FALSE]
+    promoted.df <- mcols(unlist(grl))[cumsum(lengths(grl)),colnames.to.promote, drop = FALSE]
     if (delete.from.source) {
         mcols(grl@unlistData) %<>% .[setdiff(names(.), colnames.to.promote)]
     }
@@ -183,16 +183,16 @@ promote.common.mcols <- function(grl, delete.from.source=FALSE, ...) {
 
 get.txdb <- function(txdbname) {
     tryCatch({
-        library(txdbname, character.only=TRUE)
+        library(txdbname, character.only = TRUE)
         pos <- str_c("package:", txdbname)
         get(txdbname, pos)
-    }, error=function(...) {
+    }, error = function(...) {
         loadDb(txdbname)
     })
 }
 
-read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NULL,
-                               dataframe.class="data.frame") {
+read.table.general <- function(filename, read.table.args = NULL, read.xlsx.args = NULL,
+                               dataframe.class = "data.frame") {
     suppressWarnings({
         read.table.args %<>% as.list
         read.table.args$file <- filename
@@ -200,16 +200,16 @@ read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NU
         read.xlsx.args %<>% as.list
         read.xlsx.args$xlsxFile <- filename
         lazy.results <- list(
-            rdata=future(read.RDS.or.RDA(filename, dataframe.class), lazy=TRUE),
-            table=future(do.call(read.table, read.table.args), lazy=TRUE),
-            csv=future(do.call(read.csv, read.table.args), lazy=TRUE),
-            xlsx=future(do.call(read.xlsx, read.xlsx.args), lazy=TRUE))
+            rdata = future(read.RDS.or.RDA(filename, dataframe.class), lazy = TRUE),
+            table = future(do.call(read.table, read.table.args), lazy = TRUE),
+            csv = future(do.call(read.csv, read.table.args), lazy = TRUE),
+            xlsx = future(do.call(read.xlsx, read.xlsx.args), lazy = TRUE))
         for (lzresult in lazy.results) {
             result <- tryCatch({
                 x <- as(value(lzresult), dataframe.class)
                 assert_that(is(x, dataframe.class))
                 x
-            }, error=function(...) NULL)
+            }, error = function(...) NULL)
             if (!is.null(result)) {
                 return(result)
             }
@@ -218,18 +218,18 @@ read.table.general <- function(filename, read.table.args=NULL, read.xlsx.args=NU
     })
 }
 
-read.additional.gene.info <- function(filename, gff_format="GFF3", geneFeatureType="gene", ...) {
+read.additional.gene.info <- function(filename, gff_format = "GFF3", geneFeatureType = "gene", ...) {
     df <- tryCatch({
         gff <- tryCatch({
             read.RDS.or.RDA(filename, "GRanges")
-        }, error=function(...) {
-            import(filename, format=gff_format)
+        }, error = function(...) {
+            import(filename, format = gff_format)
         })
         assert_that(is(gff, "GRanges"))
         gff %>% .[.$type %in% geneFeatureType] %>%
-            mcols %>% cleanup.mcols(mcols_df=.)
-    }, error=function(...) {
-        tab <- read.table.general(filename, ..., dataframe.class="DataFrame")
+            mcols %>% cleanup.mcols(mcols_df = .)
+    }, error = function(...) {
+        tab <- read.table.general(filename, ..., dataframe.class = "DataFrame")
         ## Nonexistent or automatic row names
         if (.row_names_info(tab) <= 0) {
             row.names(tab) <- tab[[1]]
@@ -243,13 +243,13 @@ read.additional.gene.info <- function(filename, gff_format="GFF3", geneFeatureTy
 
 print.var.vector <- function(v) {
     for (i in names(v)) {
-        cat(i, ": ", deparse_onestring(v[[i]]), "\n", sep="")
+        cat(i, ": ", deparse_onestring(v[[i]]), "\n", sep = "")
     }
     invisible(v)
 }
 
 ## Convert strand to -1, 0, or 1
-strand.sign <- function(x, allow.unstranded=FALSE) {
+strand.sign <- function(x, allow.unstranded = FALSE) {
     s <- strand(x)
     ss <- (s == "+") - (s == "-")
     if (allow.unstranded) {
@@ -266,10 +266,10 @@ strand.sign <- function(x, allow.unstranded=FALSE) {
 
     ## ## For testing only
     ## cmdopts <- list(
-    ##     transcript_quant="saved_data/SummarizedExperiment_rnaseq_transcript_shoal_hg38.analysisSet_knownGene.RDS",
-    ##     annotation_txdb="TxDb.Hsapiens.UCSC.hg38.knownGene",
-    ##     additional_gene_info="/home/ryan/references/hg38/genemeta.org.Hs.eg.db.RDS",
-    ##     output_file="test.rds")
+    ##     transcript_quant = "saved_data/SummarizedExperiment_rnaseq_transcript_shoal_hg38.analysisSet_knownGene.RDS",
+    ##     annotation_txdb = "TxDb.Hsapiens.UCSC.hg38.knownGene",
+    ##     additional_gene_info = "/home/ryan/references/hg38/genemeta.org.Hs.eg.db.RDS",
+    ##     output_file = "test.rds")
 
     tsmsg("Args:")
     print.var.vector(cmdopts)
@@ -283,7 +283,7 @@ strand.sign <- function(x, allow.unstranded=FALSE) {
 
     tsmsg("Reading quantification data")
     sexp <- readRDS(cmdopts$transcript_quant)
-    sexp %<>% keepSeqlevels(std.chr, pruning.mode="coarse")
+    sexp %<>% keepSeqlevels(std.chr, pruning.mode = "coarse")
 
     tsmsg("Reading annotation data")
     txdb <- get.txdb(cmdopts$annotation_txdb)
@@ -291,14 +291,14 @@ strand.sign <- function(x, allow.unstranded=FALSE) {
     tsmsg("Computing average transcript abundances")
     tx <- rowRanges(sexp)
     tx$abundance <- sexp %>% assay("abundance") %>% rowMeans
-    tx$GeneID <- mapIds(txdb, names(tx),  keytype="TXNAME", column="GENEID", multiVals="first")
+    tx$GeneID <- mapIds(txdb, names(tx),  keytype = "TXNAME", column = "GENEID", multiVals = "first")
 
     tsmsg("Grouping transcripts by TSS and gene ID")
-    tss_table <- tx %>% promoters(upstream=0, downstream=1) %>% as("data.frame") %>%
+    tss_table <- tx %>% promoters(upstream = 0, downstream = 1) %>% as("data.frame") %>%
         filter(!is.na(GeneID)) %>%
         group_by(GeneID, seqnames, start, end, strand) %>%
-        summarize(transcript=str_c(transcript, collapse=","),
-                  abundance=sum(abundance))
+        summarize(transcript = str_c(transcript, collapse = ","),
+                  abundance = sum(abundance))
 
     tsmsg("Selecting most abundant TSS for each gene")
     abundant_tss <- tss_table %>%

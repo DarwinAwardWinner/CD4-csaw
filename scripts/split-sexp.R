@@ -10,14 +10,14 @@ library(rctutils)
 
 get_options <- function(opts) {
     optlist <- list(
-        make_option(c("-i", "--input-file"), metavar="FILENAME.RDS", type="character",
-                    help="(REQUIRED) Input file name. This should be an RDS file containing a SummarizedExperiment object, whose containing the counts will be saved here using saveRDS, so it should end in '.RDS'."),
-        make_option(c("-o", "--output-file-pattern"), metavar="TEMPLATE.RDS", type="character",
-                    help="(REQUIRED) Output file name pattern. This should contain one or more column names from the sample metadata enclosed in curly braces. For example: 'csaw-counts-{chip_antibody}.RDS'. These will be filled in for each sample based on that sample's metadata, and the samples will be split into those files accordingly. Each SummarizedExperiment object will be saved using saveRDS, so it should end in '.RDS'."))
+        make_option(c("-i", "--input-file"), metavar = "FILENAME.RDS", type = "character",
+                    help = "(REQUIRED) Input file name. This should be an RDS file containing a SummarizedExperiment object, whose containing the counts will be saved here using saveRDS, so it should end in '.RDS'."),
+        make_option(c("-o", "--output-file-pattern"), metavar = "TEMPLATE.RDS", type = "character",
+                    help = "(REQUIRED) Output file name pattern. This should contain one or more column names from the sample metadata enclosed in curly braces. For example: 'csaw-counts-{chip_antibody}.RDS'. These will be filled in for each sample based on that sample's metadata, and the samples will be split into those files accordingly. Each SummarizedExperiment object will be saved using saveRDS, so it should end in '.RDS'."))
     progname <- na.omit(c(get_Rscript_filename(), "sexp-split.R"))[1]
     parser <- OptionParser(
-        usage="Usage: %prog -i INFILE.RDS -o OUTTEMPLATE.RDS",
-        description="Split SummarizedExperiment file by metadata",
+        usage = "Usage: %prog -i INFILE.RDS -o OUTTEMPLATE.RDS",
+        description = "Split SummarizedExperiment file by metadata",
         option_list = optlist,
         add_help_option = TRUE,
         prog = progname)
@@ -40,7 +40,7 @@ get_options <- function(opts) {
     cmdopts <- get_options(commandArgs(TRUE))
     ## TODO eliminate setwd
     tryCatch(setwd(file.path(dirname(na.omit(get_Rscript_filename())), "..")),
-             error=function(...) tsmsg("WARNING: Could not determine script path. Ensure that you are already in the correct directory."))
+             error = function(...) tsmsg("WARNING: Could not determine script path. Ensure that you are already in the correct directory."))
 
     tsmsg("Args:")
     print_var_vector(cmdopts)

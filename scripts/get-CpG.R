@@ -11,9 +11,9 @@ suppressMessages({
     mySession <- browserSession()
     genome(mySession) <- "hg38"
     tab <- getTable(ucscTableQuery(mySession, "cpgIslandExtUnmasked"))
-    gr <- makeGRangesFromDataFrame(tab, start.field="chromStart", end.field="chromEnd",
-                                   starts.in.df.are.0based=TRUE, keep.extra.columns=TRUE,
-                                   seqinfo=seqinfo(BSgenome.Hsapiens.UCSC.hg38))
+    gr <- makeGRangesFromDataFrame(tab, start.field = "chromStart", end.field = "chromEnd",
+                                   starts.in.df.are.0based = TRUE, keep.extra.columns = TRUE,
+                                   seqinfo = seqinfo(BSgenome.Hsapiens.UCSC.hg38))
     ## GRanges already knows the length of each feature, so this field is
     ## redundant.
     assert_that(all(width(gr) == gr$length))

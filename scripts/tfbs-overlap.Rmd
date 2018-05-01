@@ -22,12 +22,12 @@ params:
 
 # Preliminary setup
 
-```{r setup, include=FALSE, cache=FALSE}
-knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
-                      cache.extra = list(params=params),
+```{r setup, include = FALSE, cache = FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina = 2, cache = TRUE, autodep = TRUE,
+                      cache.extra = list(params = params),
                       # https://github.com/yihui/knitr/issues/572
-                      cache.lazy=FALSE,
-                      fig.height=8, fig.width=8,
+                      cache.lazy = FALSE,
+                      fig.height = 8, fig.width = 8,
                       cache.path = paste0(
                           here::here("cache", "tfbs-overlap"),
                           .Platform$file.sep))
@@ -35,7 +35,7 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
 
 First we load the necessary libraries, along with a set of utility functions.
 
-```{r load_packages, message=FALSE, cache=FALSE}
+```{r load_packages, message = FALSE, cache = FALSE}
 library(glue)
 library(SummarizedExperiment)
 library(here)
@@ -44,7 +44,7 @@ library(rctutils)
 
 library(BiocParallel)
 library(future)
-options(future.globals.maxSize=4 * 1024^3)
+options(future.globals.maxSize = 4 * 1024^3)
 use_futures("multicore")
 ```
 
@@ -81,10 +81,10 @@ We define a "feature set" for each transcription factor as the set of promoters 
 
 ```{r compute_overlap_sets}
 promoter_overlap_sets <- lapply(promoter_sexps, function(sexp) {
-    bplapply(tfbs, . %>% overlapsAny(query=sexp) %>% {rownames(sexp)[.]})
+    bplapply(tfbs, . %>% overlapsAny(query = sexp) %>% {rownames(sexp)[.]})
 })
 peak_overlap_sets <- lapply(peak_sexps, function(sexp) {
-    bplapply(tfbs, . %>% overlapsAny(query=sexp) %>% {rowData(sexp)$name[.]})
+    bplapply(tfbs, . %>% overlapsAny(query = sexp) %>% {rowData(sexp)$name[.]})
 })
 ```
 

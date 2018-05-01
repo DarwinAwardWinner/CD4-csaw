@@ -15,12 +15,12 @@ params:
 
 # Preliminary Setup
 
-```{r setup, include=FALSE, cache=FALSE}
-knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
-                      cache.extra = list(params=params),
+```{r setup, include = FALSE, cache = FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina = 2, cache = TRUE, autodep = TRUE,
+                      cache.extra = list(params = params),
                       # https://github.com/yihui/knitr/issues/572
-                      cache.lazy=FALSE,
-                      fig.height=8, fig.width=8,
+                      cache.lazy = FALSE,
+                      fig.height = 8, fig.width = 8,
                       cache.path = paste0(
                           here::here("cache", "peak-mofa-analyze"),
                           .Platform$file.sep))
@@ -28,7 +28,7 @@ knitr::opts_chunk$set(echo = TRUE, retina=2, cache=TRUE, autodep=TRUE,
 
 First we load the necessary libraries, along with a set of utility functions.
 
-```{r load_packages, message=FALSE, cache=FALSE}
+```{r load_packages, message = FALSE, cache = FALSE}
 library(stringr)
 library(glue)
 library(forcats)
@@ -47,7 +47,7 @@ library(rctutils)
 
 library(BiocParallel)
 library(future)
-options(future.globals.maxSize=4 * 1024^3)
+options(future.globals.maxSize = 4 * 1024^3)
 use_futures("multicore")
 ```
 
@@ -83,8 +83,8 @@ We must discard any mention of peaks or genes that are not included in the mofa 
 ```{r generate_overlap_matrices}
 overlap_matrices <- lapply(names(overlap_sets), function(view) {
     mofa_features <- rownames(experiments(mofa@InputData)[[view]])
-    lapply(overlap_sets[[view]], `%in%`, x=mofa_features) %>%
-        do.call(what=rbind) %>% add(0) %>%
+    lapply(overlap_sets[[view]], `%in%`, x = mofa_features) %>%
+        do.call(what = rbind) %>% add(0) %>%
         set_colnames(mofa_features)
 }) %>% set_names(names(overlap_sets))
 ```
@@ -103,18 +103,18 @@ The plot shows that factors 1, 4, and 5 are shared across all 4 views, while all
 
 Next, we plot the values of each latent factor for each sample, distinguishing time point and cell type by color and shape of the points, so we can see which factors correlate with the experimental effects of interest.
 
-```{r bee_swarm_plots, warning=FALSE}
-factor_table <- getFactors(mofa, as.data.frame = TRUE, include_intercept = FALSE)  %>%
-    mutate(sample=as.character(sample)) %>%
-    inner_join(as.data.frame(colData(mofa@InputData)), by=c(sample="PrimarySample")) %>%
+```{r bee_swarm_plots, warning = FALSE}
+factor_table <- getFactors(mofa, as.data.frame = TRUE, include_intercept = FALSE) %>%
+    mutate(sample = as.character(sample)) %>%
+    inner_join(as.data.frame(colData(mofa@InputData)), by = c(sample = "PrimarySample")) %>%
     arrange(cell_type, days_after_activation) %>%
     mutate(time_point = fct_inorder(time_point))
 p <- ggplot(factor_table) +
-    facet_wrap(~factor, scales="free") +
-    aes(x=0, y=value, color=time_point, shape=cell_type) +
+    facet_wrap(~factor, scales = "free") +
+    aes(x = 0, y = value, color = time_point, shape = cell_type) +
     geom_quasirandom() +
-    scale_x_continuous(breaks=NULL) +
-    labs(title="Latent factor distributions",
+    scale_x_continuous(breaks = NULL) +
+    labs(title = "Latent factor distributions",
          x = "", y = "Factor value") +
     theme_bw()
 ggprint(p)
@@ -124,9 +124,9 @@ This plot shows that factors 1 and 4 are associated with time point, while facto
 
 Based on the above, we identify factors 1, 4, and 5 as the most biologically interesting factors. Happily, these are the same factors that explain a non-zero fraction of variance in every view. To further characterize these factors, we plot them against each other, resulting in a series of PCA-like plots.
 
-```{r factor_pairs_plot, warning=FALSE}
+```{r factor_pairs_plot, warning = FALSE}
 factors_of_interest <- c(1,4,5)
-plotFactorScatters(mofa, factors=factors_of_interest, color_by="time_point", shape_by = "cell_type")
+plotFactorScatters(mofa, factors = factors_of_interest, color_by = "time_point", shape_by = "cell_type")
 ```
 
 These plots closely match the sva-corrected (or ComBat-corrected) MDS plots from the individual data sets, which is a good sign, since no explicit batch correction has been performed on this data.
@@ -150,11 +150,11 @@ We are now ready to conduct feature set enrichment tests for the factors of inte
 #                View = view,
 #                Factor = colnames(pval.adj),
 #                SigSets = colSums(pval.adj <= 0.05))
-# }) %>% do.call(what=rbind) %>%
+# }) %>% do.call(what = rbind) %>%
 #     mutate_if(is.character, fct_inorder)
 # p <- ggplot(sigCounts) +
-#     aes(x=Factor, y=SigSets) +
-#     geom_bar(stat="identity") +
+#     aes(x = Factor, y = SigSets) +
+#     geom_bar(stat = "identity") +
 #     facet_wrap(~View)
 # ggprint(p)
 ```
@@ -164,36 +164,36 @@ We are now ready to conduct feature set enrichment tests for the factors of inte
 The RNA-seq data in this data set is known to have a severe batch effect that is confounded with the time points, making standard batch subtraction problematic. We can attempt to do better by subtracting out the predicted effect of latent factor 2, which corresponds to this batch effect.
 
 ```{r mofa_batch_correct_rnaseq}
-rnaseq_data <- list(None=getTrainData(mofa)$RNA)
+rnaseq_data <- list(None = getTrainData(mofa)$RNA)
 sample.table <- colData(mofa@InputData)
 sample.table$rna_batch <- getFactors(mofa, "2") %>% as.vector %>% is_less_than(0) %>% ifelse(., "A", "B")
 design.NoTime <- model.matrix(~ cell_type + donor_id, sample.table)
 
-rnaseq_data$BatchSubtract <- removeBatchEffect(rnaseq_data$None, batch=sample.table$rna_batch, design=design.NoTime)
-rnaseq_data$ComBat <- ComBat(rnaseq_data$None, batch=sample.table$rna_batch, mod=design.NoTime, par.prior=TRUE)
-rnaseq_data$MOFASubtract <- rnaseq_data$None - predict(mofa, views="RNA", factors="2")$RNA
-rnaseq_data$MOFAPredict <- predict(mofa, view="RNA", factors=factors_of_interest)$RNA
+rnaseq_data$BatchSubtract <- removeBatchEffect(rnaseq_data$None, batch = sample.table$rna_batch, design = design.NoTime)
+rnaseq_data$ComBat <- ComBat(rnaseq_data$None, batch = sample.table$rna_batch, mod = design.NoTime, par.prior = TRUE)
+rnaseq_data$MOFASubtract <- rnaseq_data$None - predict(mofa, views = "RNA", factors = "2")$RNA
+rnaseq_data$MOFAPredict <- predict(mofa, view = "RNA", factors = factors_of_interest)$RNA
 
 doMDS <- function(x, k) {
-    dmat <- suppressPlot(plotMDS(x, top=5000)$distance.matrix) %>% as.dist
+    dmat <- suppressPlot(plotMDS(x, top = 5000)$distance.matrix) %>% as.dist
     if (missing(k)) {
         k <- attr(dmat, "Size") - 1
     }
-    mds <- cmdscale(dmat, k=k, eig=TRUE)
+    mds <- cmdscale(dmat, k = k, eig = TRUE)
     mds$points %>% add.numbered.colnames("Dim") %>% cbind(sample.table, .)
 }
-mds <- lapply(rnaseq_data, doMDS, k=10)
+mds <- lapply(rnaseq_data, doMDS, k = 10)
 
-ggmdsbatch <- function(dat, dims=1:2) {
+ggmdsbatch <- function(dat, dims = 1:2) {
     if (length(dims) == 1) {
         dims <- dims + c(0,1)
     }
     assert_that(length(dims) == 2)
     ggplot(as.data.frame(dat)) +
-        aes_string(x=str_c("Dim", dims[1]), y=str_c("Dim", dims[2])) +
-        aes(color=rna_batch, label=PrimarySample) +
+        aes_string(x = str_c("Dim", dims[1]), y = str_c("Dim", dims[2])) +
+        aes(color = rna_batch, label = PrimarySample) +
         geom_text() +
-        scale_x_continuous(expand=c(0.15, 0)) +
+        scale_x_continuous(expand = c(0.15, 0)) +
         coord_equal()
 }
 

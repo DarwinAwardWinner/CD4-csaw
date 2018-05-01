@@ -26,16 +26,16 @@ split.by.category.and.subcategory <- function(x, cat, subcat) {
 
 extract.bset.metadata <- function(x) {
     ## Extract relevant metadata about each gene set and save it in a data frame
-    bset.urls <- CharacterList(lapply(x, function(a) grep("^file:", urls(a), perl=TRUE, value=TRUE, invert=TRUE)))
+    bset.urls <- CharacterList(lapply(x, function(a) grep("^file:", urls(a), perl = TRUE, value = TRUE, invert = TRUE)))
     bset.urls <- rtracklayer:::pasteCollapse(bset.urls)
     bset.urls[bset.urls == ""] <- NA
     assert_that(all(lengths(bset.urls) == 1))
-    bsets.meta <- data.frame(row.names=names(x), setName=names(x),
-                             category=categories, subCategory=subcategories,
-                             setIdentifier=unlist(lapply(x, setIdentifier)),
-                             contributor=unlist(lapply(x, contributor)),
-                             description=unlist(lapply(x, description)),
-                             url=bset.urls)
+    bsets.meta <- data.frame(row.names = names(x), setName = names(x),
+                             category = categories, subCategory = subcategories,
+                             setIdentifier = unlist(lapply(x, setIdentifier)),
+                             contributor = unlist(lapply(x, contributor)),
+                             description = unlist(lapply(x, description)),
+                             url = bset.urls)
     bsets.meta
 }
 
@@ -49,7 +49,7 @@ extract.bset.metadata <- function(x) {
         bsets_symbol <- getBroadSets("saved_data/msigdb_v6.1.xml")
         saveRDS(bsets_symbol, "saved_data/msigdb_v6.1.RDS")
     }
-    id_converters <- list(symbol=identity,
+    id_converters <- list(symbol = identity,
                           entrez = . %>% mapIdentifiers(EntrezIdentifier("org.Hs.eg")),
                           ensembl = . %>% mapIdentifiers(ENSEMBLIdentifier("org.Hs.eg")))
     bsets <- bplapply(id_converters, function(converter) converter(bsets_symbol))
@@ -71,7 +71,7 @@ extract.bset.metadata <- function(x) {
     categories <- factor(unlist(lapply(ctypes, bcCategory)))
     subcategories <- factor(unlist(lapply(ctypes, bcSubCategory)))
     all.collections <- lapply(bsets, split.by.category.and.subcategory,
-                             cat=categories, subcat=subcategories)
+                             cat = categories, subcat = subcategories)
     for (i in names(all.collections)) {
         fname <- glue("saved_data/msigdb-{i}.RDS")
         saveRDS(all.collections[[i]], fname)
@@ -82,16 +82,16 @@ extract.bset.metadata <- function(x) {
     ## longer be applicable, but running them anyway won't hurt.)
     bsets.meta$description %<>%
         str_replace(
-            pattern="Genes with promoter regions \\[-2kb,2kb\\] around transcription start site containing motif (\\w+)\\. Motif does not match any known transcription factor",
-            replacement="Motif \\1 (no known TF) in gene promoter (2kb radius)") %>%
+            pattern = "Genes with promoter regions \\[-2kb,2kb\\] around transcription start site containing motif (\\w+)\\. Motif does not match any known transcription factor",
+            replacement = "Motif \\1 (no known TF) in gene promoter (2kb radius)") %>%
         str_replace(
-            pattern="Genes with promoter regions \\[-2kb,2kb\\] around transcription start site containing the motif (\\w+) which matches annotation for (.+)",
-            replacement="Motif \\1 (matches \\2) in gene promoter (2kb radius)") %>%
+            pattern = "Genes with promoter regions \\[-2kb,2kb\\] around transcription start site containing the motif (\\w+) which matches annotation for (.+)",
+            replacement = "Motif \\1 (matches \\2) in gene promoter (2kb radius)") %>%
         str_replace(
-            pattern="^Genes involved in ",
-            replacement="") %>%
+            pattern = "^Genes involved in ",
+            replacement = "") %>%
         str_replace(
-            pattern="^Genes annotated by the GO term ",
-            replacement="")
+            pattern = "^Genes annotated by the GO term ",
+            replacement = "")
     saveRDS(bsets.meta, "saved_data/msigdb-meta.RDS")
 }
