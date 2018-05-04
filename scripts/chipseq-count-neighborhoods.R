@@ -108,6 +108,7 @@ suppressPackageStartupMessages({
     library(GenomicAlignments)
     library(rlang)
     library(forcats)
+    library(csaw)
 })
 
 
