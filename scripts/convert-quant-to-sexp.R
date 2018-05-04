@@ -57,7 +57,7 @@ epilogue = "")
         stop("Multiple gene annotations were provided. Please provide only one.")
     }
     quant.level.options <- c("auto", "gene", "transcript", "tx")
-    cmdopts[['aggregate-level']] %<>% tolower %>% match_arg(choices = quant.level.options, argname = "--aggregate-level", ignore.case = TRUE)
+    cmdopts[['aggregate-level']] %<>% tolower %>% match_arg(choices = quant.level.options, arg_name = "--aggregate-level", ignore.case = TRUE)
     if (cmdopts[['aggregate-level']] == "auto") {
         cmdopts[['aggregate-level']] = ifelse(length(provided.annot.opts) == 1, "gene", "transcript")
     }

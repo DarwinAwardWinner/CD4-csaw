@@ -83,7 +83,7 @@ Note that all base pair sizes (window width/spacing and read extension) may have
     ## Validate blacklist action
     if ("blacklist-action" %in% names(cmdopts)) {
         cmdopts[["blacklist-action"]] %<>%
-            match_arg(c("mark", "setNA", "discard"), argname = "--blacklist-action", ignore.case = TRUE)
+            match_arg(c("mark", "setNA", "discard"), arg_name = "--blacklist-action", ignore.case = TRUE)
     }
 
     cmdopts$threads %<>% round
