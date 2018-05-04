@@ -164,15 +164,19 @@ library(forcats)
     } else {
         rCountsFun <- regionCounts
     }
-    wcounts <- rCountsFun(
-        sample_table$bam_file, regions = target_regions,
-        ext = cmdopts$read_extension, param = rparam)
-    colData(wcounts) %<>% {cbind(sample_table, .[c("totals", "ext")])}
+    rcounts <- rCountsFun(
+        sample_table$bam_file, regions=target_regions,
+        ext=cmdopts$read_extension, param=rparam)
+
+    ## Add sample metadata to colData in front of mapping stats
+    colData(rcounts) %<>% cbind(sample_table, .)
+    colnames(rcounts) <- sample_table[[cmdopts$sample_id_column]]
+
     ## Save command and options in the metadata
     metadata(sexp)$cmd_name <- na.omit(c(get_Rscript_filename(), "csaw-count-regions.R"))[1]
     metadata(sexp)$cmd_opts <- cmdopts
 
     tsmsg("Saving output file")
-    saveRDS(wcounts, cmdopts$output_file)
+    saveRDS(rcounts, cmdopts$output_file)
     tsmsg("Finished.")
 }

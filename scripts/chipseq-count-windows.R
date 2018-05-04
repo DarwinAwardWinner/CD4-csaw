@@ -177,10 +177,14 @@ invisible(get_options(commandArgs(TRUE)))
         wCountsFun <- windowCounts
     }
     wcounts <- wCountsFun(
-        sample.table$bam_file, spacing = cmdopts$window_spacing,
-        width = cmdopts$window_width, ext = cmdopts$read_extension,
-        param = rparam, bin = cmdopts$bin)
-    colData(wcounts) %<>% {cbind(sample.table, .[c("totals", "ext")])}
+        sample.table$bam_file, spacing=cmdopts$window_spacing,
+        width=cmdopts$window_width, ext=cmdopts$read_extension,
+        param=rparam, bin=cmdopts$bin)
+
+    ## Add sample metadata to colData in front of mapping stats
+    colData(wcounts) %<>% cbind(sample_table, .)
+    colnames(wcounts) <- sample_table[[cmdopts$sample_id_column]]
+
     ## Save command and options in the metadata
     metadata(sexp)$cmd_name <- na.omit(c(get_Rscript_filename(), "csaw-count-windows.R"))[1]
     metadata(sexp)$cmd_opts <- cmdopts
