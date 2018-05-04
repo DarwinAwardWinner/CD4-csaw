@@ -238,40 +238,33 @@ suppressPackageStartupMessages({
     tsmsg(glue("Counting reads in neighborhoods around {length(targets)} regions in {nrow(sample_table)} samples."))
     tsmsg(glue("Neighborhoods consist of {length(nhood_offsets)} windows of width {format_bp(cmdopts$window_width)} tiled from {format_bp(cmdopts$upstream_neighborhood)} upstream to {format_bp(cmdopts$downstream_neighborhood)} downstream."))
 
-    bfl <- BamFileList(sample_table$bam_file)
-    names(bfl) <- sample_table[[cmdopts$sample_id_column]]
-
-    ## TODO: Use the 2-argument ext option of csaw::regionCounts
-    ## instead of summarizeOverlaps
-    sexp <- summarizeOverlaps(
-        features = nhood_windows, reads = bfl,
-        ## Get mapping stats in colData
-        count.mapped.reads = TRUE,
-        ## Read pairs as fragments, treat all fragments as unstranded
-        fragments = TRUE, singleEnd = FALSE, ignore.strand = TRUE,
-        ## Reduce every fragment to only the single base pair at its
-        ## midpoint
-        preprocess.reads = . %>% readsToFragmentMidpoints(fraglen = cmdopts$read_extension),
-        ## If a fragment (midpoint) overlaps multiple features, count it
-        ## once for each one.
-        inter.feature = FALSE,
-        ## This doesn't matter since every fragment is reduced to a single
-        ## base pair.
-        mode = "IntersectionStrict")
+    if (cmdopts$threads > 1) {
+        rCountsFun <- regionCountsParallel
+    } else {
+        rCountsFun <- regionCounts
+    }
+    rcounts <- rCountsFun(
+        sample_table$bam_file, regions=nhood_windows,
+        # See ?windowCounts for explanation of "ext=list(...)"
+        ext=list(cmdopts$read_extension, 1))
+    colData(rcounts) %<>% {cbind(sample_table, .[c("totals", "ext")])}
+    colnames(rcounts) <- sample_table[[cmdopts$sample_id_column]]
 
     ## Set blacklisted window counts to NA, if requested
     if (cmdopts$blacklist_action == "setNA") {
-        bl <- rowRanges(sexp)$blacklist
-        assay(sexp, "counts")[bl,] <- NA
+        bl <- rowRanges(rcounts)$blacklist
+        assay(rcounts, "counts")[bl,] <- NA
     }
 
     ## Add sample metadata to colData in front of mapping stats
-    colData(sexp) %<>% cbind(sample_table, .)
+    colData(rcounts) %<>% cbind(sample_table, .)
+    colnames(rcounts) <- sample_table[[cmdopts$sample_id_column]]
+
     ## Save command and options in the metadata
-    metadata(sexp)$cmd.name <- na.omit(c(get_Rscript_filename(), "csaw-count-neighborhoods.R"))[1]
-    metadata(sexp)$cmd.opts <- cmdopts
+    metadata(rcounts)$cmd.name <- na.omit(c(get_Rscript_filename(), "csaw-count-neighborhoods.R"))[1]
+    metadata(rcounts)$cmd.opts <- cmdopts
 
     tsmsg("Saving output file")
-    saveRDS(sexp, cmdopts$output_file)
+    saveRDS(rcounts, cmdopts$output_file)
     tsmsg("Finished.")
 }
