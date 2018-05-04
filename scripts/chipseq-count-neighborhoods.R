@@ -214,7 +214,7 @@ suppressPackageStartupMessages({
         shift(.$offset * ifelse(strand(.) == "-", -1, 1)) %>%
         resize(width = cmdopts$window_width, fix = "center")
     ## Add offset to window names
-    names(nhood_windows) %<>% str_c(format_bp(nhood_windows$offset, use_si = FALSE, always_signed = TRUE))
+    names(nhood_windows) %<>% str_c(sprintf("%+ibp", nhood_windows$offset))
 
     if (length(blacklist_regions) > 0) {
         blacklisted <- overlapsAny(nhood_windows, blacklist_regions, ignore.strand = TRUE)
