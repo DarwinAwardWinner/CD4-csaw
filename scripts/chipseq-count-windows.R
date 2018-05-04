@@ -116,13 +116,13 @@ invisible(get_options(commandArgs(TRUE)))
 
     tsmsg("Loading sample data")
 
-    sample.table <- readRDS(cmdopts$samplemeta_file) %>%
+    sample_table <- readRDS(cmdopts$samplemeta_file) %>%
         ## Compute full path to BAM file
-        mutate(bam_file = glue(cmdopts$bam_file_pattern, SAMPLE = .[[cmdopts$sample_id_column]], .envir = emptyenv())) %>%
+        mutate(bam_file = glue(cmdopts$bam_file_pattern, SAMPLE = .[[cmdopts$sample_id_column]])) %>%
         ## Ensure that days_after_activation is a factor and can't be
         ## interpreted as a numeric
         mutate(days_after_activation = days_after_activation %>%
-                   factor %>% fct_relevel(str_c("Day", levels(.)))) %>%
+                   factor %>% fct_relabel(~str_c("Day", .))) %>%
         rename(time_point = days_after_activation)
 
     if (!is.null(cmdopts$filter_sample_ids)) {
