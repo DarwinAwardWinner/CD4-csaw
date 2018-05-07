@@ -111,6 +111,7 @@ suppressPackageStartupMessages({
     library(csaw)
 })
 
+options(future.globals.maxSize = 4 * 1024^3)
 
 ## cmdopts <- list(
 ##     samplemeta_file = "saved_data/samplemeta-ChIPSeq.RDS",
@@ -141,6 +142,7 @@ suppressPackageStartupMessages({
         use_futures("multicore", workers = cmdopts$threads, quiet = TRUE)
     } else {
         use_futures("sequential", quiet = TRUE)
+        register(SerialParam())
     }
     tsmsg(glue("Using {cmdopts$threads} cores."))
 
@@ -239,16 +241,15 @@ suppressPackageStartupMessages({
     tsmsg(glue("Counting reads in neighborhoods around {length(targets)} regions in {nrow(sample_table)} samples."))
     tsmsg(glue("Neighborhoods consist of {length(nhood_offsets)} windows of width {format_bp(cmdopts$window_width)} tiled from {format_bp(cmdopts$upstream_neighborhood)} upstream to {format_bp(cmdopts$downstream_neighborhood)} downstream."))
 
-    if (cmdopts$threads > 1) {
-        rCountsFun <- regionCountsParallel
-    } else {
-        rCountsFun <- regionCounts
-    }
-    rcounts <- rCountsFun(
+    param <- readParam(BPPARAM=bpparam())
+    rcounts <- regionCounts(
         sample_table$bam_file, regions=nhood_windows,
         # See ?windowCounts for explanation of "ext=list(...)"
-        ext=list(cmdopts$read_extension, 1))
-    colData(rcounts) %<>% {cbind(sample_table, .[c("totals", "ext")])}
+        ext=list(rep(cmdopts$read_extension, nrow(sample_table)), 1),
+        param = param)
+
+    ## Add sample metadata to colData in front of mapping stats
+    colData(rcounts) %<>% cbind(sample_table, .)
     colnames(rcounts) <- sample_table[[cmdopts$sample_id_column]]
 
     ## Set blacklisted window counts to NA, if requested
@@ -256,10 +257,6 @@ suppressPackageStartupMessages({
         bl <- rowRanges(rcounts)$blacklist
         assay(rcounts, "counts")[bl,] <- NA
     }
-
-    ## Add sample metadata to colData in front of mapping stats
-    colData(rcounts) %<>% cbind(sample_table, .)
-    colnames(rcounts) <- sample_table[[cmdopts$sample_id_column]]
 
     ## Save command and options in the metadata
     metadata(rcounts)$cmd.name <- na.omit(c(get_Rscript_filename(), "csaw-count-neighborhoods.R"))[1]
