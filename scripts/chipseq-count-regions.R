@@ -29,7 +29,7 @@ get_options <- function(opts) {
                     help = "File describing blacklist regions to be excluded from the analysis. Reads that overlap these regions will be discarded without counting them toward any region. This can be a BED file, GFF file, R data file containing a GRanges object, or csv file that can be converted to a GRanges object."),
         make_option(c("-j", "--threads"), metavar = "N", type = "integer", default = 1,
                     help = "Number of threads to use"))
-    progname <- na.omit(c(get_Rscript_filename(), "csaw-count-windows.R"))[1]
+    progname <- na.omit(c(get_Rscript_filename(), "chipseq-count-windows.R"))[1]
     parser <- OptionParser(
         usage = "Usage: %prog [options] -s SAMPLEMETA.RDS -p PATTERN -r REGIONS.RDS -o SUMEXP.RDS",
         description = "Count ChIP-seq reads a set of specified regions",
@@ -173,7 +173,7 @@ library(forcats)
     colnames(rcounts) <- sample_table[[cmdopts$sample_id_column]]
 
     ## Save command and options in the metadata
-    metadata(sexp)$cmd_name <- na.omit(c(get_Rscript_filename(), "csaw-count-regions.R"))[1]
+    metadata(sexp)$cmd_name <- na.omit(c(get_Rscript_filename(), "chipseq-count-regions.R"))[1]
     metadata(sexp)$cmd_opts <- cmdopts
 
     tsmsg("Saving output file")

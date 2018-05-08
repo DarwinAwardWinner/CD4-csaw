@@ -43,7 +43,7 @@ get_options <- function(opts) {
                     help = "What action to take on windows that overlap blacklisted regions. Options are 'mark', 'setNA', and 'discard'. The default, 'mark', adds an additional logical column to the rowData of the output named 'blacklist' that is TRUE for windows overlapping the blacklist and FALSE for the rest. 'setNA' additionally sets the read count for blacklisted windows to NA. 'discard' throws away any blacklisted windows, so that they will not be present at all in the output."),
         make_option(c("-j", "--threads"), metavar = "N", type = "integer", default = 1,
                     help = "Number of threads to use"))
-    progname <- na.omit(c(get_Rscript_filename(), "csaw-count-neighborhoods.R"))[1]
+    progname <- na.omit(c(get_Rscript_filename(), "chipseq-count-neighborhoods.R"))[1]
     parser <- OptionParser(
         usage = "Usage: %prog [options] -s SAMPLEMETA.RDS -p PATTERN -t TARGETS.RDS -o SUMEXP.RDS",
         description = "Count ChIP-seq reads in neighborhoods around a set of specified genomic positions.",
@@ -259,7 +259,7 @@ options(future.globals.maxSize = 4 * 1024^3)
     }
 
     ## Save command and options in the metadata
-    metadata(rcounts)$cmd.name <- na.omit(c(get_Rscript_filename(), "csaw-count-neighborhoods.R"))[1]
+    metadata(rcounts)$cmd.name <- na.omit(c(get_Rscript_filename(), "chipseq-count-neighborhoods.R"))[1]
     metadata(rcounts)$cmd.opts <- cmdopts
 
     tsmsg("Saving output file")

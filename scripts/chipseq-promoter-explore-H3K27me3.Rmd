@@ -97,7 +97,7 @@ Now we'll load the ChIP-seq read count data set from RDS files containing Summar
 sexpfile <-
     here("saved_data",
          glue_data(params, "promoter-counts_{genome}_{transcriptome}_{promoter_radius}-radius_{fragment_length}-reads_{histone_mark}.RDS"))
-bigbin.sexpfile <- here("saved_data", glue_data(params, "csaw-counts_{bigbin_size}-bigbins_{histone_mark}.RDS"))
+bigbin.sexpfile <- here("saved_data", glue_data(params, "chipseq-counts_{bigbin_size}-bigbins_{histone_mark}.RDS"))
 bigbin.sexp <- readRDS(bigbin.sexpfile)
 full.sexp <- readRDS(sexpfile)
 colnames(full.sexp) <- colData(full.sexp)$SampleName

@@ -13,7 +13,7 @@ get_options <- function(opts) {
         make_option(c("-i", "--input-file"), metavar = "FILENAME.RDS", type = "character",
                     help = "(REQUIRED) Input file name. This should be an RDS file containing a SummarizedExperiment object, whose containing the counts will be saved here using saveRDS, so it should end in '.RDS'."),
         make_option(c("-o", "--output-file-pattern"), metavar = "TEMPLATE.RDS", type = "character",
-                    help = "(REQUIRED) Output file name pattern. This should contain one or more column names from the sample metadata enclosed in curly braces. For example: 'csaw-counts-{chip_antibody}.RDS'. These will be filled in for each sample based on that sample's metadata, and the samples will be split into those files accordingly. Each SummarizedExperiment object will be saved using saveRDS, so it should end in '.RDS'."))
+                    help = "(REQUIRED) Output file name pattern. This should contain one or more column names from the sample metadata enclosed in curly braces. For example: 'chipseq-counts-{chip_antibody}.RDS'. These will be filled in for each sample based on that sample's metadata, and the samples will be split into those files accordingly. Each SummarizedExperiment object will be saved using saveRDS, so it should end in '.RDS'."))
     progname <- na.omit(c(get_Rscript_filename(), "sexp-split.R"))[1]
     parser <- OptionParser(
         usage = "Usage: %prog -i INFILE.RDS -o OUTTEMPLATE.RDS",

@@ -42,7 +42,7 @@ get_options <- function(opts) {
                     help = "Run in bin mode, where each read is counted into exactly one bin."),
         make_option(c("-j", "--threads"), metavar = "N", type = "integer", default = 1,
                     help = "Number of threads to use"))
-    progname <- na.omit(c(get_Rscript_filename(), "csaw-count-windows.R"))[1]
+    progname <- na.omit(c(get_Rscript_filename(), "chipseq-count-windows.R"))[1]
     parser <- OptionParser(
         usage = "Usage: %prog [options] -s SAMPLEMETA.RDS -p PATTERN -w WSIZE -e READEXT [ -s WSPACE ] -o SUMEXP.RDS",
         description = "Do window counting across the genome for ChIP-Seq data",
@@ -186,7 +186,7 @@ invisible(get_options(commandArgs(TRUE)))
     colnames(wcounts) <- sample_table[[cmdopts$sample_id_column]]
 
     ## Save command and options in the metadata
-    metadata(sexp)$cmd_name <- na.omit(c(get_Rscript_filename(), "csaw-count-windows.R"))[1]
+    metadata(sexp)$cmd_name <- na.omit(c(get_Rscript_filename(), "chipseq-count-windows.R"))[1]
     metadata(sexp)$cmd_opts <- cmdopts
 
     tsmsg("Saving output file")

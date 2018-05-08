@@ -81,7 +81,7 @@ Now we'll load the ChIP-seq read count data set from RDS files containing Summar
 ```{r load_counts}
 sexpfile <-
     here("saved_data",
-         glue_data(params, "csaw-counts_{window_size}-windows_{fragment_length}-reads_{histone_mark}.RDS"))
+         glue_data(params, "chipseq-counts_{window_size}-windows_{fragment_length}-reads_{histone_mark}.RDS"))
 full.sexp <- readRDS(sexpfile)
 colnames(full.sexp) <- colData(full.sexp)$SampleName
 sexp <- full.sexp %>% .[rowSums(assay(.)) >= ncol(.),]
