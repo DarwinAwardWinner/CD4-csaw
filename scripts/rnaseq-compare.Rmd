@@ -1,7 +1,7 @@
 ---
 title: "Comparison of Quantification methods for CD4 RNA-Seq Dataset"
 author: "Ryan C. Thompson"
-date: "`r gsub('\\s+', ' ', format(Sys.time(), '%B %e, %Y'))`"
+date: '`r stringr::str_replace_all(format(Sys.time(), "%B %e, %Y"), "[[:space:]]+", " ")`'
 output: html_notebook
 ---
 
