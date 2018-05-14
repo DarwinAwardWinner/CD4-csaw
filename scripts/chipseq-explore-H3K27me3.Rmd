@@ -419,7 +419,7 @@ prep.mds <- function(x) {
     mds.distances <- mds %$% distance.matrix %>% as.dist
     df <- mds.distances %>%
     {suppressWarnings(cmdscale(., k = ncol(x)-1))} %>%
-        add.numbered.colnames(prefix = "Dim") %>%
+        add_numbered_colnames(prefix = "Dim") %>%
         as.data.frame %>%
         cbind(sample.table)
     # Use Naive D0 as the reference group, and flip the signs of each dimension

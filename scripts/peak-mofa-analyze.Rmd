@@ -180,7 +180,7 @@ doMDS <- function(x, k) {
         k <- attr(dmat, "Size") - 1
     }
     mds <- cmdscale(dmat, k = k, eig = TRUE)
-    mds$points %>% add.numbered.colnames("Dim") %>% cbind(sample.table, .)
+    mds$points %>% add_numbered_colnames("Dim") %>% cbind(sample.table, .)
 }
 mds <- lapply(rnaseq_data, doMDS, k = 10)
 

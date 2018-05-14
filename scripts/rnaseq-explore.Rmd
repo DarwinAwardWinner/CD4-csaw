@@ -362,15 +362,15 @@ naive.d0.samples <- sample.table$group == "NaiveD0"
 dmat <- suppressPlot(plotMDS(elist.w)$distance.matrix) %>% as.dist
 mds <- cmdscale(dmat, k = attr(dmat, "Size") - 1, eig = TRUE)
 mds$points %<>% scale(center = FALSE, scale = -sign(colMeans(.[naive.d0.samples,]))) %>%
-    add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
+    add_numbered_colnames("Dim") %>% data.frame(sample.table, .)
 dmat.bc <- suppressPlot(plotMDS(elist.bc)$distance.matrix) %>% as.dist
 mds.bc <- cmdscale(dmat.bc, k = attr(dmat, "Size") - 1, eig = TRUE)
 mds.bc$points %<>% scale(center = FALSE, scale = sign(colMeans(.[naive.d0.samples,]))) %>%
-    add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
+    add_numbered_colnames("Dim") %>% data.frame(sample.table, .)
 dmat.cb <- suppressPlot(plotMDS(elist.cb)$distance.matrix) %>% as.dist
 mds.cb <- cmdscale(dmat.cb, k = attr(dmat, "Size") - 1, eig = TRUE)
 mds.cb$points %<>% scale(center = FALSE, scale = sign(colMeans(.[naive.d0.samples,]))) %>%
-     add.numbered.colnames("Dim") %>% data.frame(sample.table, .)
+     add_numbered_colnames("Dim") %>% data.frame(sample.table, .)
 
 ggmdsbatch <- function(dat, dims = 1:2) {
     if (length(dims) == 1) {
