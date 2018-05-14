@@ -247,7 +247,7 @@ The strongest associations are between the FRiP values and both normalization fa
 To test these normalizations, we will look at their effect on the dispersion estimation step. But first, we must generate the design matrix in order to estimate dispersions.
 
 ```{r build_design_matrix}
-design <- model.matrix(~0 + group, sample.table, strip.prefixes = TRUE)
+design <- model.matrix(~0 + group, sample.table) %>% strip_design_factor_names
 colnames(design)
 # Same design, but with an intercept, because sva requires it
 design.int <- model.matrix(~1 + group, sample.table)

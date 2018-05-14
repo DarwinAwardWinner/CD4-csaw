@@ -158,7 +158,7 @@ message(glue("Excluding {sum(filt == FALSE)} out of {length(filt)} peak-overlapp
 Now we are ready to fit a model to the data. We begin by building the design matrix, inclulding coefficients for the interaction of cell type and time point (group).
 
 ```{r build_design_matrix}
-design <- model.matrix(~0 + group, sample.table, strip.prefixes = TRUE)
+design <- model.matrix(~0 + group, sample.table) %>% strip_design_factor_names
 colnames(design)
 ```
 

@@ -118,7 +118,7 @@ First, we create a DGEList from the counts, copying over all the gene metadata.
 
 ```{r prepare_dgelist}
 ## Extract gene metadata and colapse lists
-all.gene.meta <- mcols(sexp) %>% ensureAtomicColumns %>% as.data.frame
+all.gene.meta <- mcols(sexp) %>% ensure_atomic_columns %>% as.data.frame
 dge <- DGEList(counts = assay(sexp, "counts"))
 dge$genes <- all.gene.meta
 ```
@@ -183,14 +183,14 @@ dge %<>% .[a >= avelogcpm.presence.threshold,]
 Next, we use the voom method with sample quality weights to prepare the data for model fitting with limma. Note that donor_id is still included in the design matrix even though we subtracted out donor differences using ComBat. This ensures that the model fitting is honest about the number of residual degrees of freedom in the model, with 3 degrees of freedom "spent" modeling the inter-donor effects.
 
 ```{r compute_quality_weights, warning = FALSE}
-design <- model.matrix(~0 + group + donor_id, sample.table, strip.prefixes = TRUE)
+design <- model.matrix(~0 + group + donor_id, sample.table) %>% strip_design_factor_names
 elist.nc <- voomWithQualityWeightsAndOffset(dge, design, plot = TRUE)
 ```
 
 Next we use ComBat to perform batch correction, which performs empirical Bayes shrinkage of the batch correction parameters. We use a ComBat's non-parametric mode due to the poor fit of the parametric assumptions for the variance distribution shown by the QC plot.
 
 ```{r combat_adjust}
-design.cb <- model.matrix(~cell_type + donor_id, sample.table, strip.prefixes = TRUE)
+design.cb <- model.matrix(~cell_type + donor_id, sample.table) %>% strip_design_factor_names
 elist.cb <- elist.nc
 invisible(suppressMessages(ComBat(elist.cb$E, batch = sample.table$batch, mod = design.cb, par.prior = TRUE, prior.plots = TRUE)))
 elist.cb$E <- ComBat(elist.cb$E, batch = sample.table$batch, mod = design.cb, par.prior = FALSE)

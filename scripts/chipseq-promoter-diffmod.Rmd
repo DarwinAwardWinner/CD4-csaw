@@ -162,7 +162,7 @@ Then we select all promoters with an average read count of at least 5.
 Now we are ready to fit a model to the data. We begin by building the design matrix, inclulding coefficients for the interaction of cell type and time point (group). We also construct an equivalent design matrix that includes an intercept for use in methods that don't work on intercept-free designs.
 
 ```{r build_design_matrix}
-design <- model.matrix(~0 + group, sample.table, strip.prefixes = TRUE)
+design <- model.matrix(~0 + group, sample.table) %>% strip_design_factor_names
 design.int <- model.matrix(~1 + group, sample.table)
 colnames(design)
 ```
