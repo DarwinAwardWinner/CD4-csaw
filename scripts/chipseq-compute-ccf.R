@@ -22,11 +22,11 @@ tsmsg("Loading sample data")
 sample.table <- readRDS(here("saved_data", "samplemeta-ChIPSeq.RDS")) %>%
     ## Compute full path to BAM file
     mutate(bam_file = here("aligned", "chipseq_bowtie2_hg38.analysisSet", SRA_run, "Aligned.bam")) %>%
-    ## Ensure that days_after_activation is a factor and can't be
+    ## Ensure that time_point is a factor and can't be
     ## interpreted as a numeric
-    mutate(days_after_activation = days_after_activation %>%
-               factor %>% fct_relevel(str_c("Day", levels(.)))) %>%
-    rename(time_point = days_after_activation)
+    mutate(time_point = days_after_activation %>%
+               factor %>% fct_relabel(~glue("Day{.}")),
+           days_after_activation = NULL)
 
 stopifnot(all(file.exists(sample.table$bam_file)))
 

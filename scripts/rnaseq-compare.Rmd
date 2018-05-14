@@ -71,7 +71,7 @@ We extract the sample metadata from the SummarizedExperiment (we only do this on
 sample.table <- colData(sexps[[1]]) %>%
     as.data.frame %>% auto_factorize_columns %>%
     rename(batch = technical_batch) %>%
-    mutate(time_point = factor(days_after_activation) %>% fct_relevel(sprintf("D%s", levels(.))),
+    mutate(time_point = factor(days_after_activation) %>% fct_relabel(~glue("D{.}")),
            group = interaction(cell_type, time_point, sep = ""))
 ```
 

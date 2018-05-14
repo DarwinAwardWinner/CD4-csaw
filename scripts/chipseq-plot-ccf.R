@@ -12,13 +12,14 @@ ccf <- readRDS(here("saved_data", "chipseq-ccf.RDS"))
 ccf.nbl <- readRDS(here("saved_data", "chipseq-ccf-noBL.RDS"))
 
 sample.table <- readRDS(here("saved_data", "samplemeta-ChIPSeq.RDS")) %>%
-    ## Ensure that days_after_activation is a factor and can't be
+    ## Ensure that time_point is a factor and can't be
     ## interpreted as a numeric
-    mutate(days_after_activation = days_after_activation %>%
-               factor %>% fct_relevel(str_c("Day", levels(.)))) %>%
+    mutate(time_point = days_after_activation %>%
+               factor %>% fct_relabel(~glue("Day{.}")),
+           days_after_activation = NULL)
     rename(Sample = SampleName,
            ChIP = chip_antibody,
-           TimePoint = days_after_activation,
+           TimePoint = time_point,
            CellType = cell_type,
            Donor = donor_id) %>%
     mutate(TreatmentGroup = interaction(CellType, TimePoint, sep = "."))

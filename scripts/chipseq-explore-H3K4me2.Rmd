@@ -113,7 +113,7 @@ We extract the sample metadata from the SummarizedExperiment. We set all factors
 sample.table <- colData(sexp) %>%
     as.data.frame %>% auto_factorize_columns %>%
     mutate(days_after_activation = time_point %>% str_extract("\\d+$") %>% as.numeric(),
-           time_point = factor(days_after_activation) %>% fct_relevel(glue("D{levels(.)}")),
+           time_point = factor(days_after_activation) %>% fct_relabel(~glue("D{.}")),
            group = interaction(cell_type, time_point, sep = "")) %>%
     auto_factorize_columns %>%
     set_rownames(colnames(sexp))
