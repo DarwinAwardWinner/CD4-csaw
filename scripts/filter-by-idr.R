@@ -67,7 +67,7 @@ library(Biobase)
     print_var_vector(cmdopts)
 
     tsmsg("Reading peaks")
-    peaks <- read_narrowPeak(cmdopts$peak_file)
+    peaks <- read_narrowPeak(cmdopts$peak_file) %>% as("data.frame")
 
     tsmsg("Sorting peaks")
     ## TODO: Rewrite with quosures

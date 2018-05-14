@@ -49,7 +49,7 @@ peakfiles <- here(
     str_c(histone.marks, "_condition.ALL_donor.ALL"),
     "peaks_noBL_IDR.narrowPeak") %>% set_names(histone.marks)
 assert_that(all(file.exists(peakfiles)))
-allpeaks <- bplapply(peakfiles, . %>% read_narrowPeak %>% as("GRanges") %>%
+allpeaks <- bplapply(peakfiles, . %>% read_narrowPeak %>%
         assign_into(seqinfo(.), seqinfo(BSgenome.Hsapiens.UCSC.hg38)[seqlevels(.)])) %>%
         setNames(.$name)
 ```

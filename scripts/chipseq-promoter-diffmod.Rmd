@@ -74,7 +74,7 @@ peakfile <- here(
     str_c(params$histone_mark, "_condition.ALL_donor.ALL"),
     "peaks_noBL_IDR.narrowPeak")
 allpeaks <- {
-    read_narrowPeak(peakfile) %>% as("GRanges") %>%
+    read_narrowPeak(peakfile) %>%
         assign_into(seqinfo(.), seqinfo(BSgenome.Hsapiens.UCSC.hg38)[seqlevels(.)]) %>%
         setNames(.$name)
 }
