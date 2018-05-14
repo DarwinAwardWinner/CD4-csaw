@@ -44,6 +44,7 @@ library(csaw)
 library(sva)
 library(ggplot2)
 library(forcats)
+library(broom)
 library(rctutils)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
@@ -175,16 +176,16 @@ design.sv <- cbind(design, svmat)
 We plot the surrogate variables against known variables and also test for significant correlations between them.
 
 ```{r test_sv_corr}
-sv.cor.tests <- expand.grid(SV = colnames(svmat),
-                            Var = c("cell_type", "time_point", "group", "donor_id", "totals")) %>%
+sv.cor.tests <-
+    expand.grid(SV = colnames(svmat),
+                Var = c("cell_type", "time_point", "group", "donor_id", "totals")) %>%
     select(Var, SV) %>%
     group_by_all() %>%
-    do(mod = list(lm(as.formula(glue("{.$SV} ~ {.$Var}")), data = cbind(sample.table, svmat)))) %>%
-    mutate(aov = lapply(mod, anova)) %>%
+    do(mod = lm(as.formula(glue("{.$SV} ~ {.$Var}")), data = cbind(sample.table, svmat))) %>%
     ungroup() %>%
-    mutate(PValue = vapply(.$aov, . %$% {`Pr( > F)`[1]}, numeric(1)),
+    mutate(PValue = .$mod %>% lapply(glance) %>% bind_rows %$% p.value,
            FDR = p.adjust(PValue, method = "BH")) %>%
-    select(-mod, -aov)
+    select(-mod)
 sv.cor.tests %>% arrange(PValue)
 ggduo_dataXY(sample.table[c("cell_type", "time_point", "donor_id", "totals")], svmat,
              extraData = sample.table["group"],
