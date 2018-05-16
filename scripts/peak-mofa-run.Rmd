@@ -267,10 +267,13 @@ We run MOFA several times with different random seeds so that we can verify that
 
 ```{r prepare_mofa_options}
 mofa <- createMOFAobject(mae)
-ModelOptions <- getDefaultModelOpts(mofa)
-TrainOptions.final <- getDefaultTrainOpts() %>% transform(maxiter = 30000)
+ModelOptions <- getDefaultModelOptions(mofa)
 # Looser tolerance bound for exploration
-TrainOptions.explore <- getDefaultTrainOpts() %>% transform(tolerance = 0.1)
+TrainOptions.explore <- getDefaultTrainOptions() %>%
+    assign_into(.$tolerance, 0.1)
+# Longer allowed training time for final model
+TrainOptions.final <- getDefaultTrainOptions() %>%
+    assign_into(.$maxiter, 30000)
 
 tmpd <- tempfile(tmpdir = tempdir(), pattern = "mofatemp")
 DirOptions.final <- list(
@@ -285,7 +288,7 @@ DirOptions.exploreList <- lapply(seq_len(params$mofa_runs), function(i) {
         rdsFile = here("saved_data", "mofa", glue_data(params, "mofa-model_{genome}_{transcriptome}_rna+peak_explore{i}.RDS"))
     )
 })
-final.random.seed <- 1986
+TrainOptions.final$seed <- final.random.seed <- 1986
 explore.random.seeds <- final.random.seed + seq_len(params$mofa_runs)
 ```
 
@@ -296,11 +299,11 @@ explore.random.seeds <- final.random.seed + seq_len(params$mofa_runs)
 mofa.explore <- list()
 for (i in seq_len(params$mofa_runs)) {
     DirOpt <- DirOptions.exploreList[[i]]
-    seed <- explore.random.seeds[i]
+    TrainOpt <- TrainOptions.explore %>% assign_into(.$seed, explore.random.seeds[i])
     dir.create(DirOpt$dataDir, recursive = TRUE)
     mofa.explore[[i]] <- mofa %>%
-        prepareMOFA(DirOptions = DirOpt, ModelOptions = ModelOptions, TrainOptions = TrainOptions.explore) %>%
-        runMOFA(DirOptions = DirOpt, seed = seed)
+        prepareMOFA(DirOptions = DirOpt, ModelOptions = ModelOptions, TrainOptions = TrainOpt) %>%
+        runMOFA(DirOptions = DirOpt)
     saveRDS(mofa.explore[[i]], DirOpt$rdsFile)
 }
 unlink(tmpd, recursive = TRUE)
