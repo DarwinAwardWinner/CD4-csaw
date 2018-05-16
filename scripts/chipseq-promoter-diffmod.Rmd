@@ -243,7 +243,7 @@ We now perform the differential modification tests for each contrast or set of c
 results.tables <- bplapply(alltests, function(ct) {
     ctmat <- makeContrasts(contrasts = ct, levels = design.sv) %>% set_colnames(names(ct))
     ctest <- glmQLFTest(fit, contrast = ctmat)
-    topTags(ctest, n = Inf, sort.by = "none") %>% as.data.frame %>% add.qvalue
+    topTags(ctest, n = Inf, sort.by = "none") %>% as.data.frame %>% add_qvaule
 })
 ```
 

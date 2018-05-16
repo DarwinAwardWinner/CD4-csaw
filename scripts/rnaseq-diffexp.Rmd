@@ -313,7 +313,7 @@ results.tables <- bplapply(alltests, function(ct) {
                PValue = P.Value,
                FDR = adj.P.Val) %>%
         arrange(PValue) %>%
-        add.bfdr %>% add.qvalue(pfdr = TRUE)
+        add_bfdr %>% add_qvalue(pfdr = TRUE)
     annot.cols <- intersect(names(tt), c("ENSEMBL", "ENTREZID", "SYMBOL", "GENENAME"))
     logfc.cols <- names(tt) %>% .[str_detect(.,"^logFC(\\.|$)")]
     teststat.cols <- intersect(names(tt), c("F", "t"))
