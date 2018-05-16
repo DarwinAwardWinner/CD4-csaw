@@ -238,7 +238,7 @@ We now perform the differential modification tests for each contrast or set of c
 window.results.tables <- bplapply(alltests, function(ct) {
     ctmat <- makeContrasts(contrasts = ct, levels = design.sv) %>% set_colnames(names(ct))
     ctest <- glmQLFTest(fit, contrast = ctmat)
-    topTags(ctest, n = Inf, sort.by = "none") %>% as.data.frame %>% add_qvaule
+    topTags(ctest, n = Inf, sort.by = "none") %>% as.data.frame %>% add_qvalue
 })
 ```
 
@@ -262,9 +262,9 @@ peak.results.tables <- bplapply(window.results.tables, function(tt) {
     combineOverlaps(olap, tt) %>%
         filter(!is.na(PValue)) %>%
         arrange(PValue) %>%
-        add_qvaule
+        add_qvalue
 })
-peak.results.tables %<>% lapply(. %>% add_qvaule)
+peak.results.tables %<>% lapply(. %>% add_qvalue)
 ```
 
 We now visualize the p-value histogram for each test. Ideally, each p-value histogram should either be uniform or biased toward zero. Any other shape is indicative of a failure of some modelling step.
