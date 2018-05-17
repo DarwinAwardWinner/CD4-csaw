@@ -287,7 +287,7 @@ unlink(tmpd, recursive = TRUE)
 dir.create(DirOptions.final$dataDir, recursive = TRUE)
 mofa.final <- mofa %>%
     prepareMOFA(DirOptions = DirOptions.final, ModelOptions = ModelOptions, TrainOptions = TrainOptions.final) %>%
-    runMOFA(DirOptions = DirOptions.final, seed = final.random.seed)
+    runMOFA(DirOptions = DirOptions.final)
 saveRDS(mofa.final, DirOptions.final$rdsFile)
 unlink(tmpd, recursive = TRUE)
 #mofa.final <- mofa.explore[[1]]
