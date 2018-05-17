@@ -53,6 +53,7 @@ library(ks)
 library(RColorBrewer)
 library(variancePartition)
 library(forcats)
+library(broom)
 library(rctutils)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
@@ -166,7 +167,7 @@ p <- list(
         labs(title = "Violin plot of average window logCPM values",
              subtitle = "Grouped by peak overlap"))
 ggprint(p)
-summary(lm(logCPM ~ PeakOverlap, data = adata))
+tidy(lm(logCPM ~ PeakOverlap, data = adata))
 ```
 
 From the linear model and violin plot, we can see that peaks are clearly significantly enriched for high-abundance windows relative to background regions. However, the histogram shows that a purely count-based filter is not desirable, because any threshold still leaves substantial high-count windows that do no overlap peaks.This is because the peaks represent only a small fraction of the genome and the random variation in background coverage depth is at least as large as the difference between peaks and unbound regions. Hence, we will simply select all windows that overlap called peaks. For this purpose, we will select a larger set of peaks using a more relaxed IDR threshold in order to maximize the probability of including peaks that are present in only one or a few conditions and are therefore more weakly represented in the all-sample consensus. The trade-off of including more false positive peaks is acceptable here, since false positive peaks are not expected to show evidence of differential binding.

@@ -59,6 +59,7 @@ library(ks)
 library(RColorBrewer)
 library(variancePartition)
 library(forcats)
+library(broom)
 library(rctutils)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
@@ -192,7 +193,7 @@ p <- list(
         labs(title = "Violin plot of average promoter logCPM values",
              subtitle = "Grouped by peak overlap"))
 ggprint(p)
-summary(lm(logCPM ~ PeakOverlap, data = adata))
+tidy(lm(logCPM ~ PeakOverlap, data = adata))
 ```
 
 The promoters that contain peaks clearly have a higher abundance on average than the promoters that do not. However, there is still significant overlap between the distributions. We use the logCPM distribution of peak-overlapping promoters to choose a low-count filter threshold that keeps 99% of such promoters, and then we keep *all* promoters that pass this threshold, regardless of whether they contain a called peak. This ensures that we capture most activity in any peak-containing promoters without relying directly on the peak calls. Thus, if a promoter contains a peak that was not called because it is only present in certain conditions, it is still likely to be included based on this filter criterion. This comes at the cost of potentially including many promoters with no real histone modification activity in them.
