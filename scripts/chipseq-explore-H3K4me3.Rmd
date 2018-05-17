@@ -507,7 +507,7 @@ vp.formulas <- list(Group_Only = ~group,
                     Group_and_SV = as.formula(str_c(c("~ group", colnames(svmats$PeakHANorm)), collapse = " + ")),
                     Group_and_Covars_and_SV = as.formula(str_c(c("~ group + donor_id + FRiP", colnames(svmats$PeakHANorm)), collapse = " + ")))
 designs <- lapply(vp.formulas, model.matrix, data = sample.table.with.sv)
-elists <- bplapply(designs, voomWithOffset, dge = dges$PeakHANorm)
+elists <- bplapply(designs, voomWithOffset, counts = dges$PeakHANorm)
 # Function is already parallelized, so don't call it in parallel
 varParts <- mapply(function(...) try(fitExtractVarPartModel(...)), exprObj = elists, formula = vp.formulas,
                    MoreArgs = list(data = sample.table.with.sv))
