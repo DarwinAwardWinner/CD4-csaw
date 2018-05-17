@@ -42,6 +42,7 @@ library(edgeR)
 library(limma)
 library(csaw)
 library(sva)
+library(qvalue)
 library(ggplot2)
 library(forcats)
 library(broom)
@@ -264,7 +265,6 @@ peak.results.tables <- bplapply(window.results.tables, function(tt) {
         arrange(PValue) %>%
         add_qvalue
 })
-peak.results.tables %<>% lapply(. %>% add_qvalue)
 ```
 
 We now visualize the p-value histogram for each test. Ideally, each p-value histogram should either be uniform or biased toward zero. Any other shape is indicative of a failure of some modelling step.
@@ -272,7 +272,7 @@ We now visualize the p-value histogram for each test. Ideally, each p-value hist
 ```{r peak_pval_hist}
 p <- bplapply(names(peak.results.tables), function(testname) {
     pvals <- peak.results.tables[[testname]]$PValue
-    pi0 <- pi0est(pvals)$pi0
+    pi0 <- tryCatch(pi0est(pvals)$pi0, error=function(...) propTrueNull(pvals))
     p <- plot_pval_hist(pvals, ptn = pi0) +
         labs(title = glue("P-value histogram for {testname}"),
              subtitle = glue("Est. Non-Null Prop.: {(format((1 - pi0) * 100, digits = 3))}%"))
