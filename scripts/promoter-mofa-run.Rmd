@@ -246,7 +246,8 @@ TrainOptions.explore <- getDefaultTrainOptions() %>%
     assign_into(.$tolerance, 0.1)
 # Longer allowed training time for final model
 TrainOptions.final <- getDefaultTrainOptions() %>%
-    assign_into(.$maxiter, 30000)
+    assign_into(.$maxiter, 30000) %>%
+    assign_into(.$tolerance, 0.01)
 
 tmpd <- tempfile(tmpdir = tempdir(), pattern = "mofatemp")
 DirOptions.final <- list(
@@ -306,7 +307,7 @@ r2.final <- calculateVarianceExplained(mofa.final)
 We also make a plot comparing the factors between multiple models, to verify that each model is discovering roughly the same set of factors.
 
 ```{r compare_models}
-#invisible(compareModels(mofa.explore))
+#invisible(compare_models(mofa.explore))
 ```
 
 Since all the models seem to be discovering the same factors, we can use any model we choose. For the first model, we make a "bee swarm plot" of each factor:
