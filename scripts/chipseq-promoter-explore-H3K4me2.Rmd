@@ -555,7 +555,7 @@ AveLogCPM <- aveLogCPM(dge, dispersion = 0.05, prior.count = 0.5)
 logcpm.loess <- cpmWithOffset(dges$LoessNorm, log = TRUE, prior.count = 0.5)
 bigbin.logcpm <- cpm(asDGEList(bigbin.sexp), log = TRUE, prior.count = 0.5)
 
-getLineData <- function(s1, s2) {
+    getLineData <- function(s1, s2) {
     linenames <- c(BG = "BGNorm",
                    Promoters = "PromoterNorm")
     assert_that(all(linenames %in% names(dges)))
