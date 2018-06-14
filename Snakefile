@@ -506,19 +506,19 @@ targets = {
         chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
     ),
     'promoter_eda': expand(
-        'reports/ChIP-seq/{genome}_{transcriptome}_{chip_antibody}-{promoter_radius}-promoter-exploration.html',
+        'reports/ChIP-seq/{genome}_{transcriptome}_{chip_antibody}_{promoter_radius}-promoter-exploration.html',
         zip_longest_recycled, genome=["hg38.analysisSet"],
         **df_cartesian_product(pd.DataFrame({'transcriptome': ["knownGene", "ensembl.85"]}),
                                promoter_radius_table),
     ),
     'promoter_diffmod': expand(
-        'reports/ChIP-seq/{genome}_{transcriptome}_{chip_antibody}-{promoter_radius}-promoter-diffmod.html',
+        'reports/ChIP-seq/{genome}_{transcriptome}_{chip_antibody}_{promoter_radius}-promoter-diffmod.html',
         zip_longest_recycled, genome=["hg38.analysisSet"],
         **df_cartesian_product(pd.DataFrame({'transcriptome': ["knownGene", "ensembl.85"]}),
                                promoter_radius_table),
     ),
     'promoter_gst': expand(
-        'saved_data/CAMERA-results-{chip_antibody}-{promoter_radius}-promoter.RDS',
+        'saved_data/CAMERA-results-{chip_antibody}_{promoter_radius}-promoter.RDS',
         zip_longest_recycled, **promoter_radius_table
     ),
     'macs_predictd' : 'results/macs_predictd/output.log',
@@ -2553,7 +2553,7 @@ rule chipseq_promoter_explore:
         rmd='scripts/chipseq-promoter-explore-{chip_antibody}.Rmd',
         sexp='saved_data/promoter-counts_{genome}_{transcriptome}_{promoter_radius}-radius_147bp-reads_{chip_antibody}.RDS'
     output:
-        html='reports/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}-{promoter_radius,[0-9.]+\\w*?bp}-promoter-exploration.html',
+        html='reports/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}_{promoter_radius,[0-9.]+\\w*?bp}-promoter-exploration.html',
     version: R_package_version('rmarkdown')
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_analyze']
@@ -2576,10 +2576,10 @@ rule chipseq_promoter_diffmod:
         rmd='scripts/chipseq-promoter-diffmod.Rmd',
         sexp='saved_data/promoter-counts_{genome}_{transcriptome}_{promoter_radius}-radius_147bp-reads_{chip_antibody}.RDS'
     output:
-        html='reports/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}-{promoter_radius,[0-9.]+\\w*?bp}-promoter-diffmod.html',
-        xlsx='results/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}-{promoter_radius,[0-9.]+\\w*?bp}-promoter-diffmod.xlsx',
-        rds='saved_data/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}-{promoter_radius,[0-9.]+\\w*?bp}-promoter-diffmod.RDS',
-        rda='saved_data/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}-{promoter_radius,[0-9.]+\\w*?bp}-promoter-diffmod.rda',
+        html='reports/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}_{promoter_radius,[0-9.]+\\w*?bp}-promoter-diffmod.html',
+        xlsx='results/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}_{promoter_radius,[0-9.]+\\w*?bp}-promoter-diffmod.xlsx',
+        rds='saved_data/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}_{promoter_radius,[0-9.]+\\w*?bp}-promoter-diffmod.RDS',
+        rda='saved_data/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}_{promoter_radius,[0-9.]+\\w*?bp}-promoter-diffmod.rda',
     version: R_package_version('rmarkdown')
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_analyze']
@@ -2799,8 +2799,8 @@ rule promoter_gst:
         graphite='saved_data/graphite-ensembl.RDS',
         tfbs_overlap='saved_data/promoter-tfbs-overlap_hg38.analysisSet_ensembl.85.RDS'
     output:
-        rds='saved_data/CAMERA-results-{histone_mark}-{promoter_radius}-promoter.RDS',
-        xlsx=expand('results/ChIP-seq/CAMERA-results-{{histone_mark}}-{{promoter_radius}}-promoter-{collection}.xlsx',
+        rds='saved_data/CAMERA-results-{histone_mark}_{promoter_radius}-promoter.RDS',
+        xlsx=expand('results/ChIP-seq/CAMERA-results-{{histone_mark}}_{{promoter_radius}}-promoter-{collection}.xlsx',
                     collection=[
                         "MSigDB.h", "MSigDB.c2.CP", "MSigDB.c2.CGP", "MSigDB.c3.MIR",
                         "MSigDB.c3.TFT", "MSigDB.c5", "MSigDB.c7", 'TFBS_overlap', 'graphite',
