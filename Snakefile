@@ -521,6 +521,13 @@ targets = {
         'saved_data/CAMERA-results-{chip_antibody}_{promoter_radius}-promoter.RDS',
         zip_longest_recycled, **promoter_radius_table
     ),
+    'tsshood_eda': expand(
+        'reports/ChIP-seq/{genome}_{transcriptome}_{chip_antibody}_{neighborhood_radius}-tss-neighborhood_{window_size}-windows-exploration.html',
+        zip_longest_recycled, genome=["hg38.analysisSet"],
+        neighborhood_radius=["5kbp"], window_size=["500bp"],
+        **df_cartesian_product(pd.DataFrame({'transcriptome': ["knownGene", "ensembl.85"]}),
+                               promoter_radius_table),
+    ),
     'macs_predictd' : 'results/macs_predictd/output.log',
     'idr_peaks_epic' :expand(
         'peak_calls/epic_{genome_build}/{chip_antibody}_condition.{condition}_donor.ALL/peaks_noBL_IDR.narrowPeak',
@@ -626,13 +633,14 @@ rule all:
         targets['rnaseq_compare'],
         targets['rnaseq_diffexp'],
         targets['rnaseq_gst'],
+        targets['macs_predictd'],
         targets['chipseq_eda'],
         targets['chipseq_diffmod'],
         targets['chipseq_nvm_diminish'],
         targets['promoter_eda'],
         targets['promoter_diffmod'],
         targets['promoter_gst'],
-        targets['macs_predictd'],
+        targets['tsshood_eda'],
         targets['idr_peaks_epic'],
         targets['idr_peaks_macs'],
         targets['idr_plots_one_cond'],
@@ -653,13 +661,14 @@ rule all_rnaseq:
 rule all_chipseq:
     '''This rule aggregates all the final outputs of the pipeline.'''
     input:
+        targets['macs_predictd'],
         targets['chipseq_eda'],
         targets['chipseq_diffmod'],
         targets['chipseq_nvm_diminish'],
         targets['promoter_eda'],
         targets['promoter_diffmod'],
         targets['promoter_gst'],
-        targets['macs_predictd'],
+        targets['tsshood_eda'],
         targets['idr_peaks_epic'],
         targets['idr_peaks_macs'],
         targets['idr_plots_one_cond'],
@@ -2848,3 +2857,29 @@ rule select_abundant_tss_knownGene:
       --additional-gene-info {input.genemeta:q} \
       --output-file {output.tss:q}
     '''
+
+rule chipseq_tsshood_explore:
+    '''Perform exploratory data analysis on ChIP-seq dataset in TSS neighborhoods'''
+    input:
+        rmd='scripts/chipseq-tsshood-explore-{chip_antibody}.Rmd',
+        peaks='peak_calls/epic_{genome}/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
+        bigbin_sexp='saved_data/chipseq-counts_10kbp-bigbins_{chip_antibody}.RDS',
+        sexp='saved_data/tss-neighborhood-counts_{genome}_{transcriptome}_{neighborhood_radius}-radius_{window_size}-windows_147bp-reads_{chip_antibody}.RDS'
+    output:
+        html='reports/ChIP-seq/{genome,[^_]+}_{transcriptome,[^_]+}_{chip_antibody}_{neighborhood_radius,[0-9.]+\\w*?bp}-tss-neighborhood_{window_size,[0-9.]+\\w*?bp}-windows-exploration.html',
+    version: R_package_version('rmarkdown')
+    threads: 4
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_analyze']
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
+                   output_format='html_notebook',
+                   params={
+                       'genome': wildcards.genome,
+                       'transcriptome': wildcards.transcriptome,
+                       'histone_mark': wildcards.chip_antibody,
+                       'neighborhood_radius': wildcards.neighborhood_radius,
+                       'window_size': wildcards.window_size,
+                       'fragment_length': '147bp',
+                       'bigbin_size': '10kbp',
+                   })
