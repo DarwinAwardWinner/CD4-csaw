@@ -12,7 +12,7 @@ params:
     transcriptome:
         value: ensembl.85
     histone_mark:
-        value: H3K27me3
+        value: H3K4me2
     neighborhood_radius:
         value: 5kbp
     window_size:
@@ -60,8 +60,6 @@ library(RColorBrewer)
 library(variancePartition)
 library(forcats)
 library(broom)
-library(tibble)
-library(plotly)
 library(rctutils)
 
 library(BSgenome.Hsapiens.UCSC.hg38)
@@ -140,7 +138,7 @@ mcols(nhood_ranges)$offset <- NULL
 mcols(nhood_ranges)$blacklist <- mcols(sexp) %$% split(blacklist, GeneID) %>% sapply(mean) %>% .[names(nhood_ranges)]
 nhood_counts <- assay(sexp, "counts") %>% rowsum(mcols(sexp)$GeneID)
 nhood_sexp <- SummarizedExperiment(
-    assays = List(counts=nhood_counts),
+    assays = List(counts=nhood_counts), 
     rowRanges=nhood_ranges,
     colData=colData(sexp),
     metadata=metadata(sexp))
@@ -207,7 +205,7 @@ sexp <- sexp[mcols(sexp)$GeneID %in% mcols(nhood_sexp)$GeneID,]
 
 # Exploratory Analysis
 
-Now we create a DGEList from the counts. For the purposes of sva and dispersion calculation, we filter out all windows with an average count of less than 5.
+Now we create a DGEList from the counts. For the purposes of sva and dispersion calculation, we filter out all windows with an average count of less than 5. 
 
 ```{r prepare_dgelist}
 ## Extract gene metadata and colapse lists
@@ -219,7 +217,7 @@ all.promoter.meta %<-% {
         ensure_atomic_columns()
 }
 all.window.meta %<-% {
-    rowRanges(sexp) %>%
+    rowRanges(sexp) %>% 
         as.data.frame %>%
         rename(chr = seqnames) %>%
         select(-width, -strand) %>%
@@ -288,12 +286,63 @@ To account for the variable effect of donor, efficiency bias, and as any other s
 dges <- list(
     BGNorm = dge %>% assign_into(.$samples$norm.factors, colData(sexp)$BGNormFactors),
     PromoterNorm = dge %>% assign_into(.$samples$norm.factors, colData(sexp)$PromoterNormFactors),
-    WindowNorm = dge %>% assign_into(.$samples$norm.factors, colData(sexp)$WindowNormFactors),
     LoessNorm = dge %>% assign_into(.$offset, assay(sexp, "offsets.loess")[rownames(.),]))
 logcpms <- lapply(dges, cpmWithOffset, prior.count = 1)
 logcpms %<>% lapply(. %>% .[rowVars(.) >= 1e-8,])
 
-# Need a design with an intercept for sva. Also, filter out rows with (near) zero
+# Need a design with an intercept for sva. Also, filter out rows with (near) zero 
+# variance, because sva chokes on these
+svobjs <- bplapply(logcpms, . %>% .[rowVars(.) >= 1e-8,] %>% sva(design.int))
+# We are expecting at least 1 SV. If there are no SVs, then the downstream code
+# needs changing.
+for (i in names(svobjs)) {
+    assert_that(svobjs[[i]]$n.sv > 0)
+}
+svmats <- lapply(svobjs, . %$% sv %>% cbind %>% add_numbered_colnames("SV"))
+sv.designs <- lapply(svmats, . %>% cbind(design, .))
+sv.designs.int <- lapply(svmats, . %>% cbind(design.int, .))
+numsv.table <- sapply(svobjs, . %$% n.sv) %>% data_frame(NormType = names(.) , NumSV = .)
+print(numsv.table)
+p <- list()
+for (i in names(svmats)) {
+    d <- cbind(sample_table, svmats[[i]])
+    p[[i]] <- ggduo(d,
+                    columnsX = c("cell_type", "time_point", "donor_id", "totals"),
+                    columnsY = c(colnames(svmats[[i]]))) +
+        labs(title = "Covariates vs surrogate variables",
+             subtitle = glue("For SVs from {i} normalization"))
+}
+ggprint(p)
+```
+
+These results seem to be spurious, with a single outlier sample dominating the SVA algorithm and throwing off the automatic detection of the number of surrogate variables. We will remove this outlier sample from the remainder of the analysis and run SVA again without it.
+
+## Outlier Removal
+
+First, we identify and remove the outlier.
+
+```{r remove_outlier}
+# Verify that the same outlier is identified in all SVA runs
+all_sv <- do.call(cbind, svmats)
+outlier <- apply(all_sv, 2, . %>% abs %>% which.max) %>% unique
+assert_that(length(outlier) == 1)
+good_samples <- colnames(sexp)[-outlier]
+
+# Remove the outlier from all relevant objects
+dge %<>% .[,good_samples]
+dges %<>% lapply(. %>% .[,good_samples])
+design %<>% .[good_samples,]
+design.int %<>% .[good_samples,]
+sample_table %<>% filter(SampleName %in% good_samples)
+```
+
+Then we re-run SVA on the remaining samples.
+
+```{r sva_no_outliers}
+logcpms <- lapply(dges, cpmWithOffset, prior.count = 1)
+logcpms %<>% lapply(. %>% .[rowVars(.) >= 1e-8,])
+
+# Need a design with an intercept for sva. Also, filter out rows with (near) zero 
 # variance, because sva chokes on these
 svobjs <- bplapply(logcpms, . %>% .[rowVars(.) >= 1e-8,] %>% sva(design.int))
 # We are expecting at least 1 SV. If there are no SVs, then the downstream code
@@ -528,7 +577,8 @@ We now compute the average group abundances of all windows after surrogate varia
 dgefull <- asDGEList(sexp) %>%
     assign_into(.$offset, NULL) %>%
     assign_into(.$genes, all.window.meta) %>%
-    set_rownames(rownames(all.window.meta))
+    set_rownames(rownames(all.window.meta)) %>%
+    .[,good_samples]
 dgefull$samples$norm.factors <- dges$PromoterNorm$samples$norm.factors
 design <- sv.designs$PromoterNorm
 v <- voomWithOffset(dgefull, design)
@@ -589,6 +639,7 @@ It seems that there is no clear elbow in the scree plot, which means we are not 
 # PCA plots
 
 To get a different look at the data, let's perform principal component analysis.
+
 ```{r PCA}
 prc <- prcomp(ND0_logCPM_centered)
 prc_promoter_df <- prc$x %>%
