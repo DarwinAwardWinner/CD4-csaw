@@ -169,7 +169,8 @@ library(forcats)
         ext=cmdopts$read_extension, param=rparam)
 
     ## Add sample metadata to colData in front of mapping stats
-    colData(rcounts) %<>% select(-bam.files) %>% cbind(sample_table, .)
+    colData(rcounts)$bam.files <- NULL
+    colData(rcounts) %<>% cbind(sample_table, .)
     colnames(rcounts) <- sample_table[[cmdopts$sample_id_column]]
 
     ## Save command and options in the metadata

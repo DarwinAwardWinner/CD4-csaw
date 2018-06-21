@@ -182,7 +182,8 @@ invisible(get_options(commandArgs(TRUE)))
         param=rparam, bin=cmdopts$bin)
 
     ## Add sample metadata to colData in front of mapping stats
-    colData(wcounts) %<>% select(-bam.files) %>% cbind(sample_table, .)
+    colData(wcounts)$bam.files <- NULL
+    colData(wcounts) %<>% cbind(sample_table, .)
     colnames(wcounts) <- sample_table[[cmdopts$sample_id_column]]
 
     ## Save command and options in the metadata

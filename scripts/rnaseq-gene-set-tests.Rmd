@@ -58,7 +58,7 @@ set.seed(1986)
 We begin by loading the saved data from the RNA-seq differential expression tests. We will use the computed t statistics for all the single-contrast tests. (ANOVA-like tests are skipped.)
 
 ```{r load_diffexp_results}
-diffexp <- load.in.new.env(here('saved_data', 'RNA-seq', glue_data(params, '{quant_method}_{genome}_{transcriptome}-diffexp.rda')))
+diffexp <- load_in_new_env(here('saved_data', 'RNA-seq', glue_data(params, '{quant_method}_{genome}_{transcriptome}-diffexp.rda')))
 
 elist.cb <- diffexp$elist.cb
 design <- diffexp$design
@@ -104,6 +104,7 @@ all_collections <- c(MSigDB = msigdb_gene_sets,
                      list(graphite = graphite_gene_sets),
                      list(TFBS_overlap = overlap_sets$RNA))
 ```
+
 # Run the CAMERA gene set test
 
 We now run the CAMERA gene set test on all the TFBS overlap sets. We run CAMERA on each single-contrast differential expression test that was run.
