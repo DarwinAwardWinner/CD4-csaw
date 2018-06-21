@@ -243,9 +243,11 @@ mofa <- createMOFAobject(mae)
 ModelOptions <- getDefaultModelOptions(mofa)
 # Looser tolerance bound for exploration
 TrainOptions.explore <- getDefaultTrainOptions() %>%
+    assign_into(.$DropFactorThreshold, 0.03) %>%
     assign_into(.$tolerance, 0.1)
 # Longer allowed training time for final model
 TrainOptions.final <- getDefaultTrainOptions() %>%
+    assign_into(.$DropFactorThreshold, 0.03) %>%
     assign_into(.$maxiter, 30000) %>%
     assign_into(.$tolerance, 0.01)
 
@@ -276,8 +278,8 @@ for (i in seq_len(params$mofa_runs)) {
     TrainOpt <- TrainOptions.explore %>% assign_into(.$seed, explore.random.seeds[i])
     dir.create(DirOpt$dataDir, recursive = TRUE)
     mofa.explore[[i]] <- mofa %>%
-        prepareMOFA(DirOptions = DirOpt, ModelOptions = ModelOptions, TrainOptions = TrainOpt) %>%
-        runMOFA(DirOptions = DirOpt)
+        prepareMOFA(ModelOptions = ModelOptions, TrainOptions = TrainOpt) %>%
+        runMOFA(outfile = DirOpt$outFile)
     saveRDS(mofa.explore[[i]], DirOpt$rdsFile)
     ## TODO: saveRDS
 }
@@ -287,8 +289,8 @@ unlink(tmpd, recursive = TRUE)
 ```{r fit_final_model}
 dir.create(DirOptions.final$dataDir, recursive = TRUE)
 mofa.final <- mofa %>%
-    prepareMOFA(DirOptions = DirOptions.final, ModelOptions = ModelOptions, TrainOptions = TrainOptions.final) %>%
-    runMOFA(DirOptions = DirOptions.final)
+    prepareMOFA(ModelOptions = ModelOptions, TrainOptions = TrainOptions.final) %>%
+    runMOFA(outfile = DirOptions.final$outFile)
 saveRDS(mofa.final, DirOptions.final$rdsFile)
 unlink(tmpd, recursive = TRUE)
 #mofa.final <- mofa.explore[[1]]
