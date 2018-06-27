@@ -128,6 +128,30 @@ for (i in names(sample_table)) {
 }
 ```
 
+Last, we load the RNA-seq data, and fix up the strandedness if necessary.
+
+```{r load_rnaseq}
+rnaseq_sexp <- {
+    readRDS(here("saved_data", glue_data(params, "SummarizedExperiment_rnaseq_shoal_hg38.analysisSet_{transcriptome}.RDS"))) %>%
+    set_colnames(colData(.)$SRA_run)
+}
+# Fix up stranded RNA-seq counts, if needed
+libtype.assayNames <- c(SF = "sense.counts", SR = "antisense.counts")
+if (all(libtype.assayNames %in% assayNames(rnaseq_sexp))) {
+    message("Selecting stranded counts for each sample")
+    sample.table %<>% mutate(count_type = libtype.assayNames[libType])
+    assay(rnaseq_sexp, "unstranded.counts") <- assay(rnaseq_sexp, "counts")
+    assay(rnaseq_sexp, "counts") <- lapply(seq_len(nrow(sample.table)), function(i) {
+        message("Using ", sample.table[i,]$count_type, " for ", colnames(rnaseq_sexp)[i])
+        assay(rnaseq_sexp, sample.table[i,]$count_type %>% as.character)[,i]
+    }) %>% do.call(what = cbind)
+    total.counts <- sexp %>% assays %>% sapply(colSums) %>% data.frame %>%
+        mutate(SampleName = row.names(.)) %>%
+        inner_join(sample.table, by = "SampleName")
+    total.counts %$% invisible(assert_that(all(counts == pmax(sense.counts, antisense.counts))))
+}
+```
+
 # Computing promoter counts
 
 We generate a SummarizedExperiment containing counts for whole promoter neighborhoods by adding up all the windows in each neighborhood. The result has one row per gene. The count for each neighborhood is simply the sum of window counts in that neighborhood, since each read was binned into exactly one window.
@@ -140,7 +164,7 @@ mcols(nhood_ranges)$offset <- NULL
 mcols(nhood_ranges)$blacklist <- mcols(sexp) %$% split(blacklist, GeneID) %>% sapply(mean) %>% .[names(nhood_ranges)]
 nhood_counts <- assay(sexp, "counts") %>% rowsum(mcols(sexp)$GeneID)
 nhood_sexp <- SummarizedExperiment(
-    assays = List(counts=nhood_counts), 
+    assays = List(counts=nhood_counts),
     rowRanges=nhood_ranges,
     colData=colData(sexp),
     metadata=metadata(sexp))
@@ -205,9 +229,27 @@ nhood_sexp <- nhood_sexp[a >= logcpm_threshold,]
 sexp <- sexp[mcols(sexp)$GeneID %in% mcols(nhood_sexp)$GeneID,]
 ```
 
+# Preprocessing RNA-seq data
+
+```{r rnaseq_preprocess}
+rna_dge <- DGEList(assay(rnaseq_sexp, "counts"))
+rna_dge$samples %<>% cbind(as(colData(rnaseq_sexp), "data.frame"))
+nonzero <- rowSums(rna_dge$counts) > 0
+if ("length" %in% assayNames(rnaseq_sexp)) {
+    normMat <- assay(rnaseq_sexp, "length") %>% divide_by(exp(rowMeans(log(.))))
+    normCounts <- rna_dge$counts/normMat
+    present <- aveLogCPM(normCounts) >= -1
+    lib.offsets <- log(calcNormFactors(normCounts[present,])) + log(colSums(normCounts))
+    rna_dge$offset <- t(t(log(normMat)) + lib.offsets)
+}
+rna_N0_samples <- rna_dge$samples %$% { cell_type == "Naive" & days_after_activation == 0 }
+rna_N0_logmean <- aveLogCPMWithOffset(rna_dge[,rna_N0_samples]) %>% set_names(rownames(rna_dge))
+rna_N0_nonzero <- rowSums(rna_dge[,rna_N0_samples]$counts) > 0
+```
+
 # Exploratory Analysis
 
-Now we create a DGEList from the counts. For the purposes of sva and dispersion calculation, we filter out all windows with an average count of less than 5. 
+Now we create a DGEList from the counts. For the purposes of sva and dispersion calculation, we filter out all windows with an average count of less than 5.
 
 ```{r prepare_dgelist}
 ## Extract gene metadata and colapse lists
@@ -219,7 +261,7 @@ all.promoter.meta %<-% {
         ensure_atomic_columns()
 }
 all.window.meta %<-% {
-    rowRanges(sexp) %>% 
+    rowRanges(sexp) %>%
         as.data.frame %>%
         rename(chr = seqnames) %>%
         select(-width, -strand) %>%
@@ -292,7 +334,7 @@ dges <- list(
 logcpms <- lapply(dges, cpmWithOffset, prior.count = 1)
 logcpms %<>% lapply(. %>% .[rowVars(.) >= 1e-8,])
 
-# Need a design with an intercept for sva. Also, filter out rows with (near) zero 
+# Need a design with an intercept for sva. Also, filter out rows with (near) zero
 # variance, because sva chokes on these
 svobjs <- bplapply(logcpms, . %>% .[rowVars(.) >= 1e-8,] %>% sva(design.int))
 # We are expecting at least 1 SV. If there are no SVs, then the downstream code
@@ -344,7 +386,7 @@ Then we re-run SVA on the remaining samples.
 logcpms <- lapply(dges, cpmWithOffset, prior.count = 1)
 logcpms %<>% lapply(. %>% .[rowVars(.) >= 1e-8,])
 
-# Need a design with an intercept for sva. Also, filter out rows with (near) zero 
+# Need a design with an intercept for sva. Also, filter out rows with (near) zero
 # variance, because sva chokes on these
 svobjs <- bplapply(logcpms, . %>% .[rowVars(.) >= 1e-8,] %>% sva(design.int))
 # We are expecting at least 1 SV. If there are no SVs, then the downstream code
@@ -633,10 +675,11 @@ scree_data <- data.frame(k = 1:15)
 km_list <- bpmapply(kmeans, centers = scree_data$k, MoreArgs = list(x = ND0_logCPM_centered, iter.max = 1000, nstart = 10, algorithm = "MacQueen"), SIMPLIFY = FALSE)
 scree_data$wss <- sapply(km_list, . %$% tot.withinss)
 ggplot(scree_data) + aes(x = k, y = wss) +
-    geom_line(alpha = 0.5) + geom_point()
+    geom_line(alpha = 0.5) + geom_point() +
+    ggtitle("K-means scree plot")
 ```
 
-It seems that there is no clear elbow in the scree plot, which means we are not really sure which value of k is the most appropriate. 
+It seems that there is no clear elbow in the scree plot, which means we are not really sure which value of k is the most appropriate.
 
 # PCA plots
 
@@ -675,3 +718,20 @@ p <- plot_ly(prc_promoter_df, x = ~PC1, y = ~PC2, z = ~PC3, color = ~Cluster, si
 p
 ```
 
+# Relating expression to promoter behavior
+
+Now we max a boxplot of expression values for each k-means cluster.
+
+```{r kmeans_expr_boxplot}
+expr_by_cluster <-
+    tibble(Cluster = factor(km$cluster),
+           GeneID = names(km$cluster)) %>%
+    mutate(logCPM = rna_N0_logmean[.$GeneID],
+           nonzero = rna_N0_nonzero[.$GeneID])
+p <- ggplot(expr_by_cluster %>% filter(nonzero)) +
+    aes(x = Cluster, y = logCPM) +
+    geom_boxplot(aes(color = Cluster), fill = NA) +
+    geom_violin(aes(fill = Cluster)) +
+    guides(color = FALSE, fill = FALSE)
+ggprint(p)
+```
