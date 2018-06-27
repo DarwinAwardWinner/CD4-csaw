@@ -38,8 +38,8 @@ library(tibble)
 library(limma)
 library(rex)
 library(GSEABase)
+library(graphite)
 library(rctutils)
-
 
 library(BiocParallel)
 library(future)
@@ -60,7 +60,7 @@ set.seed(1986)
 
 ## Loading the RNA-seq differential expression results
 
-We begin by loading the saved data from the ChIP-seq promoter differential modification tests. We must use the internal `.zscoreDGE` function We will use the computed t statistics for all the single-contrast tests. (ANOVA-like tests are skipped.)
+We begin by loading the saved data from the ChIP-seq promoter differential modification tests. We will use the computed t statistics for all the single-contrast tests. (ANOVA-like tests are skipped.)
 
 ```{r load_diffmod_results}
 diffmod <- load_in_new_env(here('saved_data', 'ChIP-seq',
