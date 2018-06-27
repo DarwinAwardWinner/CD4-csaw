@@ -20,6 +20,9 @@
 # Temp files
 .Rsubread_UserProvidedAnnotation_pid*
 temp-core-*
+*.nb.html
+*.knit.md
+*.utf8.md
 
 # Directories where output files go
 /saved_data
@@ -36,5 +39,4 @@ temp-core-*
 /reports/
 *_cache/
 /cache/
-*.nb.html
 .Rproj.user
