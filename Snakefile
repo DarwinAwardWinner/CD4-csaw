@@ -2815,6 +2815,7 @@ rule promoter_gst:
                         "MSigDB.c3.TFT", "MSigDB.c5", "MSigDB.c7", 'TFBS_overlap', 'graphite',
                     ]),
     threads: 9
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['chipseq_analyze']
     run:
         os.environ['MC_CORES'] = str(threads)
         rmd_run_without_rendering(
