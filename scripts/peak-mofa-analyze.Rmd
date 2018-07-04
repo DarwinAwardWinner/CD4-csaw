@@ -42,8 +42,8 @@ library(ggplot2)
 library(ggbeeswarm)
 library(assertthat)
 library(here)
+library(rlang)
 library(rctutils)
-
 
 library(BiocParallel)
 library(future)
@@ -97,6 +97,7 @@ We start by plotting the fraction of variance explained by each factor in each v
 
 ```{r plot_r2, warning = FALSE}
 plotVarianceExplained(mofa)
+# TODO: calculateVarianceExplained(mofa)$R2PerFactor %>% apply(1, product) %>% log10 %>% multiply_by(-1) %>% sort
 ```
 
 The plot shows that factors 1, 4, and 5 are shared across all 4 views, while all the others are specific to just 1 or 2 views. H3K4me2 and H3K4me3 in particular seem to share a lot of the same variation, which is expected since there is substantial overlap between their binding sites, and they are highly correlated in general.
@@ -125,7 +126,7 @@ This plot shows that factors 1 and 4 are associated with time point, while facto
 Based on the above, we identify factors 1, 4, and 5 as the most biologically interesting factors. Happily, these are the same factors that explain a non-zero fraction of variance in every view. To further characterize these factors, we plot them against each other, resulting in a series of PCA-like plots.
 
 ```{r factor_pairs_plot, warning = FALSE}
-factors_of_interest <- c(1,4,5)
+factors_of_interest <- str_c("LF", c(1,4,5))
 plotFactorScatters(mofa, factors = factors_of_interest, color_by = "time_point", shape_by = "cell_type")
 ```
 
@@ -166,12 +167,12 @@ The RNA-seq data in this data set is known to have a severe batch effect that is
 ```{r mofa_batch_correct_rnaseq}
 rnaseq_data <- list(None = getTrainData(mofa)$RNA)
 sample.table <- colData(mofa@InputData)
-sample.table$rna_batch <- getFactors(mofa, "2") %>% as.vector %>% is_less_than(0) %>% ifelse(., "A", "B")
+sample.table$rna_batch <- getFactors(mofa, "LF2") %>% as.vector %>% is_less_than(0) %>% ifelse(., "A", "B")
 design.NoTime <- model.matrix(~ cell_type + donor_id, sample.table)
 
 rnaseq_data$BatchSubtract <- removeBatchEffect(rnaseq_data$None, batch = sample.table$rna_batch, design = design.NoTime)
 rnaseq_data$ComBat <- ComBat(rnaseq_data$None, batch = sample.table$rna_batch, mod = design.NoTime, par.prior = TRUE)
-rnaseq_data$MOFASubtract <- rnaseq_data$None - predict(mofa, views = "RNA", factors = "2")$RNA
+rnaseq_data$MOFASubtract <- rnaseq_data$None - predict(mofa, views = "RNA", factors = "LF2")$RNA
 rnaseq_data$MOFAPredict <- predict(mofa, view = "RNA", factors = factors_of_interest)$RNA
 
 doMDS <- function(x, k) {

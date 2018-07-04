@@ -134,7 +134,7 @@ dir.create(here("results", "ChIP-seq"), recursive = TRUE, showWarnings = FALSE)
 for (i in names(camera.results)) {
     sig.results <- camera.results[[i]] %>%
         lapply(. %>% filter(FDR <= 0.1 | seq_along(FDR) <= 100))
-    write.xlsx(sig.results, here("results", "ChIP-seq", glue("CAMERA-results-{params$histone_mark}-{params$promoter_radius}-promoter-{i}.xlsx")))
+    write.xlsx(sig.results, here("results", "ChIP-seq", glue("CAMERA-results-{params$histone_mark}_{params$promoter_radius}-promoter-{i}.xlsx")))
 }
-saveRDS(camera.results, here("saved_data", glue_data(params, "CAMERA-results-{histone_mark}-{promoter_radius}-promoter.RDS")))
+saveRDS(camera.results, here("saved_data", glue_data(params, "CAMERA-results-{histone_mark}_{promoter_radius}-promoter.RDS")))
 ```
