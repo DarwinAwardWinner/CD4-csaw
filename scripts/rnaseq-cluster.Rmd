@@ -72,7 +72,7 @@ set.seed(1986)
 Now we'll load the RNA-seq data set from an RDS file containing a SummarizedExperiment object, and modify it to use the sample names as column names.
 
 ```{r load_data}
-sexpfile <- here("saved_data", glue_data(params, "SummarizedExperiment_rnaseq_{quant_method}_{genome}_{transcriptome}.RDS"))
+sexpfile <- glue_data(params, here("saved_data", "SummarizedExperiment_rnaseq_{quant_method}_{genome}_{transcriptome}.RDS"))
 sexp <- readRDS(sexpfile)
 colnames(sexp) <- colData(sexp)$SampleName
 ```
@@ -343,3 +343,11 @@ p
 ```
 
 As expected, the 6 clusters line up in pairs along each of the first 3 PC axes.
+
+# Saving data
+
+Finally we save the data for later analysis,
+
+```{r save_data}
+save.image(glue_data(params, here("saved_data", "rnaseq_cluster_{quant_method}_{genome}_{transcriptome}.rda")))
+```

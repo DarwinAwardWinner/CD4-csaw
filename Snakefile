@@ -2904,6 +2904,7 @@ rule rnaseq_cluster:
         sexp='saved_data/SummarizedExperiment_rnaseq_{quant_method}_{genome}_{transcriptome}.RDS',
     output:
         html='reports/RNA-seq/{quant_method,[^_]+}_{genome}_{transcriptome,[^_]+}-cluster.html',
+        rda='saved_data/rnaseq_cluster_{quant_method}_{genome}_{transcriptome}.rda',
     version: R_package_version('rmarkdown')
     threads: 4
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_analyze']

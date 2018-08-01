@@ -5,8 +5,8 @@ author: "Ryan C. Thompson"
 date: '`r stringr::str_replace_all(format(Sys.time(), "%B %e, %Y"), "[[:space:]]+", " ")`'
 output: html_notebook
 params:
-  dataset:
-    value: "salmon_hg38.analysisSet_knownGene"
+    dataset:
+        value: "salmon_hg38.analysisSet_knownGene"
 ---
 
 # Preliminary Setup
