@@ -1,0 +1,345 @@
+---
+title: "Clustering analysis of CD4 RNA-Seq Dataset"
+author: "Ryan C. Thompson"
+date: '`r stringr::str_replace_all(format(Sys.time(), "%B %e, %Y"), "[[:space:]]+",
+  " ")`'
+output:
+  html_document: default
+  html_notebook: default
+subtitle: '`r glue::glue_data(params, "Using {quant_method} quantifications on {genome}
+  genome with {transcriptome} transcript annotations")`'
+params:
+  genome:
+    value: hg38.analysisSet
+  quant_method:
+    value: shoal
+  transcriptome:
+    value: ensembl.85
+---
+
+# Preliminary Setup
+
+```{r setup, include = FALSE, cache = FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina = 2, cache = TRUE, autodep = TRUE,
+                      cache.extra = list(params = params),
+                      fig.height = 8, fig.width = 8,
+                      cache.path = paste0(
+                          here::here("cache", "rnaseq-cluster", glue::glue_data(params, "{quant_method}_{genome}_{transcriptome}")),
+                          .Platform$file.sep))
+```
+
+First we load the necessary libraries, along with a set of utility functions.
+
+```{r load_packages, message = FALSE, cache = FALSE}
+library(here)
+library(stringr)
+library(magrittr)
+library(openxlsx)
+library(SummarizedExperiment)
+library(tibble)
+library(dplyr)
+library(broom)
+library(edgeR)
+library(limma)
+library(sva)
+library(ggplot2)
+library(scales)
+library(ggalt)
+library(ggfortify)
+library(assertthat)
+library(qvalue)
+library(forcats)
+library(pheatmap)
+library(matrixStats)
+library(RColorBrewer)
+library(plotly)
+library(rctutils)
+
+library(BiocParallel)
+library(future)
+options(future.globals.maxSize = 4 * 1024^3)
+use_futures("multicore")
+```
+
+We also set the random seed for reproducibility:
+
+```{r set_random_seed}
+set.seed(1986)
+```
+
+# Data Loading and Preprocessing
+
+Now we'll load the RNA-seq data set from an RDS file containing a SummarizedExperiment object, and modify it to use the sample names as column names.
+
+```{r load_data}
+sexpfile <- here("saved_data", glue_data(params, "SummarizedExperiment_rnaseq_{quant_method}_{genome}_{transcriptome}.RDS"))
+sexp <- readRDS(sexpfile)
+colnames(sexp) <- colData(sexp)$SampleName
+```
+
+We extract the sample metadata from the SummarizedExperiment. We also tell R to use a coding matrix for each factor that puts the intercept at the mean of all factor levels when incorporating it into a design matrix.
+
+```{r extract_samplemeta}
+sample.table <- colData(sexp) %>%
+    as.data.frame %>% auto_factorize_columns %>%
+    rename(batch = technical_batch) %>%
+    mutate(time_point = factor(days_after_activation) %>% fct_relabel(~glue("D{.}")),
+           group = interaction(cell_type, time_point, sep = ""))
+for (i in names(sample.table)) {
+    if (is.factor(sample.table[[i]]) && nlevels(sample.table[[i]]) > 1) {
+        contrasts(sample.table[[i]]) <- code_control_named(levels(sample.table[[i]]))
+    }
+}
+```
+
+Next we extract the count matrix from the SummarizedExperiment. This is made more complicated than usual by the fact that half of the samples were sequenced with a different protocol than the other half, and the two protocols produce reads with opposite strand orientations. Hence, we need the sense counts for half of the samples and the antisense counts for the other half. The appropriate strand for each sample is documented in the `libType` column of the sample metadata, using the library type abbreviations [established by Salmon](http://salmon.readthedocs.io/en/latest/salmon.html#what-s-this-libtype).
+
+For SummarizedExperiments generated using tximport, this step is skipped, since the quantification tool has already been told which strand to use and only provides counts for that strand.
+
+```{r extract_counts}
+libtype.assayNames <- c(SF = "sense.counts", SR = "antisense.counts")
+if (all(libtype.assayNames %in% assayNames(sexp))) {
+    message("Selecting stranded counts for each sample")
+    sample.table %<>% mutate(count_type = libtype.assayNames[libType])
+    assay(sexp, "unstranded.counts") <- assay(sexp, "counts")
+    assay(sexp, "counts") <- lapply(seq_len(nrow(sample.table)), function(i) {
+        message("Using ", sample.table[i,]$count_type, " for ", colnames(sexp)[i])
+        assay(sexp, sample.table[i,]$count_type %>% as.character)[,i]
+    }) %>% do.call(what = cbind)
+}
+```
+
+As a sanity check, we make sure that we selected the strand sense with the higher total count for each sample.
+
+```{r strand_sanity_check}
+if (all(libtype.assayNames %in% assayNames(sexp))) {
+    total.counts <- sexp %>% assays %>% sapply(colSums) %>% data.frame %>%
+        mutate(SampleName = row.names(.)) %>%
+        inner_join(sample.table, by = "SampleName")
+    total.counts %$% invisible(assert_that(all(counts == pmax(sense.counts, antisense.counts))))
+}
+```
+
+# Model Setup
+
+Before testing for differential expression, we need to normalize the data, filter low-count genes, perform the log transformation with precision weighting, and finally subtract batch effects using ComBat.
+
+First, we create a DGEList from the counts, copying over all the gene metadata.
+
+```{r prepare_dgelist}
+## Extract gene metadata and colapse lists
+all.gene.meta <- mcols(sexp) %>% ensure_atomic_columns %>% as.data.frame
+dge <- DGEList(counts = assay(sexp, "counts"))
+dge$genes <- all.gene.meta
+```
+Next we take care of the initial scaling normalization for sequencing depth and composition bias. We also discard any genes with all zero counts, since there is no meaningful analysis that can be done with these genes.
+
+```{r initial_normalization}
+## Remove all genes with zero counts in all samples
+nonzero <- rowSums(dge$counts) > 0
+dge %<>% .[nonzero,]
+dge %<>% calcNormFactors
+```
+
+In addition, if there is a length assay, we also use that to derive an offset matrix that corrects for differences in effective gene length between samples.
+
+```{r generate_offsets}
+if ("length" %in% assayNames(sexp)) {
+    normMat <- assay(sexp, "length") %>% divide_by(exp(rowMeans(log(.)))) %>%
+        .[nonzero,]
+    normCounts <- dge$counts/normMat
+    lib.offsets <- log(calcNormFactors(normCounts)) + log(colSums(normCounts))
+    dge$offset <- t(t(log(normMat)) + lib.offsets)
+}
+```
+
+We plot the distribution of average log2 CPM values to verify that our chosen presence threshold is appropriate. The distribution is expected to be bimodal, with a low-abundance peak representing non-expressed genes and a high-abundance peak representing expressed genes. The chosen threshold should separate the two peaks of the bimodal distribution.
+
+```{r compute_avelogCPM}
+a <- aveLogCPMWithOffset(dge)
+avelogcpm.presence.threshold <- -1
+```
+
+```{r plot_aveLogCPM}
+p <- list(
+    Histogram = ggplot(data.frame(logCPM = a)) +
+        aes(x = logCPM) +
+        geom_histogram(aes(y = 100*(..count..)/sum(..count..)), binwidth = 0.25, boundary = 0) +
+        geom_vline(xintercept = avelogcpm.presence.threshold, color = "red", linetype = "dashed") +
+        xlab("Average logCPM") + ylab("Percent of genes in bin") +
+        coord_cartesian(xlim = quantile(a, c(0, 0.995)), ylim = c(0,10)) +
+        labs(title = "Average gene LogCPM distribution",
+             subtitle = "for genes with at least 1 read") +
+        theme(plot.caption = element_text(hjust = 0)),
+    ECDF = ggplot(fortify(ecdf(a))) +
+        aes(x = x, y = y*100) +
+        geom_step() +
+        geom_vline(xintercept = avelogcpm.presence.threshold, color = "red", linetype = "dashed") +
+        xlab("Average logCPM") + ylab("Percent of genes with smaller average logCPM") +
+        coord_cartesian(xlim = quantile(a, c(0, 0.995))) +
+        labs(title = "Empirical Cumulative Distribution Function of gene LogCPM values",
+             subtitle = "for genes with at least 1 read") +
+        theme(plot.caption = element_text(hjust = 0)))
+
+ggprint(p)
+```
+
+The red dashed line in each plot indicates the chosen presence threshold. We now subset the DGEList to only those genes above the threshold.
+
+```{r abundance_filter_genes}
+dge %<>% .[a >= avelogcpm.presence.threshold,]
+```
+
+Next, we use the voom method with sample quality weights to prepare the data for model fitting with limma. Note that donor_id is still included in the design matrix even though we subtracted out donor differences using ComBat. This ensures that the model fitting is honest about the number of residual degrees of freedom in the model, with 3 degrees of freedom "spent" modeling the inter-donor effects.
+
+```{r compute_quality_weights, warning = FALSE}
+design <- model.matrix(~0 + group + donor_id, sample.table) %>% strip_design_factor_names
+elist.nc <- voomWithQualityWeightsAndOffset(dge, design, plot = TRUE)
+```
+
+Next we use ComBat to perform batch correction, which performs empirical Bayes shrinkage of the batch correction parameters. We use a ComBat's non-parametric mode due to the poor fit of the parametric assumptions for the variance distribution shown by the QC plot.
+
+```{r combat_adjust}
+design.cb <- model.matrix(~cell_type + donor_id, sample.table) %>% strip_design_factor_names
+elist.cb <- elist.nc
+invisible(suppressMessages(ComBat(elist.cb$E, batch = sample.table$batch, mod = design.cb, par.prior = TRUE, prior.plots = TRUE)))
+elist.cb$E <- ComBat(elist.cb$E, batch = sample.table$batch, mod = design.cb, par.prior = FALSE)
+```
+
+To make sure that the batch correction worked, we make MDS plots before and after.
+
+```{r plot_mds}
+dmat.nc <- suppressPlot(plotMDS(elist.nc)$distance.matrix) %>% as.dist
+mds.nc <- cmdscale(dmat.nc, k = attr(dmat.nc, "Size") - 1, eig = TRUE)
+mds.nc$points %<>% add_numbered_colnames("Dim") %>% data.frame(sample.table, .)
+dmat.cb <- suppressPlot(plotMDS(elist.cb)$distance.matrix) %>% as.dist
+mds.cb <- cmdscale(dmat.cb, k = attr(dmat.cb, "Size") - 1, eig = TRUE)
+mds.cb$points %<>% add_numbered_colnames("Dim") %>% data.frame(sample.table, .)
+
+mdsggbase <- function(df) {
+    ggplot(df) +
+        aes(x = Dim1, y = Dim2, label = SampleName, color = batch, fill = time_point, shape = cell_type, linetype = donor_id, group = cell_type:donor_id) +
+        geom_encircle(aes(group = time_point:cell_type, color = NULL), s_shape = 0.75, expand = 0.05, color = NA, alpha = 0.2) +
+        geom_path(color = hcl(c = 0, l = 45), aes(color = NULL)) +
+        geom_point(size = 4) +
+        scale_shape_manual(values = c(Naive = 21, Memory = 24)) +
+        scale_color_manual(values = col2hcl(c(B1 = "green", B2 = "magenta"), l = 80)) +
+        scale_fill_hue(l = 55) +
+        scale_linetype_manual(values = c("solid", "dashed", "dotdash", "twodash")) +
+        guides(colour = guide_legend(override.aes = list(shape = 21)),
+               fill = guide_legend(override.aes = list(shape = 21)),
+               shape = guide_legend(override.aes = list(color = hcl(c = 0, l = 80), fill = hcl(c = 0, l = 55)))) +
+        labs(title = "limma voom Principal Coordinates 1 & 2") +
+        coord_equal()
+}
+
+pbase.nc <- mdsggbase(mds.nc$points)
+pbase.cb <- mdsggbase(mds.cb$points)
+
+p <- list(NC.PC12 = pbase.nc +
+              labs(subtitle = "Before Batch Correction"),
+          NC.PC23 = pbase.nc +
+              aes(x = Dim2, y = Dim3) +
+              labs(title = "limma voom Principal Coordinates 2 & 3",
+                   subtitle = "Before Batch Correction"),
+          CB.PC12 = pbase.cb +
+              labs(subtitle = "After ComBat Batch Correction"),
+          CB.PC23 = pbase.cb +
+              aes(x = Dim2, y = Dim3) +
+              labs(title = "limma voom Principal Coordinates 2 & 3",
+                   subtitle = "After ComBat Batch Correction"))
+ggprint(p)
+```
+
+# Clustering
+
+```{r get_logCPM}
+donor_coefs <- colnames(attr(design,"contrasts")$donor_id)
+logCPM <- subtractCoefs(elist.cb, design, coefsToSubtract = donor_coefs)
+```
+
+```{r num_clusters}
+logCPM_centered <- logCPM %>% subtract(rowMeans(.))
+# K-means scree plot
+scree_data <- data.frame(k = 1:20)
+km_list <- bpmapply(kmeans, centers = scree_data$k, 
+                    MoreArgs = list(x = logCPM_centered, nstart = 5),
+                    SIMPLIFY = FALSE)
+scree_data$wss <- sapply(km_list, . %$% tot.withinss)
+ggplot(scree_data) + aes(x = k, y = wss) +
+    geom_line(alpha = 0.5) + geom_point() +
+    ggtitle("K-means scree plot")
+```
+
+There is no unambiguous elbow in the plot, indicating that discrete clusters may not be appropriate for this data.
+
+Next, we do some hierarchical clustering.
+
+```{r cluster}
+rv <- vapply(seq_len(nrow(elist.cb)), function(i) matrixStats::weightedVar(x = elist.cb$E[i,], w = elist.cb$weights[i,]), numeric(1))
+topvar <- head(order(rv, decreasing = TRUE), 5000)
+heat_pal <- colorRampPalette(rev(suppressWarnings(brewer.pal(Inf, "RdBu"))))(100)
+pheatmap(elist.cb$E[topvar,] %>% subtract(rowMeans(.)), 
+         annotation_col = sample.table[c("time_point", "cell_type", "donor_id", "batch")] %>% set_rownames(colnames(elist.cb)),
+         show_rownames = FALSE, show_colnames = FALSE,
+         cluster_cols = FALSE,
+         clustering_distance_rows = "correlation",
+         #kmeans_k = 8, border_color = NA,
+         color = heat_pal, breaks = seq(-6, 6, length.out = length(heat_pal) + 1))
+```
+
+There don't seem to be any obvious unexpected patterns in the hierarchical clustering.
+
+We arbitrarily choose $k=6$ for k-means clustering.
+
+```{r kmeans_heatmap}
+km <- logCPM_centered %>% kmeans(centers = 6, iter.max = 1000, nstart = 10)
+cluster_counts <- table(Cluster = km$cluster) %>% as.data.frame(responseName = "Genes")
+print(cluster_counts)
+pheatmap(km$centers, cluster_rows = FALSE, cluster_cols = FALSE,
+         annotation_col = sample.table[c("time_point", "cell_type", "donor_id", "batch")] %>% set_rownames(colnames(elist.cb)),
+         show_rownames = TRUE, show_colnames = FALSE,
+         border_color = NA,
+         color = heat_pal, breaks = seq(-3, 3, length.out = length(heat_pal) + 1))
+```
+
+As we might expect, the clusters vary primarily in the pattern of expression over time, with 4 of the clusters in particular representing all possible configurations in which 2 time points are upregulated and the other 2 are downregulated, except for the zig-zag patterns, which, if they existed, would have been regressed out due to confounding with the batch effect.
+
+The interesting detail is in the cluster where the early time points have higher expression than the later ones. In this cluster, there is a clear secondary pattern that memory samples have higher expression than naive samples, especially at the early time points. By contrast, all the other clusters seem to have more or less the same expression patterns in naive and memory samples.
+
+We can show the clusters in a PCA plot as well.
+
+```{r kmeans_PCA}
+prc <- prcomp(logCPM_centered)
+prc_df <- prc$x %>%
+    as.data.frame %>% rownames_to_column("GeneID") %>% as_tibble %>%
+    mutate(Cluster = factor(km$cluster[GeneID])) %>%
+    select(GeneID, Cluster, everything())
+lim <- max(abs(prc$x))
+p <- list(
+    pc12 = ggplot(data = prc_df %>% arrange(PC3),
+                  aes(x = PC1, y = PC2, color = Cluster)) +
+        geom_point() +
+        coord_fixed() +
+        xlim(-lim, lim) + ylim(-lim, lim) +
+        ggtitle("PCA PC1&2 Colored by Cluster",
+                "Z-order determined by PC3"),
+    # This setup yields a 90-degree rotation about the vertical axis relative to the previous plot
+    pc23 = ggplot(data = prc_df %>% arrange(-PC1),
+                  aes(x = PC3, y = PC2, color = Cluster)) +
+        geom_point() +
+        coord_fixed() +
+        scale_color_discrete(drop = FALSE) +
+        xlim(-lim, lim) + ylim(-lim, lim) +
+        ggtitle("PCA PC2&3 Colored by Cluster",
+                "Z-order determined by PC1"))
+ggprint(p)
+```
+
+```{r kmeans_PCA_3D}
+p <- plot_ly(prc_df, x = ~PC1, y = ~PC2, z = ~PC3, color = ~Cluster, size = I(3)) %>%
+    add_markers()
+p
+```
+
+As expected, the 6 clusters line up in pairs along each of the first 3 PC axes.

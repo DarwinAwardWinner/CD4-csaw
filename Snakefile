@@ -492,6 +492,14 @@ targets = {
         ],
         transcriptome=['ensembl.85', 'knownGene']),
     'rnaseq_gst' : 'saved_data/CAMERA-results-RNA.RDS',
+    'rnaseq_cluster': expand(
+        'reports/RNA-seq/{tool_and_genome}_{transcriptome}-cluster.html',
+        tool_and_genome=[
+            'star_hg38.analysisSet', 'hisat2_grch38_snp_tran',
+            'salmon_hg38.analysisSet', 'kallisto_hg38.analysisSet',
+            'shoal_hg38.analysisSet',
+        ],
+        transcriptome=['ensembl.85', 'knownGene']),
     'chipseq_eda' : expand(
         'reports/ChIP-seq/{chip_antibody}-exploration.html',
         chip_antibody=chipseq_samplemeta_noinput['chip_antibody'].unique(),
@@ -633,6 +641,7 @@ rule all:
         targets['rnaseq_compare'],
         targets['rnaseq_diffexp'],
         targets['rnaseq_gst'],
+        targets['rnaseq_cluster'],
         targets['macs_predictd'],
         targets['chipseq_eda'],
         targets['chipseq_diffmod'],
@@ -657,6 +666,7 @@ rule all_rnaseq:
         targets['rnaseq_compare'],
         targets['rnaseq_diffexp'],
         targets['rnaseq_gst'],
+        targets['rnaseq_cluster'],
 
 rule all_chipseq:
     '''This rule aggregates all the final outputs of the pipeline.'''
@@ -681,7 +691,9 @@ rule all_rnaseq_counts:
     input: targets['rnaseq_counts']
 
 rule all_rnaseq_eda:
-    input: targets['rnaseq_eda']
+    input:
+        targets['rnaseq_eda'],
+        targets['rnaseq_cluster'],
 
 rule all_rnaseq_quant:
     input: targets['rnaseq_quant']
@@ -2883,4 +2895,24 @@ rule chipseq_tsshood_explore:
                        'window_size': wildcards.window_size,
                        'fragment_length': '147bp',
                        'bigbin_size': '10kbp',
+                   })
+
+rule rnaseq_cluster:
+    '''Perform basic clustering analysis on RNA-seq data'''
+    input:
+        rmd='scripts/rnaseq-cluster.Rmd',
+        sexp='saved_data/SummarizedExperiment_rnaseq_{quant_method}_{genome}_{transcriptome}.RDS',
+    output:
+        html='reports/RNA-seq/{quant_method,[^_]+}_{genome}_{transcriptome,[^_]+}-cluster.html',
+    version: R_package_version('rmarkdown')
+    threads: 4
+    resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_analyze']
+    run:
+        os.environ['MC_CORES'] = str(threads)
+        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
+                   output_format='html_notebook',
+                   params={
+                       'genome': wildcards.genome,
+                       'transcriptome': wildcards.transcriptome,
+                       'quant_method': wildcards.quant_method,
                    })
