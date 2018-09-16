@@ -47,6 +47,7 @@ library(ggplot2)
 library(scales)
 library(GGally)
 library(ggalt)
+library(plotly)
 library(reshape2)
 library(assertthat)
 library(ks)
@@ -494,6 +495,47 @@ ggprint(p23.nosv)
 
 Without the surrogate variables, the MDS plots look are more or less uninterpretable, with no clean separation between groups. This underscores the importance of modelling unknown sources of variation in the data using SVA. These unknown sources could include ChIP efficiency bias, GC bias, and other technical variables in the ChIP-Seq process that have nothing to do with the biology of the experiment. Because the donor ID was not included in the design, inter-donor variability could also be included in the surrogate variables.
 
+## MDS plots of multiple dimensions with peak-based normalization
+
+Now that we have settled on a normalization strategy, we can take a closer look at the MDS principal coordinates for the SV-subtracted data.
+
+```{r mds_plot_multidim}
+xlims <- range(unlist(mdstabs$PeakNorm[glue("Dim{1:4}")]))
+ylims <- range(unlist(mdstabs$PeakNorm[glue("Dim{2:5}")]))
+pbase <- ggmds(mdstabs$PeakNorm) +
+    coord_equal(xlim = xlims, ylim = ylims)
+p <- list()
+for (i in 1:4) {
+    p[[glue("PC{i}{i+1}")]] <- pbase +
+        aes(x = !!sym(glue("Dim{i}")), y = !!sym(glue("Dim{i+1}"))) +
+        labs(title = glue("MDS plot, principal coordinates {i} & {i+1}"))
+}
+ggprint(p)
+```
+
+We can also look at the first 3 principal coordinates in a 3-D plot.
+
+```{r mds_plot_3d}
+# trace_dfs <- mdstabs$PeakNorm %>%
+#     arrange(time_point) %>%
+#     mutate(linetype = ifelse(cell_type == "Naive", "solid", "dot")) %>%
+#     split(.$donor_id : .$cell_type)
+p <- plot_ly(mdstabs$PeakNorm,
+             x = ~Dim1, y = ~Dim2, z = ~Dim3,
+             color = ~time_point, symbol = ~cell_type,
+             # Match colors with ggplot
+             colors = hue_pal()(nlevels(mdstabs$PeakNorm$time_point)),
+             # Match shapes as well as possible with ggplot (triangles not abailable)
+             symbols = c("circle", "diamond"),
+             type = 'scatter3d') %>%
+    add_markers()
+# for (x in trace_dfs) {
+#     p <- add_trace(p, x = ~Dim1, y = ~Dim2, z = ~Dim3, color = ~1, colors = "black", data = x,
+#                    mode = "lines",
+#                    line = list(dash = x$linetype[1]))
+# }
+p
+```
 ## Variance Partitioning analysis
 
 To further investigate the sources of variance within the data, we can use the `variancePartition` package. We fit 4 models to the data so that we can see how the percent of variance explained changes depending on which terms are included in the model.
