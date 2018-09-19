@@ -536,6 +536,7 @@ p <- plot_ly(mdstabs$PeakNorm,
 # }
 p
 ```
+
 ## Variance Partitioning analysis
 
 To further investigate the sources of variance within the data, we can use the `variancePartition` package. We fit 4 models to the data so that we can see how the percent of variance explained changes depending on which terms are included in the model.
