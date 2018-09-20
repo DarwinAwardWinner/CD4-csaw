@@ -207,7 +207,7 @@ Next we use ComBat to perform batch correction, which performs empirical Bayes s
 design.cb <- model.matrix(~cell_type + donor_id, sample.table) %>% strip_design_factor_names
 elist.cb <- elist.nc
 invisible(suppressMessages(ComBat(elist.cb$E, batch = sample.table$batch, mod = design.cb, par.prior = TRUE, prior.plots = TRUE)))
-elist.cb$E <- ComBat(elist.cb$E, batch = sample.table$batch, mod = design.cb, par.prior = FALSE)
+elist.cb$E <- ComBat(elist.cb$E, batch = sample.table$batch, mod = design.cb, par.prior = ifelse(interactive(), TRUE, FALSE))
 ```
 
 To make sure that the batch correction worked, we make MDS plots before and after.
