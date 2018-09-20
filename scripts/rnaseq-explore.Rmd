@@ -41,6 +41,7 @@ library(ggplot2)
 library(scales)
 library(ggalt)
 library(ggfortify)
+library(plotly)
 library(reshape2)
 library(assertthat)
 library(broom)
@@ -354,13 +355,13 @@ invisible(ComBat(elist.w$E, batch = sample.table$batch, mod = design.NoTime, par
 invisible(dev.off())
 ```
 
-Since the parametric fit for the variance is not a good match for the empirical distribution, we now perform the actual batch correction using the non-parametric mode of ComBat.
+Since the parametric fit for the variance is not a good match for the empirical distribution, we now perform the actual batch correction using the non-parametric mode of ComBat. (For interactive sessions, we use a parametric prior for speed.)
 
 ```{r combat_adjust}
 # Now perform the actual batch correction using non-parametric prior
 design.cb <- model.matrix(~cell_type, sample.table)
 elist.cb <- elist.w
-elist.cb$E %<>% ComBat(batch = sample.table$batch, mod = design.NoTime, par.prior = FALSE)
+elist.cb$E %<>% ComBat(batch = sample.table$batch, mod = design.NoTime, par.prior = ifelse(interactive(), TRUE, FALSE))
 ```
 
 For each of the batch correction methods, we compute the sample distance matrix using multidimensional scaling and plot the first 3 principal coordinates. We reflect all the principal coordinates so as to make the mean of the Naive D0 samples negative in all dimensions, so that MDS plots have a greater chance of being oriented consistently with each other.
@@ -458,6 +459,21 @@ ggprint(p)
 
 ```{r mds_plot_pdf, cache = FALSE, include = FALSE}
 ggprint(p, device = cairo_pdf(file.path(plotdir, "rnaseq-MDSPlots.pdf"), onefile = TRUE))
+```
+
+We can also look at the first 3 principal coordinates in a 3-D plot.
+
+```{r mds_plot_3d}
+p <- plot_ly(mds.cb$points,
+             x = ~Dim1, y = ~Dim2, z = ~Dim3,
+             color = ~time_point, symbol = ~cell_type,
+             # Match colors with ggplot
+             colors = hue_pal()(nlevels(mds.cb$points$time_point)),
+             # Match shapes as well as possible with ggplot (triangles not abailable)
+             symbols = c("circle", "diamond"),
+             type = 'scatter3d') %>%
+    add_markers()
+p
 ```
 
 ## Variance Partitioning analysis
