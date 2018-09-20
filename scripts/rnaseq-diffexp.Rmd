@@ -1,9 +1,15 @@
 ---
 title: "Differential expression analysis of CD4 RNA-Seq Dataset"
+subtitle: '`r glue::glue_data(params, "Using {quant_method} quantifications on {genome} genome with {transcriptome} transcript annotations")`'
 author: "Ryan C. Thompson"
 date: '`r stringr::str_replace_all(format(Sys.time(), "%B %e, %Y"), "[[:space:]]+", " ")`'
-output: html_notebook
-subtitle: '`r glue::glue_data(params, "Using {quant_method} quantifications on {genome} genome with {transcriptome} transcript annotations")`'
+output:
+    html_document:
+        toc: true
+        toc_float: true
+    html_notebook:
+        toc: true
+        toc_float: true
 params:
     genome:
         value: hg38.analysisSet

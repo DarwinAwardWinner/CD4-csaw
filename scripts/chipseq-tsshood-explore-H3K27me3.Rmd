@@ -2,10 +2,14 @@
 title: "Exploration of CD4 ChIP-Seq Promoter Dataset"
 author: "Ryan C. Thompson"
 date: '`r stringr::str_replace_all(format(Sys.time(), "%B %e, %Y"), "[[:space:]]+", " ")`'
-output:
-    html_document: default
-    html_notebook: default
 subtitle: '`r glue::glue_data(params, "For histone mark {histone_mark} using {transcriptome} annotation on {genome} genome")`'
+output:
+    html_document:
+        toc: true
+        toc_float: true
+    html_notebook:
+        toc: true
+        toc_float: true
 params:
     genome:
         value: hg38.analysisSet

@@ -1,14 +1,18 @@
 ---
 title: "Analysis of Diminishing Differences Between Naive and Memory in CD4 ChIP-Seq dataset"
+subtitle: '`r paste0("For histone mark ", params$histone_mark)`'
 author: "Ryan C. Thompson"
 date: '`r stringr::str_replace_all(format(Sys.time(), "%B %e, %Y"), "[[:space:]]+", " ")`'
 output:
-  html_document: default
-  html_notebook: default
-subtitle: '`r paste0("For histone mark ", params$histone_mark)`'
+    html_document:
+        toc: true
+        toc_float: true
+    html_notebook:
+        toc: true
+        toc_float: true
 params:
-  histone_mark:
-    value: H3K4me3
+    histone_mark:
+        value: H3K4me3
 ---
 
 # Preliminary Setup

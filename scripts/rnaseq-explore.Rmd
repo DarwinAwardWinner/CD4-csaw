@@ -3,7 +3,13 @@ title: "Exploration of CD4 RNA-Seq Dataset"
 subtitle: "`r paste0('Using Dataset ', params$dataset)`"
 author: "Ryan C. Thompson"
 date: '`r stringr::str_replace_all(format(Sys.time(), "%B %e, %Y"), "[[:space:]]+", " ")`'
-output: html_notebook
+output:
+    html_document:
+        toc: true
+        toc_float: true
+    html_notebook:
+        toc: true
+        toc_float: true
 params:
     dataset:
         value: "salmon_hg38.analysisSet_knownGene"

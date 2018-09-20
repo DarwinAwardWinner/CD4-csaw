@@ -1,20 +1,24 @@
 ---
 title: "Clustering analysis of CD4 RNA-Seq Dataset"
+subtitle: '`r glue::glue_data(params, "Using {quant_method} quantifications on {genome}
+    genome with {transcriptome} transcript annotations")`'
 author: "Ryan C. Thompson"
 date: '`r stringr::str_replace_all(format(Sys.time(), "%B %e, %Y"), "[[:space:]]+",
   " ")`'
 output:
-  html_document: default
-  html_notebook: default
-subtitle: '`r glue::glue_data(params, "Using {quant_method} quantifications on {genome}
-  genome with {transcriptome} transcript annotations")`'
+    html_document:
+        toc: true
+        toc_float: true
+    html_notebook:
+        toc: true
+        toc_float: true
 params:
-  genome:
-    value: hg38.analysisSet
-  quant_method:
-    value: shoal
-  transcriptome:
-    value: ensembl.85
+    genome:
+        value: hg38.analysisSet
+    quant_method:
+        value: shoal
+    transcriptome:
+        value: ensembl.85
 ---
 
 # Preliminary Setup
