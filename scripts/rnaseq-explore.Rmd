@@ -476,6 +476,27 @@ p <- plot_ly(mds.cb$points,
 p
 ```
 
+To make sure we aren't missing any other principal coordinates that might explain a substantial fraction of variance, we can plot the approximate fraction of variance explained by each PC. Note that since this is not standard PCA, the variance explained is not exact; it is only an approximation.
+
+```{r mds_var_explained}
+mds_values <- mds.cb$points %>% select(matches("^Dim[0-9]+$")) %>% as.matrix
+var_explained <- tibble(
+    var = mds_values %>% colVars %>% divide_by(sum(.)),
+    cumvar = cumsum(var),
+    dim = seq_along(var))
+p <- list()
+p$varexp <- ggplot(var_explained) +
+    aes(x = dim, y = var) +
+    geom_col() +
+    labs(title = "Approximate variance explained by MDS dimensions",
+         x = "MDS dimension", y = "Fraction of variance explained")
+p$cumvar <- p$varexp + aes(y = cumvar) +
+    labs(title = "Approximate cumulative variance explained by MDS dimensions",
+         y = "Cumulative fraction of variance explained") +
+    ylim(0,1)
+ggprint(p)
+```
+
 ## Variance Partitioning analysis
 
 To further investigate the sources of variance within the data, we can use the `variancePartition` package. We fit the model to the uncorrected data and the two corrected data sets (simple batch subtraction and ComBat) so that we can see how the percent of variance explained is affected by batch correction. We use random effects for the factors in the model since batch and time point are confounded.
