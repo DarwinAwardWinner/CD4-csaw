@@ -280,10 +280,10 @@ dir.create(here("saved_data", "ChIP-seq"), recursive = TRUE, showWarnings = FALS
 dir.create(here("results", "ChIP-seq"), recursive = TRUE, showWarnings = FALSE)
 saveRDS(results.tables,
     here('saved_data', 'ChIP-seq',
-        glue_data(params, '{genome}_{transcriptome}_{histone_mark}-{promoter_radius}-promoter-diffmod.RDS')))
+        glue_data(params, '{genome}_{transcriptome}_{histone_mark}_{promoter_radius}-promoter-diffmod.RDS')))
 save.image(here('saved_data', 'ChIP-seq',
-    glue_data(params, '{genome}_{transcriptome}_{histone_mark}-{promoter_radius}-promoter-diffmod.rda')))
+    glue_data(params, '{genome}_{transcriptome}_{histone_mark}_{promoter_radius}-promoter-diffmod.rda')))
 write.xlsx(filtered.results.tables,
     here("results", "ChIP-seq",
-        glue_data(params, '{genome}_{transcriptome}_{histone_mark}-{promoter_radius}-promoter-diffmod.xlsx')))
+        glue_data(params, '{genome}_{transcriptome}_{histone_mark}_{promoter_radius}-promoter-diffmod.xlsx')))
 ```
