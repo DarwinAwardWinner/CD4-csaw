@@ -544,7 +544,7 @@ p
 To make sure we aren't missing any other principal coordinates that might explain a substantial fraction of variance, we can plot the approximate fraction of variance explained by each PC. Note that since this is not standard PCA, the variance explained is not exact; it is only an approximation.
 
 ```{r mds_var_explained}
-mds_values <- mdstabs$PromoterNorm %>% select(matches("^Dim[0-9]+$")) %>% as.matrix
+mds_values <- mdstabs$PromoterNorm %>% dplyr::select(dplyr::matches("^Dim[0-9]+$")) %>% as.matrix
 var_explained <- tibble(
     var = mds_values %>% colVars %>% divide_by(sum(.)),
     cumvar = cumsum(var),
