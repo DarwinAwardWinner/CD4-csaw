@@ -16,8 +16,8 @@ params:
         value: hg38.analysisSet
     transcriptome:
         value: ensembl.85
-    rna_dataset:
-        value: "shoal_hg38.analysisSet"
+    rna_quant_method:
+        value: shoal
     promoter_datasets:
         value: !r c(H3K4me2 = "1kbp-radius_147bp-reads_H3K4me2",
                     H3K4me3 = "1kbp-radius_147bp-reads_H3K4me3",
@@ -89,7 +89,7 @@ peak.sexps %<-% {
         set_names(names(params$peak_datasets))
 }
 rnaseq.sexp %<-% {
-    readRDS(here("saved_data", glue_data(params, "SummarizedExperiment_rnaseq_{rna_dataset}_{transcriptome}.RDS"))) %>%
+    readRDS(here("saved_data", glue_data(params, "SummarizedExperiment_rnaseq_{rna_quant_method}_{genome}_{transcriptome}.RDS"))) %>%
     set_colnames(colData(.)$SRA_run)
 }
 for (i in names(peak.sexps)) {

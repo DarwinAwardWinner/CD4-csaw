@@ -466,8 +466,9 @@ subworkflow hg38_ref:
 
 targets = {
     'rnaseq_counts': expand(
-        'saved_data/SummarizedExperiment_rnaseq_{aligner_and_genome}_{transcriptome}.RDS',
-        aligner_and_genome=['star_hg38.analysisSet', 'hisat2_grch38_snp_tran'],
+        'saved_data/SummarizedExperiment_rnaseq_{aligner}_{genome}_{transcriptome}.RDS',
+        aligner = ['star', 'hisat2'],
+        genome = 'hg38.analysisSet',
         transcriptome=['ensembl.85','knownGene']),
     'rnaseq_quant': expand(
         'saved_data/SummarizedExperiment_rnaseq_{quantifier}_{genome}_{transcriptome}.RDS',
@@ -475,30 +476,22 @@ targets = {
         genome="hg38.analysisSet",
         transcriptome=['ensembl.85','knownGene']),
     'rnaseq_eda' : expand(
-        'reports/RNA-seq/{tool_and_genome}_{transcriptome}-exploration.html',
-        tool_and_genome=[
-            'star_hg38.analysisSet', 'hisat2_grch38_snp_tran',
-            'salmon_hg38.analysisSet', 'kallisto_hg38.analysisSet',
-            'shoal_hg38.analysisSet',
-        ],
+        'reports/RNA-seq/{quant_method}_{genome}_{transcriptome}-exploration.html',
+        quant_method = ['star', 'hisat2', 'kallisto', 'salmon', 'shoal',],
+        genome = 'hg38.analysisSet',
         transcriptome=['ensembl.85', 'knownGene']),
     'rnaseq_compare' : 'reports/RNA-seq/rnaseq-compare.html',
     'rnaseq_diffexp' : expand(
-        'reports/RNA-seq/{tool_and_genome}_{transcriptome}-diffexp.html',
-        tool_and_genome=[
-            'star_hg38.analysisSet', 'hisat2_grch38_snp_tran',
-            'salmon_hg38.analysisSet', 'kallisto_hg38.analysisSet',
-            'shoal_hg38.analysisSet',
-        ],
+        'reports/RNA-seq/{quant_method}_{genome}_{transcriptome}-diffexp.html',
+        quant_method = ['star', 'hisat2', 'kallisto', 'salmon', 'shoal',],
+        genome = 'hg38.analysisSet',
         transcriptome=['ensembl.85', 'knownGene']),
     'rnaseq_gst' : 'saved_data/CAMERA-results-RNA.RDS',
+    # TODO Properly parametrize for ChIP-seq as well
     'rnaseq_cluster': expand(
-        'reports/RNA-seq/{tool_and_genome}_{transcriptome}-cluster.html',
-        tool_and_genome=[
-            'star_hg38.analysisSet', 'hisat2_grch38_snp_tran',
-            'salmon_hg38.analysisSet', 'kallisto_hg38.analysisSet',
-            'shoal_hg38.analysisSet',
-        ],
+        'reports/RNA-seq/{quant_method}_{genome}_{transcriptome}-cluster.html',
+        quant_method = ['star', 'hisat2', 'kallisto', 'salmon', 'shoal',],
+        genome = 'hg38.analysisSet',
         transcriptome=['ensembl.85', 'knownGene']),
     'chipseq_eda' : expand(
         'reports/ChIP-seq/{chip_antibody}-exploration.html',
@@ -967,7 +960,7 @@ rule count_rnaseq_hisat2_ensembl:
             SRA_run=rnaseq_samplemeta['SRA_run']),
         txdb=hg38_ref('TxDb.Hsapiens.ensembl.hg38.v85.sqlite3'),
         genemeta=hg38_ref('genemeta.ensembl.85.RDS')
-    output: sexp='saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_ensembl.{release}.RDS'
+    output: sexp='saved_data/SummarizedExperiment_rnaseq_hisat2_hg38.analysisSet_ensembl.{release}.RDS'
     params:
         expected_bam_files=','.join(expand(
             'aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam',
@@ -1003,7 +996,7 @@ rule count_rnaseq_hisat2_knownGene:
             'aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam.bai',
             SRA_run=rnaseq_samplemeta['SRA_run']),
         genemeta=hg38_ref('genemeta.org.Hs.eg.db.RDS')
-    output: sexp='saved_data/SummarizedExperiment_rnaseq_hisat2_grch38_snp_tran_knownGene.RDS'
+    output: sexp='saved_data/SummarizedExperiment_rnaseq_hisat2_hg38.analysisSet_knownGene.RDS'
     params:
         expected_bam_files=','.join(expand(
             'aligned/rnaseq_hisat2_grch38_snp_tran/{SRA_run}/Aligned.bam',
@@ -2431,10 +2424,10 @@ rule rnaseq_explore:
     '''Perform exploratory data analysis on RNA-seq dataset'''
     input:
         rmd='scripts/rnaseq-explore.Rmd',
-        sexp='saved_data/SummarizedExperiment_rnaseq_{dataset}.RDS',
+        sexp='saved_data/SummarizedExperiment_rnaseq_{quant_method}_{genome}_{transcriptome}.RDS',
     output:
-        html='reports/RNA-seq/{dataset}-exploration.html',
-        plots=expand('plots/RNA-seq/{{dataset}}/{plotfile}',
+        html='reports/RNA-seq/{quant_method,[^_]+}_{genome}_{transcriptome}-exploration.html',
+        plots=expand('plots/RNA-seq/{{quant_method}}_{{genome}}_{{transcriptome}}/{plotfile}',
                      plotfile=['AveLogCPM-plots.pdf',
                                'disp-plots.pdf', 'qc-weights.pdf',
                                'rnaseq-ComBat-qc.pdf', 'rnaseq-MDSPlots.pdf',
@@ -2445,20 +2438,22 @@ rule rnaseq_explore:
     resources: mem_gb=MEMORY_REQUIREMENTS_GB['rnaseq_analyze']
     run:
         os.environ['MC_CORES'] = str(threads)
-        rmd_render(input=input.rmd, output_file=os.path.join(os.getcwd(), output.html),
-                   output_format='html_notebook',
-                   params={ 'dataset': wildcards.dataset, })
+        rmd_render(input = input.rmd, output_file = os.path.join(os.getcwd(), output.html),
+                   output_format = 'html_notebook',
+                   params = {
+                       'quant_method': wildcards.quant_method,
+                       'genome': wildcards.genome,
+                       'transcriptome': wildcards.transcriptome,
+                   })
 
 rule rnaseq_compare:
     '''Perform basic comparisons between RNA-seq quantification methods'''
     input:
         rmd='scripts/rnaseq-compare.Rmd',
-        sexps=expand('saved_data/SummarizedExperiment_rnaseq_{aligner_and_genome}_{transcriptome}.RDS',
-                           aligner_and_genome=[
-                               'star_hg38.analysisSet', 'hisat2_grch38_snp_tran', 'kallisto_hg38.analysisSet',
-                               'salmon_hg38.analysisSet', 'shoal_hg38.analysisSet'
-                           ],
-                           transcriptome=['ensembl.85','knownGene']),
+        sexps=expand('saved_data/SummarizedExperiment_rnaseq_{quant_method}_{genome}_{transcriptome}.RDS',
+                     quant_method = ['star', 'hisat2', 'kallisto', 'salmon', 'shoal',],
+                     genome = 'hg38.analysisSet',
+                     transcriptome = ['ensembl.85','knownGene']),
     output:
         html='reports/RNA-seq/rnaseq-compare.html',
     version: R_package_version('rmarkdown')
@@ -2901,7 +2896,9 @@ rule rnaseq_cluster:
     '''Perform basic clustering analysis on RNA-seq data'''
     input:
         rmd='scripts/rnaseq-cluster.Rmd',
-        sexp='saved_data/SummarizedExperiment_rnaseq_{quant_method}_{genome}_{transcriptome}.RDS',
+        rnaseq_sexp='saved_data/SummarizedExperiment_rnaseq_{quant_method}_{genome}_{transcriptome}.RDS',
+        # peaks='peak_calls/epic_{genome}/{chip_antibody}_condition.ALL_donor.ALL/peaks_noBL_IDR.narrowPeak',
+        # sexp='saved_data/tss-neighborhood-counts_{genome}_{transcriptome}_{neighborhood_radius}-radius_{window_size}-windows_147bp-reads_{chip_antibody}.RDS'
     output:
         html='reports/RNA-seq/{quant_method,[^_]+}_{genome}_{transcriptome,[^_]+}-cluster.html',
         rda='saved_data/rnaseq_cluster_{quant_method}_{genome}_{transcriptome}.rda',

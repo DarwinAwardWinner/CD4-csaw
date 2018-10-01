@@ -15,8 +15,8 @@ params:
         value: hg38.analysisSet
     transcriptome:
         value: ensembl.85
-    rna_dataset:
-        value: "shoal_hg38.analysisSet"
+    quant_method:
+        value: shoal
 ---
 
 # Preliminary Setup
@@ -61,7 +61,7 @@ h3k4me3_promoter_results <- load_in_new_env(
          glue_data(params, '{genome}_{transcriptome}_H3K4me3-1kbp-promoter-diffmod.rda')))
 rnaseq_results <- load_in_new_env(
     here("saved_data", "RNA-seq",
-         glue_data(params, '{rna_dataset}_{transcriptome}-diffexp.rda')))
+         glue_data(params, '{quant_method}_{genome}_{transcriptome}-diffexp.rda')))
 ```
 
 Next, we load the list of CpG islands.

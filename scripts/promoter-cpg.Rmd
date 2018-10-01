@@ -19,8 +19,8 @@ params:
         value: H3K4me3
     promoter_radius:
         value: 1kbp
-    rna_dataset:
-        value: "shoal_hg38.analysisSet"
+    rna_quant_method:
+        value: shoal
 ---
 
 # Preliminary Setup
@@ -69,7 +69,7 @@ chipseq_results <- load_in_new_env(
          glue_data(params, '{genome}_{transcriptome}_{histone_mark}-{promoter_radius}-promoter-diffmod.rda')))
 rnaseq_results <- load_in_new_env(
     here("saved_data", "RNA-seq",
-         glue_data(params, '{rna_dataset}_{transcriptome}-diffexp.rda')))
+         glue_data(params, '{rna_quant_method}_{genome}_{transcriptome}-diffexp.rda')))
 ```
 
 Next, we load the list of CpG islands.
