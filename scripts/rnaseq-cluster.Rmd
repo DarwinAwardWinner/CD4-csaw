@@ -19,6 +19,14 @@ params:
         value: shoal
     transcriptome:
         value: ensembl.85
+    neighborhood_radius:
+        value: 5kbp
+    window_size:
+        value: 500bp
+    fragment_length:
+        value: 147bp
+    bigbin_size:
+        value: 10kbp
 ---
 
 # Preliminary Setup
@@ -37,27 +45,40 @@ First we load the necessary libraries, along with a set of utility functions.
 ```{r load_packages, message = FALSE, cache = FALSE}
 library(here)
 library(stringr)
+library(glue)
 library(magrittr)
 library(openxlsx)
 library(SummarizedExperiment)
 library(tibble)
 library(dplyr)
 library(broom)
+library(tibble)
 library(edgeR)
 library(limma)
+library(csaw)
+library(DESeq2)
 library(sva)
 library(ggplot2)
 library(scales)
+library(GGally)
 library(ggalt)
 library(ggfortify)
+library(plotly)
+library(reshape2)
 library(assertthat)
 library(qvalue)
 library(forcats)
 library(pheatmap)
 library(matrixStats)
+library(ks)
 library(RColorBrewer)
 library(plotly)
+library(variancePartition)
+library(forcats)
+library(broom)
 library(rctutils)
+
+library(BSgenome.Hsapiens.UCSC.hg38)
 
 library(BiocParallel)
 library(future)
@@ -73,9 +94,11 @@ set.seed(1986)
 
 # Data Loading and Preprocessing
 
+## Loading RNA-seq data
+
 Now we'll load the RNA-seq data set from an RDS file containing a SummarizedExperiment object, and modify it to use the sample names as column names.
 
-```{r load_data}
+```{r load_rna_data}
 sexpfile <- glue_data(params, here("saved_data", "SummarizedExperiment_rnaseq_{quant_method}_{genome}_{transcriptome}.RDS"))
 sexp <- readRDS(sexpfile)
 colnames(sexp) <- colData(sexp)$SampleName
@@ -124,9 +147,52 @@ if (all(libtype.assayNames %in% assayNames(sexp))) {
 }
 ```
 
-# Model Setup
+## Loading ChIP-seq data
 
-Before testing for differential expression, we need to normalize the data, filter low-count genes, perform the log transformation with precision weighting, and finally subtract batch effects using ComBat.
+First we load the consensus peaks called from the reads pooled from all samples. This consensus peak set is not biased toward or against any sample or condition, and therefore the peak significance is expected to be independent of any differential binding in that peak.
+
+```{r load_peaks}
+histone_marks <- c("H3K4me2", "H3K4me3", "H3K27me3")
+# Currently no other genome supported, but it could be.
+assert_that(params$genome == "hg38.analysisSet")
+peakfiles <- glue(here(
+    "peak_calls", "epic_{params$genome}",
+    "{histone_marks}_condition.ALL_donor.ALL",
+    "peaks_noBL_IDR.narrowPeak")) %>% 
+    set_names(histone_marks) %>% 
+    as.character
+allpeaks <- bplapply(peakfiles, function(peakfile) {
+    read_narrowPeak(peakfile) %>%
+        assign_into(seqinfo(.), seqinfo(BSgenome.Hsapiens.UCSC.hg38)[seqlevels(.)]) %>%
+        setNames(.$name)
+})
+```
+
+Now we'll load the ChIP-seq read count data set from RDS files containing SummarizedExperiment objects, and modify them to use the sample names as column names. We also ensure that the column order is identical between corresponding objects.
+
+```{r load_counts}
+sexpfiles <-
+    here("saved_data", "tss-neighborhood-counts_{genome}_{transcriptome}_{neighborhood_radius}-radius_{window_size}-windows_{fragment_length}-reads_{{histone_mark}}.RDS") %>% 
+    glue_data(.x = params) %>% 
+    glue(histone_mark = histone_marks) %>% 
+    set_names(histone_marks) %>% as.character
+bigbin_sexpfiles <- glue(here("saved_data", "chipseq-counts_{params$bigbin_size}-bigbins_{histone_marks}.RDS")) %>%
+    set_names(histone_marks) %>% as.character
+    
+bigbin_sexps <- bplapply(bigbin_sexpfiles, readRDS)
+sexps <- bplapply(sexpfiles, readRDS)
+for (i in names(sexps)) {
+    colnames(sexps[[i]]) <- colData(sexps[[i]])$SampleName
+    colnames(bigbin_sexps[[i]]) <- colData(bigbin_sexps[[i]])$SampleName
+    # Ensure identical column order
+    bigbin_sexps[[i]] %<>% .[,colnames(sexps[[i]])]
+    assert_that(all(colnames(sexps[[i]]) == colnames(bigbin_sexps[[i]])))
+}
+```
+
+# Data Preparation
+
+Before clustering the RNA-seq data, we need to normalize the data, filter low-count genes, perform the log transformation with precision weighting, and finally subtract batch effects using ComBat.
 
 First, we create a DGEList from the counts, copying over all the gene metadata.
 
@@ -191,7 +257,8 @@ ggprint(p)
 The red dashed line in each plot indicates the chosen presence threshold. We now subset the DGEList to only those genes above the threshold.
 
 ```{r abundance_filter_genes}
-dge %<>% .[a >= avelogcpm.presence.threshold,]
+present_genes <- rownames(dge)[a >= avelogcpm.presence.threshold]
+dge %<>% .[present_genes,]
 ```
 
 Next, we use the voom method with sample quality weights to prepare the data for model fitting with limma. Note that donor_id is still included in the design matrix even though we subtracted out donor differences using ComBat. This ensures that the model fitting is honest about the number of residual degrees of freedom in the model, with 3 degrees of freedom "spent" modeling the inter-donor effects.
@@ -199,6 +266,18 @@ Next, we use the voom method with sample quality weights to prepare the data for
 ```{r compute_quality_weights, warning = FALSE}
 design <- model.matrix(~0 + group + donor_id, sample.table) %>% strip_design_factor_names
 elist.nc <- voomWithQualityWeightsAndOffset(dge, design, plot = TRUE)
+```
+
+```{r rlog_transform}
+dds <- DESeqDataSetFromMatrix(
+    countData = round(dge$counts), 
+    colData = sample.table,
+    design = ~ cell_type + time_point + donor_id)
+if ("length" %in% assayNames(sexp)) {
+    assay(dds, "avgTxLength") <- assay(sexp, "length")[present_genes,]
+}
+dds <- DESeq(dds)
+rlogcpm <- rlog(dds)
 ```
 
 Next we use ComBat to perform batch correction, which performs empirical Bayes shrinkage of the batch correction parameters. We use a ComBat's non-parametric mode due to the poor fit of the parametric assumptions for the variance distribution shown by the QC plot.
@@ -210,13 +289,17 @@ invisible(suppressMessages(ComBat(elist.cb$E, batch = sample.table$batch, mod = 
 elist.cb$E <- ComBat(elist.cb$E, batch = sample.table$batch, mod = design.cb, par.prior = ifelse(interactive(), TRUE, FALSE))
 ```
 
+```{r rlog_combat}
+rlogcpm.cb <- rlogcpm
+assay(rlogcpm.cb) <-ComBat(assay(rlogcpm), batch = sample.table$batch, mod = design.cb, par.prior = ifelse(interactive(), TRUE, FALSE))
+```
 To make sure that the batch correction worked, we make MDS plots before and after.
 
 ```{r plot_mds}
-dmat.nc <- suppressPlot(plotMDS(elist.nc)$distance.matrix) %>% as.dist
+dmat.nc <- suppressPlot(plotMDS(assay(rlogcpm))$distance.matrix) %>% as.dist
 mds.nc <- cmdscale(dmat.nc, k = attr(dmat.nc, "Size") - 1, eig = TRUE)
 mds.nc$points %<>% add_numbered_colnames("Dim") %>% data.frame(sample.table, .)
-dmat.cb <- suppressPlot(plotMDS(elist.cb)$distance.matrix) %>% as.dist
+dmat.cb <- suppressPlot(plotMDS(assay(rlogcpm.cb))$distance.matrix) %>% as.dist
 mds.cb <- cmdscale(dmat.cb, k = attr(dmat.cb, "Size") - 1, eig = TRUE)
 mds.cb$points %<>% add_numbered_colnames("Dim") %>% data.frame(sample.table, .)
 
@@ -259,7 +342,7 @@ ggprint(p)
 
 ```{r get_logCPM}
 donor_coefs <- colnames(attr(design,"contrasts")$donor_id)
-logCPM <- subtractCoefs(elist.cb, design, coefsToSubtract = donor_coefs)
+logCPM <- subtractCoefs(assay(rlogcpm.cb), design, coefsToSubtract = donor_coefs)
 ```
 
 ```{r num_clusters}
@@ -341,12 +424,16 @@ ggprint(p)
 ```
 
 ```{r kmeans_PCA_3D}
-p <- plot_ly(prc_df, x = ~PC1, y = ~PC2, z = ~PC3, color = ~Cluster, size = I(3)) %>%
+p <- plot_ly(prc_df, x = ~PC1, y = ~PC2, z = ~PC3, color = ~Cluster, size = I(1)) %>%
     add_markers()
 p
 ```
 
 As expected, the 6 clusters line up in pairs along each of the first 3 PC axes.
+
+# Analysis of promoter behavior of clusters
+
+Now we can go to the ChIP-seq promoter data and group the promoters by RNA-seq cluster, to see if there are any obvious differences.
 
 # Saving data
 
