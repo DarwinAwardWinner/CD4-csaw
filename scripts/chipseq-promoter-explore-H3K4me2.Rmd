@@ -213,9 +213,9 @@ Normalization is a non-trivial issue for ChIP-Seq data. We will test three norma
 
 ```{r compute_norm_factors}
 # Compute these in parallel
-bgnf %<-% normOffsets(bigbin.sexp, type = "scaling", weighted = FALSE)
-pnf %<-% normOffsets(sexp, type = "scaling", weighted = TRUE)
-loff %<-% { normOffsets(sexp, type = "loess") + mean(getOffset(dge)) }
+bgnf %<-% normOffsets(bigbin.sexp, type = "scaling", weighted = FALSE, se.out = FALSE)
+pnf %<-% normOffsets(sexp, type = "scaling", weighted = TRUE, se.out = FALSE)
+loff %<-% { normOffsets(sexp, type = "loess", se.out = FALSE) + mean(getOffset(dge)) }
 sample.table$BGNormFactors <- colData(sexp)$BGNormFactors <- bgnf
 sample.table$PromoterNormFactors <- colData(sexp)$PromoterNormFactors <- pnf
 assay(sexp, "offsets.loess") <- loff
