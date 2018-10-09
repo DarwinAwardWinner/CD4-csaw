@@ -158,8 +158,8 @@ assert_that(params$genome == "hg38.analysisSet")
 peakfiles <- glue(here(
     "peak_calls", "epic_{params$genome}",
     "{histone_marks}_condition.ALL_donor.ALL",
-    "peaks_noBL_IDR.narrowPeak")) %>% 
-    set_names(histone_marks) %>% 
+    "peaks_noBL_IDR.narrowPeak")) %>%
+    set_names(histone_marks) %>%
     as.character
 allpeaks <- bplapply(peakfiles, function(peakfile) {
     read_narrowPeak(peakfile) %>%
@@ -172,13 +172,13 @@ Now we'll load the ChIP-seq read count data set from RDS files containing Summar
 
 ```{r load_counts}
 tsshood_sexpfiles <-
-    here("saved_data", "tss-neighborhood-counts_{genome}_{transcriptome}_{neighborhood_radius}-radius_{window_size}-windows_{fragment_length}-reads_{{histone_mark}}.RDS") %>% 
-    glue_data(.x = params) %>% 
-    glue(histone_mark = histone_marks) %>% 
+    here("saved_data", "tss-neighborhood-counts_{genome}_{transcriptome}_{neighborhood_radius}-radius_{window_size}-windows_{fragment_length}-reads_{{histone_mark}}.RDS") %>%
+    glue_data(.x = params) %>%
+    glue(histone_mark = histone_marks) %>%
     set_names(histone_marks) %>% as.character
 bigbin_sexpfiles <- glue(here("saved_data", "chipseq-counts_{params$bigbin_size}-bigbins_{histone_marks}.RDS")) %>%
     set_names(histone_marks) %>% as.character
-    
+
 bigbin_sexps <- bplapply(bigbin_sexpfiles, readRDS)
 tsshood_sexps <- bplapply(tsshood_sexpfiles, readRDS)
 for (i in names(tsshood_sexps)) {
@@ -278,7 +278,7 @@ elist.nc <- voomWithQualityWeightsAndOffset(dge, design, plot = TRUE)
 
 ```{r rlog_transform}
 dds <- DESeqDataSetFromMatrix(
-    countData = round(dge$counts), 
+    countData = round(dge$counts),
     colData = sample_table,
     design = ~ cell_type + time_point + donor_id)
 if ("length" %in% assayNames(sexp)) {
@@ -382,7 +382,7 @@ chipseq_data <- bplapply(tsshood_sexps, function(x) within(list(), {
     design.int <- model.matrix(~1 + group, data = sample_table) %>%
         strip_design_factor_names
     svobj <- logcpm %>% .[rowVars(.) >= 1e-8,] %>% sva(design.int)
-    # Removing outlier samples    
+    # Removing outlier samples
     outliers <- svobj$sv %>% apply(2, . %>% divide_by(sd(.))) %>% abs %>% rowMin %>% is_greater_than(3)
     good_samples <- colnames(tsshood_sexp)[!outliers]
     dge %<>% .[,good_samples]
@@ -425,7 +425,7 @@ logCPM <- subtractCoefs(assay(rlogcpm.cb), design, coefsToSubtract = donor_coefs
 logCPM_centered <- logCPM %>% subtract(rowMeans(.))
 # K-means scree plot
 scree_data <- data.frame(k = 1:20)
-km_list <- bpmapply(kmeans, centers = scree_data$k, 
+km_list <- bpmapply(kmeans, centers = scree_data$k,
                     MoreArgs = list(x = logCPM_centered, nstart = 5),
                     SIMPLIFY = FALSE)
 scree_data$wss <- sapply(km_list, . %$% tot.withinss)
@@ -442,8 +442,8 @@ Next, we do some hierarchical clustering.
 rv <- vapply(seq_len(nrow(elist.cb)), function(i) matrixStats::weightedVar(x = elist.cb$E[i,], w = elist.cb$weights[i,]), numeric(1))
 topvar <- head(order(rv, decreasing = TRUE), 5000)
 heat_pal <- colorRampPalette(rev(suppressWarnings(brewer.pal(Inf, "RdBu"))))(100)
-pheatmap(elist.cb$E[topvar,] %>% subtract(rowMeans(.)), 
-         annotation_col = sample_table[c("time_point", "cell_type", "donor_id", "batch")] %>% set_rownames(colnames(elist.cb)),
+pheatmap(elist.cb$E[topvar,] %>% subtract(rowMeans(.)),
+         annotation_col = sample_table[c("time_point", "cell_type", "donor_id")] %>% set_rownames(colnames(elist.cb)),
          show_rownames = FALSE, show_colnames = FALSE,
          cluster_cols = FALSE,
          clustering_distance_rows = "correlation",
@@ -518,17 +518,17 @@ p <- list()
 for (mark in names(chipseq_data)) {
     group_logcpm <- chipseq_data[[mark]]$group_logCPM_byOffset %>%
         mutate(RNA_Cluster = factor(km$cluster)[GeneID] %>% fct_relabel(~glue("C{.}")))
-    group_logcpm_centered <- group_logcpm %>% 
-        group_by(GeneID, Group) %>% 
+    group_logcpm_centered <- group_logcpm %>%
+        group_by(GeneID, Group) %>%
         mutate(logCPM = logCPM - mean(logCPM))
-    p[[mark]] <- list() 
+    p[[mark]] <- list()
     for (grp in levels(chipseq_data[[mark]]$sample_table$group)) {
-        p[[mark]][[grp]] <- 
-            ggplot(group_logcpm %>% filter(Group == grp)) + 
-            aes(x = factor(offset), y = logCPM, fill = RNA_Cluster) + 
+        p[[mark]][[grp]] <-
+            ggplot(group_logcpm %>% filter(Group == grp)) +
+            aes(x = factor(offset), y = logCPM, fill = RNA_Cluster) +
             geom_boxplot() +
             #geom_hline(yintercept = 0, linetype = "dotted") +
-            facet_grid(RNA_Cluster ~ .) + 
+            facet_grid(RNA_Cluster ~ .) +
             guides(fill=FALSE) +
             labs(title = "Relative promoter coverage by RNA-seq cluster",
                  subtitle = glue("For {mark} in sample group {grp}"))
