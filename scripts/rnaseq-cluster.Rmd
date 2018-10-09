@@ -107,14 +107,14 @@ colnames(sexp) <- colData(sexp)$SampleName
 We extract the sample metadata from the SummarizedExperiment. We also tell R to use a coding matrix for each factor that puts the intercept at the mean of all factor levels when incorporating it into a design matrix.
 
 ```{r extract_samplemeta}
-sample.table <- colData(sexp) %>%
+sample_table <- colData(sexp) %>%
     as.data.frame %>% auto_factorize_columns %>%
     rename(batch = technical_batch) %>%
     mutate(time_point = factor(days_after_activation) %>% fct_relabel(~glue("D{.}")),
-           group = interaction(cell_type, time_point, sep = ""))
-for (i in names(sample.table)) {
-    if (is.factor(sample.table[[i]]) && nlevels(sample.table[[i]]) > 1) {
-        contrasts(sample.table[[i]]) <- code_control_named(levels(sample.table[[i]]))
+           group = interaction(cell_type, time_point, sep = "", lex.order = TRUE))
+for (i in names(sample_table)) {
+    if (is.factor(sample_table[[i]]) && nlevels(sample_table[[i]]) > 1) {
+        contrasts(sample_table[[i]]) <- code_control_named(levels(sample_table[[i]]))
     }
 }
 ```
@@ -127,11 +127,11 @@ For SummarizedExperiments generated using tximport, this step is skipped, since 
 libtype.assayNames <- c(SF = "sense.counts", SR = "antisense.counts")
 if (all(libtype.assayNames %in% assayNames(sexp))) {
     message("Selecting stranded counts for each sample")
-    sample.table %<>% mutate(count_type = libtype.assayNames[libType])
+    sample_table %<>% mutate(count_type = libtype.assayNames[libType])
     assay(sexp, "unstranded.counts") <- assay(sexp, "counts")
-    assay(sexp, "counts") <- lapply(seq_len(nrow(sample.table)), function(i) {
-        message("Using ", sample.table[i,]$count_type, " for ", colnames(sexp)[i])
-        assay(sexp, sample.table[i,]$count_type %>% as.character)[,i]
+    assay(sexp, "counts") <- lapply(seq_len(nrow(sample_table)), function(i) {
+        message("Using ", sample_table[i,]$count_type, " for ", colnames(sexp)[i])
+        assay(sexp, sample_table[i,]$count_type %>% as.character)[,i]
     }) %>% do.call(what = cbind)
 }
 ```
@@ -142,7 +142,7 @@ As a sanity check, we make sure that we selected the strand sense with the highe
 if (all(libtype.assayNames %in% assayNames(sexp))) {
     total.counts <- sexp %>% assays %>% sapply(colSums) %>% data.frame %>%
         mutate(SampleName = row.names(.)) %>%
-        inner_join(sample.table, by = "SampleName")
+        inner_join(sample_table, by = "SampleName")
     total.counts %$% invisible(assert_that(all(counts == pmax(sense.counts, antisense.counts))))
 }
 ```
@@ -171,7 +171,7 @@ allpeaks <- bplapply(peakfiles, function(peakfile) {
 Now we'll load the ChIP-seq read count data set from RDS files containing SummarizedExperiment objects, and modify them to use the sample names as column names. We also ensure that the column order is identical between corresponding objects.
 
 ```{r load_counts}
-sexpfiles <-
+tsshood_sexpfiles <-
     here("saved_data", "tss-neighborhood-counts_{genome}_{transcriptome}_{neighborhood_radius}-radius_{window_size}-windows_{fragment_length}-reads_{{histone_mark}}.RDS") %>% 
     glue_data(.x = params) %>% 
     glue(histone_mark = histone_marks) %>% 
@@ -180,19 +180,23 @@ bigbin_sexpfiles <- glue(here("saved_data", "chipseq-counts_{params$bigbin_size}
     set_names(histone_marks) %>% as.character
     
 bigbin_sexps <- bplapply(bigbin_sexpfiles, readRDS)
-sexps <- bplapply(sexpfiles, readRDS)
-for (i in names(sexps)) {
-    colnames(sexps[[i]]) <- colData(sexps[[i]])$SampleName
+tsshood_sexps <- bplapply(tsshood_sexpfiles, readRDS)
+for (i in names(tsshood_sexps)) {
+    colnames(tsshood_sexps[[i]]) <- colData(tsshood_sexps[[i]])$SampleName
     colnames(bigbin_sexps[[i]]) <- colData(bigbin_sexps[[i]])$SampleName
     # Ensure identical column order
-    bigbin_sexps[[i]] %<>% .[,colnames(sexps[[i]])]
-    assert_that(all(colnames(sexps[[i]]) == colnames(bigbin_sexps[[i]])))
+    bigbin_sexps[[i]] %<>% .[,colnames(tsshood_sexps[[i]])]
+    assert_that(all(colnames(tsshood_sexps[[i]]) == colnames(bigbin_sexps[[i]])))
 }
 ```
 
 # Data Preparation
 
+## Preparing RNA-seq data
+
 Before clustering the RNA-seq data, we need to normalize the data, filter low-count genes, perform the log transformation with precision weighting, and finally subtract batch effects using ComBat.
+
+### Normalization
 
 First, we create a DGEList from the counts, copying over all the gene metadata.
 
@@ -222,6 +226,8 @@ if ("length" %in% assayNames(sexp)) {
     dge$offset <- t(t(log(normMat)) + lib.offsets)
 }
 ```
+
+### Filtering non-expressed genes
 
 We plot the distribution of average log2 CPM values to verify that our chosen presence threshold is appropriate. The distribution is expected to be bimodal, with a low-abundance peak representing non-expressed genes and a high-abundance peak representing expressed genes. The chosen threshold should separate the two peaks of the bimodal distribution.
 
@@ -261,17 +267,19 @@ present_genes <- rownames(dge)[a >= avelogcpm.presence.threshold]
 dge %<>% .[present_genes,]
 ```
 
+### Data transformation
+
 Next, we use the voom method with sample quality weights to prepare the data for model fitting with limma. Note that donor_id is still included in the design matrix even though we subtracted out donor differences using ComBat. This ensures that the model fitting is honest about the number of residual degrees of freedom in the model, with 3 degrees of freedom "spent" modeling the inter-donor effects.
 
 ```{r compute_quality_weights, warning = FALSE}
-design <- model.matrix(~0 + group + donor_id, sample.table) %>% strip_design_factor_names
+design <- model.matrix(~0 + group + donor_id, sample_table) %>% strip_design_factor_names
 elist.nc <- voomWithQualityWeightsAndOffset(dge, design, plot = TRUE)
 ```
 
 ```{r rlog_transform}
 dds <- DESeqDataSetFromMatrix(
     countData = round(dge$counts), 
-    colData = sample.table,
+    colData = sample_table,
     design = ~ cell_type + time_point + donor_id)
 if ("length" %in% assayNames(sexp)) {
     assay(dds, "avgTxLength") <- assay(sexp, "length")[present_genes,]
@@ -280,28 +288,30 @@ dds <- DESeq(dds)
 rlogcpm <- rlog(dds)
 ```
 
+### Batch correction
+
 Next we use ComBat to perform batch correction, which performs empirical Bayes shrinkage of the batch correction parameters. We use a ComBat's non-parametric mode due to the poor fit of the parametric assumptions for the variance distribution shown by the QC plot.
 
 ```{r combat_adjust}
-design.cb <- model.matrix(~cell_type + donor_id, sample.table) %>% strip_design_factor_names
+design.cb <- model.matrix(~cell_type + donor_id, sample_table) %>% strip_design_factor_names
 elist.cb <- elist.nc
-invisible(suppressMessages(ComBat(elist.cb$E, batch = sample.table$batch, mod = design.cb, par.prior = TRUE, prior.plots = TRUE)))
-elist.cb$E <- ComBat(elist.cb$E, batch = sample.table$batch, mod = design.cb, par.prior = ifelse(interactive(), TRUE, FALSE))
+invisible(suppressMessages(ComBat(elist.cb$E, batch = sample_table$batch, mod = design.cb, par.prior = TRUE, prior.plots = TRUE)))
+elist.cb$E <- ComBat(elist.cb$E, batch = sample_table$batch, mod = design.cb, par.prior = ifelse(interactive(), TRUE, FALSE))
 ```
 
 ```{r rlog_combat}
 rlogcpm.cb <- rlogcpm
-assay(rlogcpm.cb) <-ComBat(assay(rlogcpm), batch = sample.table$batch, mod = design.cb, par.prior = ifelse(interactive(), TRUE, FALSE))
+assay(rlogcpm.cb) <-ComBat(assay(rlogcpm), batch = sample_table$batch, mod = design.cb, par.prior = ifelse(interactive(), TRUE, FALSE))
 ```
 To make sure that the batch correction worked, we make MDS plots before and after.
 
 ```{r plot_mds}
 dmat.nc <- suppressPlot(plotMDS(assay(rlogcpm))$distance.matrix) %>% as.dist
 mds.nc <- cmdscale(dmat.nc, k = attr(dmat.nc, "Size") - 1, eig = TRUE)
-mds.nc$points %<>% add_numbered_colnames("Dim") %>% data.frame(sample.table, .)
+mds.nc$points %<>% add_numbered_colnames("Dim") %>% data.frame(sample_table, .)
 dmat.cb <- suppressPlot(plotMDS(assay(rlogcpm.cb))$distance.matrix) %>% as.dist
 mds.cb <- cmdscale(dmat.cb, k = attr(dmat.cb, "Size") - 1, eig = TRUE)
-mds.cb$points %<>% add_numbered_colnames("Dim") %>% data.frame(sample.table, .)
+mds.cb$points %<>% add_numbered_colnames("Dim") %>% data.frame(sample_table, .)
 
 mdsggbase <- function(df) {
     ggplot(df) +
@@ -338,7 +348,73 @@ p <- list(NC.PC12 = pbase.nc +
 ggprint(p)
 ```
 
-# Clustering
+## Preparing Promoter ChIP-seq data
+
+See `chipseq-tsshood-explore-*.Rmd` for more information on these data processing steps.
+
+```{r prepare_chipseq}
+chipseq_data <- bplapply(tsshood_sexps, function(x) within(list(), {
+    # Filtering promoters of non-expressed genes
+    tsshood_sexp <- x %>% .[mcols(.)$GeneID %in% present_genes,]
+    sample_table <- as.data.frame(colData(tsshood_sexp)) %>%
+        mutate(group = interaction(cell_type, time_point, sep = ""))
+    levels(sample_table$group) %<>% str_replace_all("Day", "D")
+    # Computing promoter counts and normalization
+    promoter_sexp <- local({
+        promoter_rl <- rowRanges(tsshood_sexp) %>% split(.$GeneID)
+        promoter_ranges <- reduce(promoter_rl) %>% {assert_that(all(lengths(.) == 1)); .} %>% unlist
+        mcols(promoter_ranges) <- promoter_rl %>% .[rep(List(1), length(.))] %>% unlist %>% mcols
+        mcols(promoter_ranges)$offset <- NULL
+        mcols(promoter_ranges)$blacklist <- mcols(tsshood_sexp) %$% split(blacklist, GeneID) %>% sapply(mean) %>% .[names(promoter_ranges)]
+        promoter_counts <- assay(tsshood_sexp, "counts") %>% rowsum(mcols(tsshood_sexp)$GeneID)
+        promoter_sexp <- SummarizedExperiment(
+            assays = List(counts=promoter_counts),
+            rowRanges=promoter_ranges,
+            colData=colData(tsshood_sexp),
+            metadata=metadata(tsshood_sexp))
+        promoter_sexp %<>% normOffsets(type = "scaling", weighted = TRUE)
+        promoter_sexp
+    })
+    # Running SVA
+    dge <- asDGEList(tsshood_sexp)
+    dge$samples$norm.factors <- colData(promoter_sexp)$norm.factors
+    logcpm <- cpmWithOffset(dge, prior.count = 1)
+    design.int <- model.matrix(~1 + group, data = sample_table) %>%
+        strip_design_factor_names
+    svobj <- logcpm %>% .[rowVars(.) >= 1e-8,] %>% sva(design.int)
+    # Removing outlier samples    
+    outliers <- svobj$sv %>% apply(2, . %>% divide_by(sd(.))) %>% abs %>% rowMin %>% is_greater_than(3)
+    good_samples <- colnames(tsshood_sexp)[!outliers]
+    dge %<>% .[,good_samples]
+    sample_table %<>% filter(SampleName %in% good_samples)
+    # Re-run SVA without the outliers
+    logcpm <- cpmWithOffset(dge, prior.count = 1)
+    design.int <- model.matrix(~1 + group, data = sample_table) %>%
+        strip_design_factor_names %>% set_colnames(str_replace_all(colnames(.), ":", ""))
+    svobj <- logcpm %>% .[rowVars(.) >= 1e-8,] %>% sva(design.int)
+    # Summarize the average logCPM by group via linear model fit
+    sv_design <- model.matrix(~0 + group, data = sample_table) %>%
+        strip_design_factor_names %>%
+        cbind(add_numbered_colnames(svobj$sv, "SV"))
+    v <- voomWithOffset(dge, sv_design)
+    fit <- lmFit(v, sv_design)
+    group_logCPM_matrix <- fit$coefficients[,levels(sample_table$group)]
+    all_window_meta <- {
+        rowRanges(tsshood_sexp) %>%
+            as.data.frame %>%
+            rename(chr = seqnames) %>%
+            select(-width, -strand) %>%
+            ensure_atomic_columns()
+    }
+    group_logCPM <- group_logCPM_matrix %>% cbind(all_window_meta) %>%
+        gather(key=Group, value=logCPM, !!levels(sample_table$group))
+    group_logCPM_byOffset <- group_logCPM %>%
+        select(GeneID, offset, Group, logCPM) %>%
+        arrange(Group, GeneID, offset)
+}))
+```
+
+# Clustering RNA-seq data
 
 ```{r get_logCPM}
 donor_coefs <- colnames(attr(design,"contrasts")$donor_id)
@@ -367,7 +443,7 @@ rv <- vapply(seq_len(nrow(elist.cb)), function(i) matrixStats::weightedVar(x = e
 topvar <- head(order(rv, decreasing = TRUE), 5000)
 heat_pal <- colorRampPalette(rev(suppressWarnings(brewer.pal(Inf, "RdBu"))))(100)
 pheatmap(elist.cb$E[topvar,] %>% subtract(rowMeans(.)), 
-         annotation_col = sample.table[c("time_point", "cell_type", "donor_id", "batch")] %>% set_rownames(colnames(elist.cb)),
+         annotation_col = sample_table[c("time_point", "cell_type", "donor_id", "batch")] %>% set_rownames(colnames(elist.cb)),
          show_rownames = FALSE, show_colnames = FALSE,
          cluster_cols = FALSE,
          clustering_distance_rows = "correlation",
@@ -380,11 +456,11 @@ There don't seem to be any obvious unexpected patterns in the hierarchical clust
 We arbitrarily choose $k=6$ for k-means clustering.
 
 ```{r kmeans_heatmap}
-km <- logCPM_centered %>% kmeans(centers = 6, iter.max = 1000, nstart = 10)
+km <- logCPM_centered %>% kmeans(centers = 5, iter.max = 1000, nstart = 10)
 cluster_counts <- table(Cluster = km$cluster) %>% as.data.frame(responseName = "Genes")
 print(cluster_counts)
 pheatmap(km$centers, cluster_rows = FALSE, cluster_cols = FALSE,
-         annotation_col = sample.table[c("time_point", "cell_type", "donor_id", "batch")] %>% set_rownames(colnames(elist.cb)),
+         annotation_col = sample_table[c("time_point", "cell_type", "donor_id", "batch")] %>% set_rownames(colnames(elist.cb)),
          show_rownames = TRUE, show_colnames = FALSE,
          border_color = NA,
          color = heat_pal, breaks = seq(-3, 3, length.out = length(heat_pal) + 1))
@@ -434,6 +510,32 @@ As expected, the 6 clusters line up in pairs along each of the first 3 PC axes.
 # Analysis of promoter behavior of clusters
 
 Now we can go to the ChIP-seq promoter data and group the promoters by RNA-seq cluster, to see if there are any obvious differences.
+
+We start by plotting the distribution
+
+```{r chipseq_by_rna_cluster}
+p <- list()
+for (mark in names(chipseq_data)) {
+    group_logcpm <- chipseq_data[[mark]]$group_logCPM_byOffset %>%
+        mutate(RNA_Cluster = factor(km$cluster)[GeneID] %>% fct_relabel(~glue("C{.}")))
+    group_logcpm_centered <- group_logcpm %>% 
+        group_by(GeneID, Group) %>% 
+        mutate(logCPM = logCPM - mean(logCPM))
+    p[[mark]] <- list() 
+    for (grp in levels(chipseq_data[[mark]]$sample_table$group)) {
+        p[[mark]][[grp]] <- 
+            ggplot(group_logcpm %>% filter(Group == grp)) + 
+            aes(x = factor(offset), y = logCPM, fill = RNA_Cluster) + 
+            geom_boxplot() +
+            #geom_hline(yintercept = 0, linetype = "dotted") +
+            facet_grid(RNA_Cluster ~ .) + 
+            guides(fill=FALSE) +
+            labs(title = "Relative promoter coverage by RNA-seq cluster",
+                 subtitle = glue("For {mark} in sample group {grp}"))
+    }
+}
+ggprint(p)
+```
 
 # Saving data
 
