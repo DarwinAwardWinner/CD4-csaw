@@ -42,8 +42,8 @@ use_futures("multicore")
 Now we'll load the RNA-seq data set from an RDS file containing a SummarizedExperiment object, and modify it to use the sample names as column names.
 
 ```{r load_data}
-datasets <- c("hisat2_grch38_snp_tran_ensembl.85",
-              "hisat2_grch38_snp_tran_knownGene",
+datasets <- c("hisat2_hg38.analysisSet_ensembl.85",
+              "hisat2_hg38.analysisSet_knownGene",
               "kallisto_hg38.analysisSet_ensembl.85",
               "kallisto_hg38.analysisSet_knownGene",
               "salmon_hg38.analysisSet_ensembl.85",
@@ -226,7 +226,7 @@ Interestingly, the correlation for Shoal is lower than for Salmon, despite the f
 The two count-based methods differ only in the aligner that was used, so any discrepancy between them represents a difference in which reads they could align unambiguously.
 
 ```{r plot_star_vs_hisat2, message = FALSE}
-logcpm_A <- logcpm$hisat2_grch38_snp_tran_ensembl.85 %>%
+logcpm_A <- logcpm$hisat2_hg38.analysisSet_ensembl.85 %>%
     select(ENSEMBL, Sample, logCPM) %>%
     rename(logCPM_A = logCPM)
 logcpm_B <- logcpm$star_hg38.analysisSet_ensembl.85 %>%
@@ -343,12 +343,12 @@ logcpm.merged <- inner_join(logcpm_A, logcpm_B) %>%
     filter(logCPM_A != min(logCPM_A) | logCPM_B != min(logCPM_B))
 limits <- logcpm.merged %>% select(logCPM_A, logCPM_B) %>% lapply(range) %>% unlist %>% range
 p <- ggplot(logcpm.merged) +
-        aes(x = logCPM_A, y = logCPM_B) +
-        geom_point(size = 0.2, alpha = 0.2) +
-        geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
-        coord_fixed(xlim = limits, ylim = limits) +
-        labs(title = "logCPM, Shoal vs Salmon",
-             subtitle = "Identity line (red) plotted red for reference",
-             x = "logCPM by Salmon", y = "logCPM by Shoal")
+    aes(x = logCPM_A, y = logCPM_B) +
+    geom_point(size = 0.2, alpha = 0.2) +
+    geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+    coord_fixed(xlim = limits, ylim = limits) +
+    labs(title = "logCPM, Shoal vs Salmon",
+         subtitle = "Identity line (red) plotted red for reference",
+         x = "logCPM by Salmon", y = "logCPM by Shoal")
 ggprint(p)
 ```
