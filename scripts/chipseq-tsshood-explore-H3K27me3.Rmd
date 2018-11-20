@@ -293,10 +293,10 @@ Normalization is a non-trivial issue for ChIP-Seq data. We will test three norma
 
 ```{r compute_norm_factors}
 # Compute these in parallel
-bgnf %<-% normOffsets(bigbin_sexp, type = "scaling", weighted = FALSE, se.out = TRUE)
-pnf %<-% normOffsets(nhood_sexp, type = "scaling", weighted = TRUE, se.out = TRUE)
-wnf %<-% normOffsets(sexp, type = "scaling", weighted = TRUE, se.out = TRUE)
-loff %<-% { normOffsets(nhood_sexp, type = "loess", se.out = TRUE) + mean(getOffset(dge)) }
+bgnf %<-% normOffsets(bigbin_sexp, type = "scaling", weighted = FALSE, se.out = FALSE)
+pnf %<-% normOffsets(nhood_sexp, type = "scaling", weighted = TRUE, se.out = FALSE)
+wnf %<-% normOffsets(sexp, type = "scaling", weighted = TRUE, se.out = FALSE)
+loff %<-% { normOffsets(nhood_sexp, type = "loess", se.out = FALSE) + mean(getOffset(dge)) }
 nf_df <- data_frame(BGNormFactors = bgnf, PromoterNormFactors = pnf, WindowNormFactors = wnf)
 colData(sexp)[colnames(nf_df)] <- as.list(nf_df)
 sample_table[colnames(nf_df)] <- nf_df
