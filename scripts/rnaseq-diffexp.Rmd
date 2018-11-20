@@ -361,7 +361,7 @@ ggprint(p)
 We can look at the number of significant genes as an FDR of 10% for the various significance measures, as well as the estimated number of truly differentially expressed genes based on estimates of pi0.
 
 ```{r number_sig_table}
-results.tables %>% sapply(function(tt) {
+results.tables %>% lapply(function(tt) {
     ndiff <- (1-pi0est(tt$PValue)$pi0) %>% multiply_by(nrow(tt)) %>% floor
     nsig.fdr <- sum(tt$FDR <= 0.1)
     nsig.qval <- sum(tt$QValue <= 0.1)
@@ -370,8 +370,8 @@ results.tables %>% sapply(function(tt) {
     } else {
         nsig.bfdr <- NA
     }
-    c(Pi0Est = ndiff, FDR = nsig.fdr, QValue = nsig.qval, BayesFDR = nsig.bfdr)
-}) %>% data.frame
+    tibble(Total = nrow(tt), Pi0Est = ndiff, FDR = nsig.fdr, QValue = nsig.qval, BayesFDR = nsig.bfdr)
+}) %>% do.call(what = rbind) %>% cbind(Test = names(results.tables), .)
 ```
 
 We can see that the results for Day 5 tend to have fewer significant genes than Day 1 or Day 14. This is likely related to the fact that Day 5 is in the low-quality first batch and therefore the Day 5 samples have been substantially down-weighted, as shown by modeling the log of the sample weight as a function of either batch or time point. (By comparison, the weights are not substantially different between cell types or donors.)
