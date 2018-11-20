@@ -1,0 +1,571 @@
+---
+title: "Clustering analysis of CD4 RNA-Seq Dataset"
+subtitle: '`r glue::glue_data(params, "Using {quant_method} quantifications on {genome}
+    genome with {transcriptome} transcript annotations")`'
+author: "Ryan C. Thompson"
+date: '`r stringr::str_replace_all(format(Sys.time(), "%B %e, %Y"), "[[:space:]]+",
+  " ")`'
+output:
+    html_document:
+        toc: true
+        toc_float: true
+    html_notebook:
+        toc: true
+        toc_float: true
+params:
+    genome:
+        value: hg38.analysisSet
+    quant_method:
+        value: shoal
+    transcriptome:
+        value: ensembl.85
+    neighborhood_radius:
+        value: 5kbp
+    window_size:
+        value: 500bp
+    fragment_length:
+        value: 147bp
+    bigbin_size:
+        value: 10kbp
+---
+
+# Preliminary Setup
+
+```{r setup, include = FALSE, cache = FALSE}
+knitr::opts_chunk$set(echo = TRUE, retina = 2, cache = TRUE, autodep = TRUE,
+                      cache.extra = list(params = params),
+                      fig.height = 8, fig.width = 8,
+                      # cache.path = paste0(
+                      #     here::here("cache", "rnaseq-cluster", glue::glue_data(params, "{quant_method}_{genome}_{transcriptome}")),
+                      #     .Platform$file.sep)
+                      )
+```
+
+First we load the necessary libraries, along with a set of utility functions.
+
+```{r load_packages, message = FALSE, cache = FALSE}
+library(here)
+library(stringr)
+library(glue)
+library(magrittr)
+library(openxlsx)
+library(SummarizedExperiment)
+library(tibble)
+library(dplyr)
+library(broom)
+library(tibble)
+library(edgeR)
+library(limma)
+library(csaw)
+library(DESeq2)
+library(sva)
+library(ggplot2)
+library(scales)
+library(GGally)
+library(ggalt)
+library(ggfortify)
+library(plotly)
+library(reshape2)
+library(assertthat)
+library(qvalue)
+library(forcats)
+library(pheatmap)
+library(matrixStats)
+library(ks)
+library(RColorBrewer)
+library(plotly)
+library(variancePartition)
+library(forcats)
+library(broom)
+library(rctutils)
+
+library(BSgenome.Hsapiens.UCSC.hg38)
+
+library(BiocParallel)
+library(future)
+options(future.globals.maxSize = 4 * 1024^3)
+use_futures("multicore")
+```
+
+We also set the random seed for reproducibility:
+
+```{r set_random_seed}
+set.seed(1986)
+```
+
+# Data Loading and Preprocessing
+
+## Loading RNA-seq data
+
+Now we'll load the RNA-seq data set from an RDS file containing a SummarizedExperiment object, and modify it to use the sample names as column names.
+
+```{r load_rna_data}
+sexpfile <- glue_data(params, here("saved_data", "SummarizedExperiment_rnaseq_{quant_method}_{genome}_{transcriptome}.RDS"))
+sexp <- readRDS(sexpfile)
+colnames(sexp) <- colData(sexp)$SampleName
+```
+
+We extract the sample metadata from the SummarizedExperiment. We also tell R to use a coding matrix for each factor that puts the intercept at the mean of all factor levels when incorporating it into a design matrix.
+
+```{r extract_samplemeta}
+sample_table <- colData(sexp) %>%
+    as.data.frame %>% auto_factorize_columns %>%
+    rename(batch = technical_batch) %>%
+    mutate(time_point = factor(days_after_activation) %>% fct_relabel(~glue("D{.}")),
+           group = interaction(cell_type, time_point, sep = "", lex.order = TRUE))
+for (i in names(sample_table)) {
+    if (is.factor(sample_table[[i]]) && nlevels(sample_table[[i]]) > 1) {
+        contrasts(sample_table[[i]]) <- code_control_named(levels(sample_table[[i]]))
+    }
+}
+```
+
+Next we extract the count matrix from the SummarizedExperiment. This is made more complicated than usual by the fact that half of the samples were sequenced with a different protocol than the other half, and the two protocols produce reads with opposite strand orientations. Hence, we need the sense counts for half of the samples and the antisense counts for the other half. The appropriate strand for each sample is documented in the `libType` column of the sample metadata, using the library type abbreviations [established by Salmon](http://salmon.readthedocs.io/en/latest/salmon.html#what-s-this-libtype).
+
+For SummarizedExperiments generated using tximport, this step is skipped, since the quantification tool has already been told which strand to use and only provides counts for that strand.
+
+```{r extract_counts}
+libtype.assayNames <- c(SF = "sense.counts", SR = "antisense.counts")
+if (all(libtype.assayNames %in% assayNames(sexp))) {
+    message("Selecting stranded counts for each sample")
+    sample_table %<>% mutate(count_type = libtype.assayNames[libType])
+    assay(sexp, "unstranded.counts") <- assay(sexp, "counts")
+    assay(sexp, "counts") <- lapply(seq_len(nrow(sample_table)), function(i) {
+        message("Using ", sample_table[i,]$count_type, " for ", colnames(sexp)[i])
+        assay(sexp, sample_table[i,]$count_type %>% as.character)[,i]
+    }) %>% do.call(what = cbind)
+}
+```
+
+As a sanity check, we make sure that we selected the strand sense with the higher total count for each sample.
+
+```{r strand_sanity_check}
+if (all(libtype.assayNames %in% assayNames(sexp))) {
+    total.counts <- sexp %>% assays %>% sapply(colSums) %>% data.frame %>%
+        mutate(SampleName = row.names(.)) %>%
+        inner_join(sample_table, by = "SampleName")
+    total.counts %$% invisible(assert_that(all(counts == pmax(sense.counts, antisense.counts))))
+}
+```
+
+## Loading ChIP-seq data
+
+First we load the consensus peaks called from the reads pooled from all samples. This consensus peak set is not biased toward or against any sample or condition, and therefore the peak significance is expected to be independent of any differential binding in that peak.
+
+```{r load_peaks}
+histone_marks <- c("H3K4me2", "H3K4me3", "H3K27me3")
+# Currently no other genome supported, but it could be.
+assert_that(params$genome == "hg38.analysisSet")
+peakfiles <- glue(here(
+    "peak_calls", "epic_{params$genome}",
+    "{histone_marks}_condition.ALL_donor.ALL",
+    "peaks_noBL_IDR.narrowPeak")) %>%
+    set_names(histone_marks) %>%
+    as.character
+allpeaks <- bplapply(peakfiles, function(peakfile) {
+    read_narrowPeak(peakfile) %>%
+        assign_into(seqinfo(.), seqinfo(BSgenome.Hsapiens.UCSC.hg38)[seqlevels(.)]) %>%
+        setNames(.$name)
+})
+```
+
+Now we'll load the ChIP-seq read count data set from RDS files containing SummarizedExperiment objects, and modify them to use the sample names as column names. We also ensure that the column order is identical between corresponding objects.
+
+```{r load_counts}
+tsshood_sexpfiles <-
+    here("saved_data", "tss-neighborhood-counts_{genome}_{transcriptome}_{neighborhood_radius}-radius_{window_size}-windows_{fragment_length}-reads_{{histone_mark}}.RDS") %>%
+    glue_data(.x = params) %>%
+    glue(histone_mark = histone_marks) %>%
+    set_names(histone_marks) %>% as.character
+bigbin_sexpfiles <- glue(here("saved_data", "chipseq-counts_{params$bigbin_size}-bigbins_{histone_marks}.RDS")) %>%
+    set_names(histone_marks) %>% as.character
+
+bigbin_sexps <- bplapply(bigbin_sexpfiles, readRDS)
+tsshood_sexps <- bplapply(tsshood_sexpfiles, readRDS)
+for (i in names(tsshood_sexps)) {
+    colnames(tsshood_sexps[[i]]) <- colData(tsshood_sexps[[i]])$SampleName
+    colnames(bigbin_sexps[[i]]) <- colData(bigbin_sexps[[i]])$SampleName
+    # Ensure identical column order
+    bigbin_sexps[[i]] %<>% .[,colnames(tsshood_sexps[[i]])]
+    assert_that(all(colnames(tsshood_sexps[[i]]) == colnames(bigbin_sexps[[i]])))
+}
+```
+
+# Data Preparation
+
+## Preparing RNA-seq data
+
+Before clustering the RNA-seq data, we need to normalize the data, filter low-count genes, perform the log transformation with precision weighting, and finally subtract batch effects using ComBat.
+
+### Normalization
+
+First, we create a DGEList from the counts, copying over all the gene metadata.
+
+```{r prepare_dgelist}
+## Extract gene metadata and colapse lists
+all.gene.meta <- mcols(sexp) %>% ensure_atomic_columns %>% as.data.frame
+dge <- DGEList(counts = assay(sexp, "counts"))
+dge$genes <- all.gene.meta
+```
+Next we take care of the initial scaling normalization for sequencing depth and composition bias. We also discard any genes with all zero counts, since there is no meaningful analysis that can be done with these genes.
+
+```{r initial_normalization}
+## Remove all genes with zero counts in all samples
+nonzero <- rowSums(dge$counts) > 0
+dge %<>% .[nonzero,]
+dge %<>% calcNormFactors
+```
+
+In addition, if there is a length assay, we also use that to derive an offset matrix that corrects for differences in effective gene length between samples.
+
+```{r generate_offsets}
+if ("length" %in% assayNames(sexp)) {
+    normMat <- assay(sexp, "length") %>% divide_by(exp(rowMeans(log(.)))) %>%
+        .[nonzero,]
+    normCounts <- dge$counts/normMat
+    lib.offsets <- log(calcNormFactors(normCounts)) + log(colSums(normCounts))
+    dge$offset <- t(t(log(normMat)) + lib.offsets)
+}
+```
+
+### Filtering non-expressed genes
+
+We plot the distribution of average log2 CPM values to verify that our chosen presence threshold is appropriate. The distribution is expected to be bimodal, with a low-abundance peak representing non-expressed genes and a high-abundance peak representing expressed genes. The chosen threshold should separate the two peaks of the bimodal distribution.
+
+```{r compute_avelogCPM}
+a <- aveLogCPMWithOffset(dge)
+avelogcpm.presence.threshold <- -1
+```
+
+```{r plot_aveLogCPM}
+p <- list(
+    Histogram = ggplot(data.frame(logCPM = a)) +
+        aes(x = logCPM) +
+        geom_histogram(aes(y = 100*(..count..)/sum(..count..)), binwidth = 0.25, boundary = 0) +
+        geom_vline(xintercept = avelogcpm.presence.threshold, color = "red", linetype = "dashed") +
+        xlab("Average logCPM") + ylab("Percent of genes in bin") +
+        coord_cartesian(xlim = quantile(a, c(0, 0.995)), ylim = c(0,10)) +
+        labs(title = "Average gene LogCPM distribution",
+             subtitle = "for genes with at least 1 read") +
+        theme(plot.caption = element_text(hjust = 0)),
+    ECDF = ggplot(fortify(ecdf(a))) +
+        aes(x = x, y = y*100) +
+        geom_step() +
+        geom_vline(xintercept = avelogcpm.presence.threshold, color = "red", linetype = "dashed") +
+        xlab("Average logCPM") + ylab("Percent of genes with smaller average logCPM") +
+        coord_cartesian(xlim = quantile(a, c(0, 0.995))) +
+        labs(title = "Empirical Cumulative Distribution Function of gene LogCPM values",
+             subtitle = "for genes with at least 1 read") +
+        theme(plot.caption = element_text(hjust = 0)))
+
+ggprint(p)
+```
+
+The red dashed line in each plot indicates the chosen presence threshold. We now subset the DGEList to only those genes above the threshold.
+
+```{r abundance_filter_genes}
+present_genes <- rownames(dge)[a >= avelogcpm.presence.threshold]
+dge %<>% .[present_genes,]
+```
+
+### Data transformation
+
+Next, we use the voom method with sample quality weights to prepare the data for model fitting with limma. Note that donor_id is still included in the design matrix even though we subtracted out donor differences using ComBat. This ensures that the model fitting is honest about the number of residual degrees of freedom in the model, with 3 degrees of freedom "spent" modeling the inter-donor effects.
+
+```{r compute_quality_weights, warning = FALSE}
+design <- model.matrix(~0 + group + donor_id, sample_table) %>% strip_design_factor_names
+elist.nc <- voomWithQualityWeightsAndOffset(dge, design, plot = TRUE)
+```
+
+```{r rlog_transform}
+# dds <- DESeqDataSetFromMatrix(
+#     countData = round(dge$counts),
+#     colData = sample_table,
+#     design = ~ cell_type + time_point + donor_id)
+# if ("length" %in% assayNames(sexp)) {
+#     assay(dds, "avgTxLength") <- assay(sexp, "length")[present_genes,]
+# }
+# dds <- DESeq(dds)
+# rlogcpm <- rlog(dds)
+```
+
+### Batch correction
+
+Next we use ComBat to perform batch correction, which performs empirical Bayes shrinkage of the batch correction parameters. We use a ComBat's non-parametric mode due to the poor fit of the parametric assumptions for the variance distribution shown by the QC plot.
+
+```{r combat_adjust}
+design.cb <- model.matrix(~cell_type, sample_table) %>% strip_design_factor_names
+elist.cb <- elist.nc
+invisible(suppressMessages(ComBat(elist.cb$E, batch = sample_table %$% interaction(batch, donor_id, sep="."), mod = design.cb, par.prior = TRUE, prior.plots = TRUE)))
+elist.cb$E <- ComBat(elist.cb$E, batch = sample_table %$% interaction(batch, donor_id, sep="."), mod = design.cb, par.prior = ifelse(interactive(), TRUE, TRUE))
+```
+
+```{r rlog_combat}
+# rlogcpm.cb <- rlogcpm
+# assay(rlogcpm.cb) <-ComBat(assay(rlogcpm), batch = sample_table %$% interaction(batch, donor_id, sep="."), mod = design.cb, par.prior = ifelse(interactive(), TRUE, FALSE))
+```
+
+To make sure that the batch correction worked, we make MDS plots before and after.
+
+```{r plot_mds}
+dmat.nc <- suppressPlot(plotMDS(elist.nc)$distance.matrix) %>% as.dist
+mds.nc <- cmdscale(dmat.nc, k = attr(dmat.nc, "Size") - 1, eig = TRUE)
+mds.nc$points %<>% add_numbered_colnames("Dim") %>% data.frame(sample_table, .)
+dmat.cb <- suppressPlot(plotMDS(elist.cb)$distance.matrix) %>% as.dist
+mds.cb <- cmdscale(dmat.cb, k = attr(dmat.cb, "Size") - 1, eig = TRUE)
+mds.cb$points %<>% add_numbered_colnames("Dim") %>% data.frame(sample_table, .)
+
+mdsggbase <- function(df) {
+    ggplot(df) +
+        aes(x = Dim1, y = Dim2, label = SampleName, color = batch, fill = time_point, shape = cell_type, linetype = donor_id, group = cell_type:donor_id) +
+        geom_encircle(aes(group = time_point:cell_type, color = NULL), s_shape = 0.75, expand = 0.05, color = NA, alpha = 0.2) +
+        geom_path(color = hcl(c = 0, l = 45), aes(color = NULL)) +
+        geom_point(size = 4) +
+        scale_shape_manual(values = c(Naive = 21, Memory = 24)) +
+        scale_color_manual(values = col2hcl(c(B1 = "green", B2 = "magenta"), l = 80)) +
+        scale_fill_hue(l = 55) +
+        scale_linetype_manual(values = c("solid", "dashed", "dotdash", "twodash")) +
+        guides(colour = guide_legend(override.aes = list(shape = 21)),
+               fill = guide_legend(override.aes = list(shape = 21)),
+               shape = guide_legend(override.aes = list(color = hcl(c = 0, l = 80), fill = hcl(c = 0, l = 55)))) +
+        labs(title = "limma voom Principal Coordinates 1 & 2") +
+        coord_equal()
+}
+
+pbase.nc <- mdsggbase(mds.nc$points)
+pbase.cb <- mdsggbase(mds.cb$points)
+
+p <- list(NC.PC12 = pbase.nc +
+              labs(subtitle = "Before Batch Correction"),
+          NC.PC23 = pbase.nc +
+              aes(x = Dim2, y = Dim3) +
+              labs(title = "limma voom Principal Coordinates 2 & 3",
+                   subtitle = "Before Batch Correction"),
+          CB.PC12 = pbase.cb +
+              labs(subtitle = "After ComBat Batch Correction"),
+          CB.PC23 = pbase.cb +
+              aes(x = Dim2, y = Dim3) +
+              labs(title = "limma voom Principal Coordinates 2 & 3",
+                   subtitle = "After ComBat Batch Correction"))
+ggprint(p)
+```
+
+## Preparing Promoter ChIP-seq data
+
+See `chipseq-tsshood-explore-*.Rmd` for more information on these data processing steps.
+
+```{r prepare_chipseq}
+chipseq_data <- bplapply(names(tsshood_sexps), function(i) within(list(), {
+    tsshood_sexp <- tsshood_sexps[[i]]
+    
+    # Filtering peaks    
+    peaks <- local({
+        idr_threshold <- 0.05
+        # IDR is encoded in the qValue field of the narrowPeak file
+        allpeaks[[i]] %>% .[.$qValue >= -log10(idr_threshold)]
+    })
+    
+    # Filtering unbound promoters
+    peak_overlap <- overlapsAny(tsshood_sexp, peaks)
+    promoter_peak_overlap <- split(peak_overlap, mcols(tsshood_sexp)$GeneID) %>%
+        as("List") %>% any %>% which %>% names
+    tsshood_sexp %<>% .[mcols(.)$GeneID %in% promoter_peak_overlap,]
+    
+    # Filtering promoters of non-expressed genes
+    tsshood_sexp %<>% .[mcols(.)$GeneID %in% present_genes,]
+    sample_table <- as.data.frame(colData(tsshood_sexp)) %>%
+        mutate(group = interaction(cell_type, time_point, sep = ""))
+    levels(sample_table$group) %<>% str_replace_all("Day", "D")
+    
+    # Computing promoter counts and normalization
+    promoter_sexp <- local({
+        promoter_rl <- rowRanges(tsshood_sexp) %>% split(.$GeneID)
+        promoter_ranges <- reduce(promoter_rl) %>% {assert_that(all(lengths(.) == 1)); .} %>% unlist
+        mcols(promoter_ranges) <- promoter_rl %>% .[rep(List(1), length(.))] %>% unlist %>% mcols
+        mcols(promoter_ranges)$offset <- NULL
+        mcols(promoter_ranges)$blacklist <- mcols(tsshood_sexp) %$% split(blacklist, GeneID) %>% sapply(mean) %>% .[names(promoter_ranges)]
+        promoter_counts <- assay(tsshood_sexp, "counts") %>% rowsum(mcols(tsshood_sexp)$GeneID)
+        promoter_sexp <- SummarizedExperiment(
+            assays = List(counts=promoter_counts),
+            rowRanges=promoter_ranges,
+            colData=colData(tsshood_sexp),
+            metadata=metadata(tsshood_sexp))
+        promoter_sexp %<>% normOffsets(type = "scaling", weighted = TRUE)
+        promoter_sexp
+    })
+    
+    # Running SVA
+    dge <- asDGEList(tsshood_sexp)
+    dge$samples$norm.factors <- colData(promoter_sexp)$norm.factors
+    logcpm <- cpmWithOffset(dge, prior.count = 1)
+    design.int <- model.matrix(~1 + group, data = sample_table) %>%
+        strip_design_factor_names
+    svobj <- logcpm %>% .[rowVars(.) >= 1e-8,] %>% sva(design.int)
+    # Removing outlier samples
+    outliers <- svobj$sv %>% apply(2, . %>% divide_by(sd(.))) %>% abs %>% rowMin %>% is_greater_than(3)
+    good_samples <- colnames(tsshood_sexp)[!outliers]
+    dge %<>% .[,good_samples]
+    sample_table %<>% filter(SampleName %in% good_samples)
+    # Re-run SVA without the outliers
+    logcpm <- cpmWithOffset(dge, prior.count = 1)
+    design.int <- model.matrix(~1 + group, data = sample_table) %>%
+        strip_design_factor_names %>% set_colnames(str_replace_all(colnames(.), ":", ""))
+    svobj <- logcpm %>% .[rowVars(.) >= 1e-8,] %>% sva(design.int)
+    # Summarize the average logCPM by group via linear model fit
+    sv_design <- model.matrix(~0 + group, data = sample_table) %>%
+        strip_design_factor_names %>%
+        cbind(add_numbered_colnames(svobj$sv, "SV"))
+    v <- voomWithOffset(dge, sv_design)
+    fit <- lmFit(v, sv_design)
+    group_logCPM_matrix <- fit$coefficients[,levels(sample_table$group)]
+    all_window_meta <- {
+        rowRanges(tsshood_sexp) %>%
+            as.data.frame %>%
+            rename(chr = seqnames) %>%
+            select(-width, -strand) %>%
+            ensure_atomic_columns()
+    }
+    group_logCPM <- group_logCPM_matrix %>% cbind(all_window_meta) %>%
+        gather(key=Group, value=logCPM, !!levels(sample_table$group))
+    group_logCPM_byOffset <- group_logCPM %>%
+        select(GeneID, offset, Group, logCPM) %>%
+        arrange(Group, GeneID, offset)
+}))
+names(chipseq_data) <- names(tsshood_sexps)
+```
+
+# Categorizing Gene Expression Patterns
+
+We are interested in genes that change with activation, and especially genes whose response to activation is different in Naive and Memory cells. The possible responses to activation are:
+
+* No significant change at any time point
+* Change at Day 1, return to original state by Day 14
+* Change at Day 1, retain change through Day 14
+* Change at Day 5, return to original state by Day 14
+* Change at Day 5, retain change through Day 14
+* Change at Day 14
+
+Every gene should fall into exactly one of these categories, for each cell type, yielding a 6x6 contingency table, with naive on one axis and memory on the other. We will base "significant change" on the threshold-testing functionality of limma (treat), with a log fold change threshold of ?????
+
+## Differential expression tests
+
+First we set up the contrasts for all the necessary tests.
+
+```{r rnaseq_test_setup}
+timepoint_test_table <- levels(sample_table$time_point) %>%
+    combn(2) %>% t %>% set_colnames(c("timeA", "timeB")) %>%
+    as_tibble %>%
+    mutate_all(ordered, levels = levels(sample_table$time_point))
+
+test_table <- expand.grid(
+    # Retain factor levels so Naive sorts before Memory
+    cell_type = sort(unique(sample_table$cell_type)), 
+    time_test_index = seq_len(nrow(timepoint_test_table))) %>%
+    cbind(timepoint_test_table[.$time_test_index,]) %>%
+    as_tibble() %>%
+    mutate(time_test_index = NULL) %>%
+    arrange(cell_type, timeB, timeA) %>% 
+    mutate(test_name = glue("{cell_type}_{timeA}v{timeB}"),
+           test_contrast = glue("{cell_type}{timeB} - {cell_type}{timeA}"))
+           
+print(test_table)
+```
+
+Next, we fit the model and decide which genes are significantly up or down in each contrast at an FDR of 10%. We use a global FDR calculation so that a common significance threshold is used across all contrasts. In order to exclude genes with small fold changes, we use the TREAT method to exclude fold changes smaller than 1.2-fold up or down. 
+
+```{r rnaseq_treat}
+fit <- lmFit(elist.cb, design) %>% eBayes(robust = TRUE)
+cmat <- makeContrasts(contrasts = test_table$test_contrast, levels = design) %>% set_colnames(test_table$test_name)
+cfit <- contrasts.fit(fit, cmat) %>% eBayes(robust = TRUE)
+ctreat <- cfit %>% treat(lfc = log2(1.2), robust = TRUE)
+testres <- decideTests(ctreat, method = "global", adjust.method = "BH", p.value = 0.1)
+apply(testres, 2, table) %>% t
+```
+
+We can see that the numbers of differentially expressed genes in all the contrasts are within approximately 1 order of magnitude of each other, which is a good sign.
+
+## Assigning categories based on differential expression results
+
+For each gene, we want to answer 2 questions:
+
+1. What is the first time point at which the gene changes significantly relative to day 0?
+2. If the gene does change, is there is a significant change in the opposite direction at a later time point?
+
+The first question tells us how early the gene responds, and the second question tells us whether or not that response is transient. We must answer these questions separately for each cell type: Naive and Memory.
+
+```{r categorize_genes}
+# TODO: Make catefories factors with proper level ordering
+categorization_tables <- list()
+for (ct in levels(test_table$cell_type)) {
+    tt <- test_table %>% filter(cell_type == ct)
+    tt_initial <- tt %>% filter(timeA == "D0") %>% arrange(timeB)
+    testres_initial <- testres[,tt_initial$test_name]
+    first_sig_contrast <- apply(testres_initial != 0, 1, 
+                                . %>% which %>% c(NA) %>% head(1)) %>%
+        (fct_inorder(colnames(testres_initial)))[.] %>% set_names(rownames(testres_initial))
+    cat_table <- tibble(cell_type = ct, 
+                        GeneID = rownames(testres_initial), 
+                        first_change_name = first_sig_contrast, 
+                        first_change_time = tt_initial %$% {timeB[match(first_sig_contrast, test_name)]},
+                        first_change_direction = testres_initial[cbind(rownames(testres_initial), as.character(first_change_name))],
+                        first_reversal_name = NA_character_,
+                        first_reversal_time = ordered(NA, levels = levels(first_change_time)))
+    # For each gene with a significant change, determine if there is a significant opposite change at a later time point.
+    for (i in seq_len(nrow(cat_table))) {
+        fct <- cat_table$first_change_time[i]
+        if (!is.na(fct)) {
+            fcd <- cat_table$first_change_direction[i]
+            assert_that(fcd %in% c(1, -1))
+            later_contrasts <- test_table %>% 
+                filter(cell_type == ct, timeA >= fct)  %>%
+                arrange(timeB, timeA) %$% test_name
+            later_changes <- testres[i, later_contrasts]
+            reverse_contrasts <- later_contrasts[later_changes == -fcd]
+            if (length(reverse_contrasts) > 0) {
+                cat_table$first_reversal_name[i] <- reverse_contrasts[1]
+                cat_table$first_reversal_time[i] <- test_table %>% filter(test_name == reverse_contrasts[1]) %$% timeB
+            }
+        }
+    }
+    cat_table %<>%  mutate(category = ifelse(is.na(first_change_time), "Static", 
+                                             glue("{first_change_time}_{ifelse(first_change_direction>0,'Up','Down')}_{ifelse(is.na(first_reversal_time), 'maintained', 'transient')}")))
+    categorization_tables[[ct]] <- cat_table
+}
+cat_combined <- inner_join(x = categorization_tables$Naive %>% select(GeneID, category, first_change_direction), 
+                           y = categorization_tables$Memory %>% select(GeneID, category, first_change_direction),
+                           by = "GeneID", suffix = c("_Naive", "_Memory"))
+cat_combined %$% table(category_Naive, category_Memory) %>% addmargins(FUN = list(Total = sum), quiet = TRUE)
+```
+
+```{r plot_promoter_profiles}
+plot_df <- cat_combined %>% group_by(category_Naive, category_Memory) %>% do(
+    Plot = {
+        gids <- .$GeneID
+        plotdata <- lapply(chipseq_data, function(x) {
+            x$group_logCPM_byOffset %>% 
+                filter(GeneID %in% gids) %>%
+                filter(Group %in% c("NaiveD0", "MemoryD0"))
+        }) %>% bind_rows(.id = "Histone_Mark")
+        assert_that(length(gids) > 0)
+        if (nrow(plotdata) == 0) {
+            NULL
+        } else if (length(gids) < 100) {
+            ggplot(plotdata) + 
+                aes(x = factor(offset), y = logCPM, group = GeneID) +
+                geom_line(size = 0.5, alpha = 0.5) + 
+                facet_grid(Histone_Mark ~ Group) +
+                labs(title = "Relative promoter coverage at Day 0",
+                     subtitle = glue("For Naive = {.$category_Naive[1]}; Memory = {.$category_Memory[1]}"))
+        } else {
+            ggplot(plotdata) +
+                aes(x = factor(offset), y = logCPM, fill = Group) +
+                geom_boxplot(notch = TRUE) +
+                #geom_hline(yintercept = 0, linetype = "dotted") +
+                facet_grid(Histone_Mark ~ .) +
+                labs(title = "Relative promoter coverage at Day 0",
+                     subtitle = glue("For Naive = {.$category_Naive[1]}; Memory = {.$category_Memory[1]}"))
+        }
+    }) %>%
+    filter(!is.null(Plot)) %>% ungroup
+suppressMessages(ggprint(plot_df$Plot))
+```
