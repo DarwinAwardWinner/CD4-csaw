@@ -303,6 +303,7 @@ elist.cb$E <- ComBat(elist.cb$E, batch = sample_table %$% interaction(batch, don
 rlogcpm.cb <- rlogcpm
 assay(rlogcpm.cb) <-ComBat(assay(rlogcpm), batch = sample_table %$% interaction(batch, donor_id, sep="."), mod = design.cb, par.prior = ifelse(interactive(), TRUE, FALSE))
 ```
+
 To make sure that the batch correction worked, we make MDS plots before and after.
 
 ```{r plot_mds}
@@ -348,6 +349,19 @@ p <- list(NC.PC12 = pbase.nc +
 ggprint(p)
 ```
 
+### Selecting differentially expressed genes
+
+We select only genes with different expression patterns in Naive and Memory cells.
+
+```{r rnaseq_diffexp}
+design_diffexp <- model.matrix(~ cell_type*time_point - cell_type + donor_id, sample_table)
+NvM_diff_coefs <- colnames(design_diffexp) %>% .[str_detect(., "cell_type")]
+fit <- lmFit(elist.cb, design_diffexp) %>% eBayes(robust = TRUE)
+cfit <- contrasts.fit(fit, coef = NvM_diff_coefs) %>% eBayes(robust = TRUE)
+ttab <- topTable(cfit, n = Inf, sort.by = "none")
+rnaseq_NvM_diff <- ttab %$% ENSEMBL[adj.P.Val <= 0.1]
+```
+
 ## Preparing Promoter ChIP-seq data
 
 See `chipseq-tsshood-explore-*.Rmd` for more information on these data processing steps.
@@ -355,26 +369,26 @@ See `chipseq-tsshood-explore-*.Rmd` for more information on these data processin
 ```{r prepare_chipseq}
 chipseq_data <- bplapply(names(tsshood_sexps), function(i) within(list(), {
     tsshood_sexp <- tsshood_sexps[[i]]
-
-    # Filtering peaks
+    
+    # Filtering peaks    
     peaks <- local({
         idr_threshold <- 0.05
         # IDR is encoded in the qValue field of the narrowPeak file
         allpeaks[[i]] %>% .[.$qValue >= -log10(idr_threshold)]
     })
-
+    
     # Filtering unbound promoters
     peak_overlap <- overlapsAny(tsshood_sexp, peaks)
     promoter_peak_overlap <- split(peak_overlap, mcols(tsshood_sexp)$GeneID) %>%
         as("List") %>% any %>% which %>% names
     tsshood_sexp %<>% .[mcols(.)$GeneID %in% promoter_peak_overlap,]
-
+    
     # Filtering promoters of non-expressed genes
     tsshood_sexp %<>% .[mcols(.)$GeneID %in% present_genes,]
     sample_table <- as.data.frame(colData(tsshood_sexp)) %>%
         mutate(group = interaction(cell_type, time_point, sep = ""))
     levels(sample_table$group) %<>% str_replace_all("Day", "D")
-
+    
     # Computing promoter counts and normalization
     promoter_sexp <- local({
         promoter_rl <- rowRanges(tsshood_sexp) %>% split(.$GeneID)
@@ -391,7 +405,7 @@ chipseq_data <- bplapply(names(tsshood_sexps), function(i) within(list(), {
         promoter_sexp %<>% normOffsets(type = "scaling", weighted = TRUE)
         promoter_sexp
     })
-
+    
     # Running SVA
     dge <- asDGEList(tsshood_sexp)
     dge$samples$norm.factors <- colData(promoter_sexp)$norm.factors
@@ -436,7 +450,8 @@ names(chipseq_data) <- names(tsshood_sexps)
 
 ```{r get_logCPM}
 donor_coefs <- colnames(attr(design,"contrasts")$donor_id)
-logCPM <- subtractCoefs(assay(rlogcpm.cb), design, coefsToSubtract = donor_coefs)
+logCPM <- assay(rlogcpm.cb) %>% .[rownames(.) %in% rnaseq_NvM_diff,] %>%
+    subtractCoefs(design, coefsToSubtract = donor_coefs)
 ```
 
 ```{r num_clusters}
@@ -474,10 +489,12 @@ There don't seem to be any obvious unexpected patterns in the hierarchical clust
 We arbitrarily choose $k=6$ for k-means clustering.
 
 ```{r kmeans_heatmap}
-km <- logCPM_centered %>% kmeans(centers = 5, iter.max = 1000, nstart = 10)
+km <- logCPM_centered %>% kmeans(centers = 6, iter.max = 1000, nstart = 10)
 cluster_counts <- table(Cluster = km$cluster) %>% as.data.frame(responseName = "Genes")
 print(cluster_counts)
-pheatmap(km$centers, cluster_rows = FALSE, cluster_cols = FALSE,
+km_centers_clamped <- km$centers
+km_centers_clamped[] %<>% {clamp_trans(-3, 3)$transform(.)}
+pheatmap(km_centers_clamped, cluster_rows = FALSE, cluster_cols = FALSE,
          annotation_col = sample_table[c("time_point", "cell_type", "donor_id", "batch")] %>% set_rownames(colnames(elist.cb)),
          show_rownames = TRUE, show_colnames = FALSE,
          border_color = NA,
@@ -487,6 +504,22 @@ pheatmap(km$centers, cluster_rows = FALSE, cluster_cols = FALSE,
 As we might expect, the clusters vary primarily in the pattern of expression over time, with 4 of the clusters in particular representing all possible configurations in which 2 time points are upregulated and the other 2 are downregulated, except for the zig-zag patterns, which, if they existed, would have been regressed out due to confounding with the batch effect.
 
 The interesting detail is in the cluster where the early time points have higher expression than the later ones. In this cluster, there is a clear secondary pattern that memory samples have higher expression than naive samples, especially at the early time points. By contrast, all the other clusters seem to have more or less the same expression patterns in naive and memory samples.
+
+```{r kmeans_trajectories, fig.height = 12, fig.width = 12}
+group_logcpm <- elist.cb$E %>% as_tibble(rownames = "GeneID") %>%
+    gather("SampleName", "logCPM", -GeneID) %>% 
+    inner_join(sample_table, by = "SampleName") %>% 
+    group_by(GeneID) %>% mutate(logCPM = logCPM - mean(logCPM)) %>% ungroup %>%
+    group_by(GeneID, group, time_point, cell_type) %>% 
+    summarize(logCPM = mean(logCPM)) %>%
+    mutate(Cluster = str_c("C", km$cluster[GeneID])) %>% 
+    filter(!is.na(Cluster))
+ggplot(group_logcpm) + 
+    facet_grid(rows = vars(Cluster), cols = vars(cell_type)) +
+    aes(x = time_point, y = logCPM, group = GeneID) +
+    geom_line(size = 0.2, alpha = 0.1)
+```
+
 
 We can show the clusters in a PCA plot as well.
 
@@ -542,7 +575,7 @@ for (mark in names(chipseq_data)) {
     p[[mark]] <- list()
     for (grp in levels(chipseq_data[[mark]]$sample_table$group)) {
         p[[mark]][[grp]] <-
-            ggplot(group_logcpm %>% filter(Group == grp)) +
+            ggplot(group_logcpm_centered %>% filter(Group == grp)) +
             aes(x = factor(offset), y = logCPM, fill = RNA_Cluster) +
             geom_boxplot() +
             #geom_hline(yintercept = 0, linetype = "dotted") +
