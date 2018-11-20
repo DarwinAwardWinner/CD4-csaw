@@ -1,12 +1,8 @@
-# TODO: Revamp this file after switching over to a reproducible
-# pipeline
-
 # This is a symlink to all the submitted files from
 # http://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE73214
 /data_files
 
-# This is where the output files go (it's currently a symlink to a
-# Dropbox folder)
+# This is where the output files go
 /results
 
 # Output files
