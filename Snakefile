@@ -2618,7 +2618,7 @@ rule lamere_2016_fig7:
         rmd='scripts/promoter-cpg-figure7.Rmd',
         rda_h3k4me2='saved_data/ChIP-seq/hg38.analysisSet_ensembl.85_H3K4me2-1kbp-promoter-diffmod.rda',
         rda_h3k4me3='saved_data/ChIP-seq/hg38.analysisSet_ensembl.85_H3K4me3-1kbp-promoter-diffmod.rda',
-        rda_rnaseq='saved_data/RNA-seq/hisat2_grch38_snp_tran_ensembl.85-diffexp.rda',
+        rda_rnaseq='saved_data/RNA-seq/hisat2_hg38.analysisSet_ensembl.85-diffexp.rda',
         cpgi='saved_data/UCSC_hg38_cpgIslandExtUnmasked.RDS',
     output:
         html='reports/lamere_2016_fig7.html'

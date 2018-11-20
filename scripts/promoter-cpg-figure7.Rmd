@@ -16,7 +16,7 @@ params:
     transcriptome:
         value: ensembl.85
     quant_method:
-        value: shoal
+        value: hisat2
 ---
 
 # Preliminary Setup
@@ -41,7 +41,6 @@ library(dplyr)
 library(ggplot2)
 library(here)
 library(rctutils)
-
 
 library(future)
 options(future.globals.maxSize = 4 * 1024^3)
