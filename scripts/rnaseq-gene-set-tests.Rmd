@@ -41,7 +41,6 @@ library(limma)
 library(GSEABase)
 library(rctutils)
 
-
 library(BiocParallel)
 library(future)
 options(future.globals.maxSize = 4 * 1024^3)

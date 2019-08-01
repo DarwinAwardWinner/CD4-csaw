@@ -41,6 +41,7 @@ library(dplyr)
 library(ggplot2)
 library(here)
 library(rctutils)
+library(rex)
 
 library(future)
 options(future.globals.maxSize = 4 * 1024^3)
@@ -184,8 +185,10 @@ f7cd <- within(list(), {
         lapply(. %$%
                    split(logFC, ifelse(CpGi, "CpGi", "NoCpGi")) %$%
                    var.test(NoCpGi, CpGi))
+    lfit <- fit <- lm(CpGi ~ 0 + Test + NoCpGi : Test, qqtable)
 })
 print(f7cd$vartests)
+print(summary(f7cd$lfit))
 ggprint(f7cd$p)
 ```
 
