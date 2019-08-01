@@ -95,7 +95,7 @@ except RRuntimeError:
 try:
     from rpy2.robjects import r
     from rpy2.rinterface import RRuntimeError
-    SOFTWARE_VERSIONS['BIOC'] = 'Bioconductor ' + "".join(r('as.character(BiocInstaller::biocVersion())'))
+    SOFTWARE_VERSIONS['BIOC'] = 'Bioconductor ' + "".join(r('tryCatch(BiocManager::version(), error = function(...) BiocInstaller::biocVersion())'))
 except RRuntimeError:
     SOFTWARE_VERSIONS['BIOC'] = None
 
